@@ -4,14 +4,38 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Switch } from '@/components/ui/switch';
-import { Plus, Upload, Search } from 'lucide-react';
+import { Plus, Upload, Search, Trash2 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 import { toast } from 'sonner';
 import { useSuppliers } from '@/hooks/useSupabaseData';
 
+function getSupplierCode(name: string, code: string | null) {
+  if (code?.trim()) return code.trim();
+  return (
+    name
+      .split(/\s+/)
+      .map(part => part[0] || '')
+      .join('')
+      .replace(/[^A-Za-z0-9]/g, '')
+      .toUpperCase()
+      .slice(0, 4) || 'N/A'
+  );
+}
+
 export default function SuppliersPage() {
-  const { suppliers, loading, addSupplier, updateSupplier } = useSuppliers();
+  const { suppliers, loading, addSupplier, updateSupplier, deleteSupplier } = useSuppliers();
   const [search, setSearch] = useState('');
   const [addOpen, setAddOpen] = useState(false);
   const [csvOpen, setCsvOpen] = useState(false);
@@ -51,7 +75,23 @@ export default function SuppliersPage() {
   };
 
   const toggleActive = async (s: typeof suppliers[0]) => {
-    await updateSupplier(s.id, { active: !s.active });
+    try {
+      await updateSupplier(s.id, { active: !s.active });
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to update supplier');
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    try {
+      await deleteSupplier(id);
+      toast.success('Supplier deleted');
+    } catch (err: any) {
+      const message = err.message?.toLowerCase().includes('foreign key')
+        ? 'Supplier cannot be deleted because it is already used in received items.'
+        : err.message || 'Failed to delete supplier';
+      toast.error(message);
+    }
   };
 
   const handleCsvFile = (file: File) => {
@@ -199,20 +239,47 @@ export default function SuppliersPage() {
                 <TableHead className="hidden md:table-cell">Contact</TableHead>
                 <TableHead className="hidden md:table-cell">Phone</TableHead>
                 <TableHead>Active</TableHead>
+                <TableHead className="w-[96px] text-right">Delete</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {filtered.map(s => (
                 <TableRow key={s.id}>
                   <TableCell className="font-medium">{s.name}</TableCell>
-                  <TableCell className="text-muted-foreground">{s.code || '—'}</TableCell>
+                  <TableCell className="text-muted-foreground">{getSupplierCode(s.name, s.code)}</TableCell>
                   <TableCell className="hidden md:table-cell">{s.contact_name || '—'}</TableCell>
                   <TableCell className="hidden md:table-cell">{s.phone || '—'}</TableCell>
                   <TableCell><Switch checked={s.active} onCheckedChange={() => toggleActive(s)} /></TableCell>
+                  <TableCell className="text-right">
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive">
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Delete supplier?</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            This will permanently remove <strong>{s.name}</strong> if it is not already referenced by received items.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                          <AlertDialogAction
+                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                            onClick={() => handleDelete(s.id)}
+                          >
+                            Delete
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  </TableCell>
                 </TableRow>
               ))}
               {filtered.length === 0 && (
-                <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground py-8">No suppliers yet</TableCell></TableRow>
+                <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground py-8">No suppliers yet</TableCell></TableRow>
               )}
             </TableBody>
           </Table>

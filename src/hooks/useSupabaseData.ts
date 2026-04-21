@@ -28,11 +28,18 @@ export function useSuppliers() {
   };
 
   const update = async (id: string, patch: Partial<Supplier>) => {
-    await supabase.from('suppliers').update(patch).eq('id', id);
+    const { error } = await supabase.from('suppliers').update(patch).eq('id', id);
+    if (error) throw error;
     await fetch();
   };
 
-  return { suppliers: data, loading, refetch: fetch, addSupplier: add, updateSupplier: update };
+  const remove = async (id: string) => {
+    const { error } = await supabase.from('suppliers').delete().eq('id', id);
+    if (error) throw error;
+    await fetch();
+  };
+
+  return { suppliers: data, loading, refetch: fetch, addSupplier: add, updateSupplier: update, deleteSupplier: remove };
 }
 
 export function useCarriers() {
@@ -55,11 +62,18 @@ export function useCarriers() {
   };
 
   const update = async (id: string, patch: Partial<Carrier>) => {
-    await supabase.from('carriers').update(patch).eq('id', id);
+    const { error } = await supabase.from('carriers').update(patch).eq('id', id);
+    if (error) throw error;
     await fetch();
   };
 
-  return { carriers: data, loading, refetch: fetch, addCarrier: add, updateCarrier: update };
+  const remove = async (id: string) => {
+    const { error } = await supabase.from('carriers').delete().eq('id', id);
+    if (error) throw error;
+    await fetch();
+  };
+
+  return { carriers: data, loading, refetch: fetch, addCarrier: add, updateCarrier: update, deleteCarrier: remove };
 }
 
 export function useEmployees() {
@@ -140,6 +154,151 @@ export function useReceiptDates() {
   }, []);
 
   return { dates, loading };
+}
+
+export function useReceiptCalendarDetails() {
+  const [dates, setDates] = useState<Date[]>([]);
+  const [detailsByDate, setDetailsByDate] = useState<
+    Record<
+      string,
+      {
+        carrierIds: string[];
+        carrierCounts: Record<string, number>;
+        supplierIdsByCarrier: Record<string, string[]>;
+        supplierDetailsByCarrier: Record<
+          string,
+          Record<
+            string,
+            {
+              boxes: number;
+              pallets: number;
+              batchIds: string[];
+            }
+          >
+        >;
+        count: number;
+        packageCount: number;
+        boxCount: number;
+        palletCount: number;
+      }
+    >
+  >({});
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase
+        .from('receipt_batches')
+        .select('id, received_at, carrier_id, receipt_items(package_count, package_type, supplier_id)');
+
+      if (data) {
+        const nextDetails: Record<
+          string,
+          {
+            carrierIds: string[];
+            carrierCounts: Record<string, number>;
+            supplierIdsByCarrier: Record<string, string[]>;
+            supplierDetailsByCarrier: Record<
+              string,
+              Record<
+                string,
+                {
+                  boxes: number;
+                  pallets: number;
+                  batchIds: string[];
+                }
+              >
+            >;
+            count: number;
+            packageCount: number;
+            boxCount: number;
+            palletCount: number;
+          }
+        > = {};
+
+        data.forEach(row => {
+          const dateKey = row.received_at.split('T')[0];
+          if (!nextDetails[dateKey]) {
+            nextDetails[dateKey] = {
+              carrierIds: [],
+              carrierCounts: {},
+              supplierIdsByCarrier: {},
+              supplierDetailsByCarrier: {},
+              count: 0,
+              packageCount: 0,
+              boxCount: 0,
+              palletCount: 0,
+            };
+          }
+
+          nextDetails[dateKey].count += 1;
+
+          if (row.carrier_id && !nextDetails[dateKey].carrierIds.includes(row.carrier_id)) {
+            nextDetails[dateKey].carrierIds.push(row.carrier_id);
+          }
+
+          if (row.carrier_id) {
+            nextDetails[dateKey].carrierCounts[row.carrier_id] = (nextDetails[dateKey].carrierCounts[row.carrier_id] || 0) + 1;
+
+            if (!nextDetails[dateKey].supplierIdsByCarrier[row.carrier_id]) {
+              nextDetails[dateKey].supplierIdsByCarrier[row.carrier_id] = [];
+            }
+
+            if (!nextDetails[dateKey].supplierDetailsByCarrier[row.carrier_id]) {
+              nextDetails[dateKey].supplierDetailsByCarrier[row.carrier_id] = {};
+            }
+          }
+
+          row.receipt_items?.forEach(item => {
+            nextDetails[dateKey].packageCount += item.package_count;
+
+            if (row.carrier_id && !nextDetails[dateKey].supplierIdsByCarrier[row.carrier_id].includes(item.supplier_id)) {
+              nextDetails[dateKey].supplierIdsByCarrier[row.carrier_id].push(item.supplier_id);
+            }
+
+            if (row.carrier_id) {
+              if (!nextDetails[dateKey].supplierDetailsByCarrier[row.carrier_id][item.supplier_id]) {
+                nextDetails[dateKey].supplierDetailsByCarrier[row.carrier_id][item.supplier_id] = {
+                  boxes: 0,
+                  pallets: 0,
+                  batchIds: [],
+                };
+              }
+
+              const supplierDetails = nextDetails[dateKey].supplierDetailsByCarrier[row.carrier_id][item.supplier_id];
+              const value = item.package_type.toLowerCase();
+
+              if ((value === 'box' || value === 'boxes')) {
+                supplierDetails.boxes += item.package_count;
+              }
+              if (value === 'pallet' || value === 'pallets') {
+                supplierDetails.pallets += item.package_count;
+              }
+
+              if (!supplierDetails.batchIds.includes(row.id)) {
+                supplierDetails.batchIds.push(row.id);
+              }
+            }
+
+            const value = item.package_type.toLowerCase();
+            if (value === 'box' || value === 'boxes') {
+              nextDetails[dateKey].boxCount += item.package_count;
+            }
+            if (value === 'pallet' || value === 'pallets') {
+              nextDetails[dateKey].palletCount += item.package_count;
+            }
+          });
+        });
+
+        setDetailsByDate(nextDetails);
+        setDates(Object.keys(nextDetails).map(d => new Date(`${d}T12:00:00`)));
+      }
+
+      setLoading(false);
+    })();
+  }, []);
+
+  return { dates, detailsByDate, loading };
 }
 
 export async function saveBatch(

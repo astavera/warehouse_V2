@@ -1,4 +1,7 @@
-interface CarrierBrand {
+import type { SimpleIcon } from 'simple-icons';
+import { siDhl, siFedex, siUps, siUsps } from 'simple-icons';
+
+export interface CarrierBrand {
   abbr: string;
   bg: string;
   fg: string;
@@ -21,10 +24,26 @@ const CARRIER_BRANDS: Record<string, CarrierBrand> = {
   'pitney bowes': { abbr: 'PB', bg: '#0072CE', fg: '#FFFFFF' },
 };
 
+const CARRIER_ICONS: Record<string, SimpleIcon> = {
+  fedex: siFedex,
+  'federal express': siFedex,
+  ups: siUps,
+  usps: siUsps,
+  dhl: siDhl,
+};
+
 export function getCarrierBrand(carrierName: string): CarrierBrand | null {
   const lower = carrierName.toLowerCase().trim();
   for (const [key, brand] of Object.entries(CARRIER_BRANDS)) {
     if (lower.includes(key)) return brand;
+  }
+  return null;
+}
+
+export function getCarrierLogo(carrierName: string): SimpleIcon | null {
+  const lower = carrierName.toLowerCase().trim();
+  for (const [key, icon] of Object.entries(CARRIER_ICONS)) {
+    if (lower.includes(key)) return icon;
   }
   return null;
 }

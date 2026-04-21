@@ -20,6 +20,7 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [successName, setSuccessName] = useState('');
   const [showSuccess, setShowSuccess] = useState(false);
+  const [now, setNow] = useState(() => new Date());
   const autoSubmitLock = useRef(false);
 
   const isSignup = mode === 'register';
@@ -76,6 +77,14 @@ export default function LoginPage() {
     void submit();
   }, [isAdminMode, isSignup, loading, passcode, showSuccess]);
 
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setNow(new Date());
+    }, 1000);
+
+    return () => window.clearInterval(timer);
+  }, []);
+
   const handleKeypad = (key: (typeof KEYS)[number]) => {
     if (loading) return;
     if (key === 'clear') {
@@ -89,32 +98,44 @@ export default function LoginPage() {
     setPasscode(prev => (prev.length < 4 ? `${prev}${key}` : prev));
   };
 
+  const formattedDate = now.toLocaleDateString('en-US', {
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+  });
+
+  const formattedTime = now.toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+
   return (
-    <div className="min-h-screen bg-[linear-gradient(180deg,#f8f8f6_0%,#eef0f2_100%)] px-4 py-8">
+    <div className="min-h-screen bg-[linear-gradient(180deg,#f7f7f4_0%,#eef1f4_100%)] px-4 py-5 sm:px-6 sm:py-6">
       <div className="mx-auto flex min-h-screen max-w-6xl items-center justify-center">
-        <div className="grid w-full items-center gap-12 lg:grid-cols-[1.08fr_0.92fr]">
+        <div className="grid w-full items-center gap-8 lg:grid-cols-[1.08fr_0.92fr] lg:gap-12">
           <div className="hidden lg:flex flex-col justify-center">
             <div className="max-w-xl">
-              <div className="mb-8 flex h-28 w-64 items-center justify-start">
+              <div className="mb-8 flex h-36 items-center px-1">
                 <img
-                  src="/modern-state-logo-transparent.png"
+                  src="/modern-state-logo-v2.png"
                   alt="Modern State"
-                  className="max-h-24 w-auto object-contain mix-blend-multiply"
+                  className="h-[10rem] w-full max-w-[37rem] object-contain mix-blend-multiply"
                 />
               </div>
-              <p className="text-sm font-medium uppercase tracking-[0.28em] text-muted-foreground">Modern State Warehouse</p>
-              <h1 className="mt-4 text-6xl font-semibold tracking-tight text-foreground">
-                Receiving
-                <span className="block text-muted-foreground">Control.</span>
+              <div className="inline-flex items-center gap-2 rounded-full border border-white/80 bg-white/55 px-3 py-1.5 text-[11px] font-medium uppercase tracking-[0.24em] text-muted-foreground shadow-[0_10px_25px_rgba(15,23,42,0.04)] backdrop-blur-sm">
+                Modern State Warehouse
+              </div>
+              <h1 className="mt-5 text-5xl font-semibold tracking-[-0.05em] text-foreground xl:text-6xl">
+                Welcome back.
               </h1>
-              <p className="mt-6 max-w-lg text-lg leading-8 text-muted-foreground">
-                Every box, pallet, and delivery that reaches the Modern State warehouse must be recorded here before processing. For operational questions or receiving issues, contact Sebastian.
+              <p className="mt-5 max-w-lg text-base leading-7 text-muted-foreground xl:text-lg xl:leading-8">
+                Use this app to receive incoming boxes and pallets before processing. Questions about the app? Contact Sebastian.
               </p>
             </div>
           </div>
 
-          <Card className="relative mx-auto w-full max-w-md overflow-hidden rounded-[32px] border border-white/85 bg-white/94 shadow-[0_30px_90px_rgba(15,23,42,0.08)] backdrop-blur">
-            <CardContent className="relative p-7 sm:p-9">
+          <Card className="relative mx-auto w-full max-w-[30rem] overflow-hidden rounded-[32px] border border-white/90 bg-white/96 shadow-[0_30px_90px_rgba(15,23,42,0.08)] backdrop-blur">
+            <CardContent className="relative p-6 sm:p-7">
               <div
                 className={cn(
                   'absolute inset-0 z-20 flex flex-col items-center justify-center bg-[radial-gradient(circle_at_top,#ffffff_0%,rgba(255,255,255,0.96)_45%,rgba(248,248,246,0.98)_100%)] px-8 text-center transition-all duration-500',
@@ -127,16 +148,25 @@ export default function LoginPage() {
                 <p className="mt-3 text-sm text-muted-foreground">Preparing your workspace...</p>
               </div>
 
-              <div className="mb-8 text-center">
-                <div className="mx-auto mb-6 flex h-24 w-52 items-center justify-center">
+              <div className="mb-6 lg:hidden">
+                <div className="mx-auto flex h-24 w-full max-w-[19rem] items-center justify-center px-1">
                   <img
-                    src="/modern-state-logo-transparent.png"
+                    src="/modern-state-logo-v2.png"
                     alt="Modern State"
-                    className="max-h-20 w-auto object-contain mix-blend-multiply"
+                    className="h-[7rem] w-full object-contain mix-blend-multiply"
                   />
                 </div>
-                <h2 className="text-4xl font-semibold tracking-[-0.04em] text-foreground sm:text-5xl">Welcome</h2>
-                <p className="mt-3 text-sm text-muted-foreground">
+              </div>
+
+              <div className="mb-6 text-center">
+                <p className="text-[11px] font-medium uppercase tracking-[0.34em] text-muted-foreground">Modern State Warehouse</p>
+                <div className="mt-3">
+                  <p className="text-[0.8rem] uppercase tracking-[0.28em] text-muted-foreground">{formattedDate}</p>
+                  <h2 className="mt-2 text-[2.15rem] font-semibold tracking-[-0.06em] text-foreground sm:text-[2.75rem]">
+                    {formattedTime}
+                  </h2>
+                </div>
+                <p className="mt-3 text-sm leading-6 text-muted-foreground">
                   {isAdminMode
                     ? 'Admin verification required'
                     : isSignup
@@ -145,7 +175,7 @@ export default function LoginPage() {
                 </p>
               </div>
 
-              <form onSubmit={handleSubmit} className="space-y-6">
+              <form onSubmit={handleSubmit} className="space-y-5">
                 {isSignup && (
                   <div className="space-y-2">
                     <Label className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Name</Label>
@@ -167,38 +197,29 @@ export default function LoginPage() {
                     </Label>
                     {mode === 'login' && <span className="text-xs text-muted-foreground">Returning users</span>}
                   </div>
-                  <div className="grid grid-cols-4 gap-3">
+                  <div className="flex items-center justify-center gap-3 py-1">
                     {Array.from({ length: 4 }).map((_, index) => (
                       <div
                         key={index}
                         className={cn(
-                          'flex h-14 items-center justify-center rounded-2xl text-2xl font-semibold transition-all duration-300',
+                          'h-2.5 w-2.5 rounded-full transition-all duration-300',
                           passcode[index]
-                            ? 'scale-[1.02] bg-white text-foreground shadow-[0_10px_28px_rgba(15,23,42,0.08)] ring-1 ring-black/8'
-                            : 'bg-[#f7f7f8] text-muted-foreground ring-1 ring-black/5'
+                            ? 'scale-100 bg-foreground shadow-[0_3px_10px_rgba(15,23,42,0.18)]'
+                            : 'scale-90 bg-black/10'
                         )}
-                      >
-                        <span
-                          className={cn(
-                            'transition-all duration-300',
-                            passcode[index] ? 'scale-100 opacity-100' : 'scale-75 opacity-0'
-                          )}
-                        >
-                          •
-                        </span>
-                      </div>
+                      />
                     ))}
                   </div>
                 </div>
 
-                <div className="grid grid-cols-3 gap-3">
+                <div className="grid grid-cols-3 gap-2.5">
                   {KEYS.map(key => (
                     <Button
                       key={key}
                       type="button"
                       variant="ghost"
                       className={cn(
-                        'h-16 rounded-[22px] text-xl font-medium shadow-none transition-all duration-200 active:scale-[0.98]',
+                        'h-14 rounded-[20px] text-lg font-medium shadow-none transition-all duration-200 active:scale-[0.98]',
                         key === 'clear'
                           ? 'border-transparent bg-transparent text-muted-foreground hover:bg-muted/60'
                           : 'bg-white/94 ring-1 ring-black/6 hover:bg-[#f7f7f8] hover:ring-black/10'
@@ -214,17 +235,17 @@ export default function LoginPage() {
                   <Button
                     type="submit"
                     disabled={loading || (isSignup && !name.trim()) || passcode.length !== 4}
-                    className="h-14 w-full rounded-2xl bg-foreground text-base font-semibold text-background shadow-[0_18px_40px_rgba(15,23,42,0.16)] transition-transform duration-200 active:scale-[0.99] hover:bg-foreground/92"
+                    className="h-12 w-full rounded-2xl bg-foreground text-base font-semibold text-background shadow-[0_18px_40px_rgba(15,23,42,0.16)] transition-transform duration-200 active:scale-[0.99] hover:bg-foreground/92"
                   >
                     {loading ? 'Please wait...' : isAdminMode ? 'Verify admin' : 'Register employee'}
                   </Button>
                 ) : (
-                  <div className="h-14" aria-hidden="true" />
+                  <div className="h-12" aria-hidden="true" />
                 )}
               </form>
 
               <button
-                className="mt-6 w-full text-center text-sm text-muted-foreground transition-colors hover:text-foreground"
+                className="mt-4 w-full text-center text-sm text-muted-foreground transition-colors hover:text-foreground"
                 onClick={() => {
                   setMode(mode === 'register' ? 'login' : 'admin');
                   setPasscode('');

@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -12,6 +13,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Download, ChevronDown, ChevronRight, Trash2, Pencil } from 'lucide-react';
 import { useCarriers, useSuppliers, useEmployees, type BatchWithItems } from '@/hooks/useSupabaseData';
 import { supabase } from '@/integrations/supabase/client';
+import CarrierBadge from '@/components/CarrierBadge';
 import { toast } from 'sonner';
 
 function escapeCsv(val: string) {
@@ -47,6 +49,7 @@ interface EditItemState {
 }
 
 export default function HistoryPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const { carriers } = useCarriers();
   const { suppliers } = useSuppliers();
   const { employees } = useEmployees();
@@ -76,11 +79,35 @@ export default function HistoryPage() {
 
   useEffect(() => { fetchBatches(); }, [fetchBatches]);
 
-  const [search, setSearch] = useState('');
-  const [filterCarrier, setFilterCarrier] = useState('all');
-  const [filterDate, setFilterDate] = useState('');
-  const [damagedOnly, setDamagedOnly] = useState(false);
-  const [filterPackageType, setFilterPackageType] = useState('all');
+  const [search, setSearch] = useState(searchParams.get('search') || '');
+  const [filterCarrier, setFilterCarrier] = useState(searchParams.get('carrier') || 'all');
+  const [filterSupplier, setFilterSupplier] = useState(searchParams.get('supplier') || 'all');
+  const [filterDate, setFilterDate] = useState(searchParams.get('date') || '');
+  const [damagedOnly, setDamagedOnly] = useState(searchParams.get('damaged') === 'true');
+  const [filterPackageType, setFilterPackageType] = useState(searchParams.get('packageType') || 'all');
+  const openParam = searchParams.get('open') || '';
+
+  useEffect(() => {
+    const next = new URLSearchParams();
+    if (search) next.set('search', search);
+    if (filterCarrier !== 'all') next.set('carrier', filterCarrier);
+    if (filterSupplier !== 'all') next.set('supplier', filterSupplier);
+    if (filterDate) next.set('date', filterDate);
+    if (damagedOnly) next.set('damaged', 'true');
+    if (filterPackageType !== 'all') next.set('packageType', filterPackageType);
+    if (openParam) next.set('open', openParam);
+    setSearchParams(next, { replace: true });
+  }, [search, filterCarrier, filterSupplier, filterDate, damagedOnly, filterPackageType, openParam, setSearchParams]);
+
+  useEffect(() => {
+    if (!openParam) return;
+    const ids = openParam
+      .split(',')
+      .map(value => value.trim())
+      .filter(Boolean);
+    if (ids.length === 0) return;
+    setOpenBatches(new Set(ids));
+  }, [openParam]);
 
   const toggleBatch = (id: string) => {
     setOpenBatches(prev => {
@@ -94,6 +121,7 @@ export default function HistoryPage() {
   const filtered = useMemo(() => {
     return allBatches.filter(b => {
       if (filterCarrier !== 'all' && b.carrier_id !== filterCarrier) return false;
+      if (filterSupplier !== 'all' && !b.receipt_items.some(i => i.supplier_id === filterSupplier)) return false;
       if (filterDate && !b.received_at.startsWith(filterDate)) return false;
       if (damagedOnly && !b.receipt_items.some(i => i.damaged_box)) return false;
       if (filterPackageType !== 'all' && !b.receipt_items.some(i => i.package_type.toLowerCase() === filterPackageType)) return false;
@@ -106,7 +134,7 @@ export default function HistoryPage() {
       }
       return true;
     });
-  }, [allBatches, filterCarrier, filterDate, damagedOnly, filterPackageType, search, carriers, suppliers]);
+  }, [allBatches, filterCarrier, filterSupplier, filterDate, damagedOnly, filterPackageType, search, carriers, suppliers]);
 
   // Delete batch
   const deleteBatch = async (batchId: string) => {
@@ -246,7 +274,23 @@ export default function HistoryPage() {
               <SelectTrigger className="touch-target"><SelectValue placeholder="All carriers" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Carriers</SelectItem>
-                {carriers.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                {carriers.map(c => (
+                  <SelectItem key={c.id} value={c.id}>
+                    <div className="flex items-center gap-2">
+                      <CarrierBadge name={c.name} size="sm" />
+                      <span>{c.name}</span>
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={filterSupplier} onValueChange={setFilterSupplier}>
+              <SelectTrigger className="touch-target"><SelectValue placeholder="All suppliers" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Suppliers</SelectItem>
+                {suppliers.map(s => (
+                  <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                ))}
               </SelectContent>
             </Select>
             <Select value={filterPackageType} onValueChange={setFilterPackageType}>
@@ -258,7 +302,7 @@ export default function HistoryPage() {
               </SelectContent>
             </Select>
             <Input type="date" value={filterDate} onChange={e => setFilterDate(e.target.value)} className="touch-target" />
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 lg:justify-start">
               <Switch checked={damagedOnly} onCheckedChange={setDamagedOnly} />
               <Label className="text-sm">Damaged only</Label>
             </div>
@@ -285,8 +329,9 @@ export default function HistoryPage() {
                     <div className="flex items-center gap-2">
                       {isOpen ? <ChevronDown className="w-4 h-4 text-muted-foreground shrink-0" /> : <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />}
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <CardTitle className="text-base">{carrier?.name || 'Unknown'} — {receivedDate}</CardTitle>
+                        <div className="flex min-w-0 items-center gap-2">
+                          <CarrierBadge name={carrier?.name || '?'} size="sm" />
+                          <CardTitle className="truncate text-base">{carrier?.name || 'Unknown'} — {receivedDate}</CardTitle>
                           {hasDamaged && <span className="text-destructive text-xs font-medium">⚠ Damaged</span>}
                         </div>
                         <span className="text-xs text-muted-foreground">
@@ -409,7 +454,14 @@ export default function HistoryPage() {
               <Select value={editCarrierId} onValueChange={setEditCarrierId}>
                 <SelectTrigger><SelectValue placeholder="Select carrier" /></SelectTrigger>
                 <SelectContent>
-                  {carriers.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                  {carriers.map(c => (
+                    <SelectItem key={c.id} value={c.id}>
+                      <div className="flex items-center gap-2">
+                        <CarrierBadge name={c.name} size="sm" />
+                        <span>{c.name}</span>
+                      </div>
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>

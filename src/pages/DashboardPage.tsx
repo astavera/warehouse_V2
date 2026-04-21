@@ -1,56 +1,52 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { AlertTriangle, ChevronRight, ClipboardList, Package, Sparkles, Truck } from 'lucide-react';
+import {
+  AlertTriangle,
+  ArrowRight,
+  CalendarDays,
+  ClipboardList,
+  Package,
+  Sparkles,
+  Truck,
+} from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Calendar } from '@/components/ui/calendar';
-import { useTodayBatches, useCarriers, useEmployees, useSuppliers, useReceiptDates } from '@/hooks/useSupabaseData';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { useTodayBatches, useCarriers, useEmployees, useSuppliers, useReceiptCalendarDetails } from '@/hooks/useSupabaseData';
 import { useAuth } from '@/hooks/useAuth';
-import { getCarrierBrand, getCarrierInitials } from '@/lib/carrierLogos';
+import CarrierBadge from '@/components/CarrierBadge';
 import { cn } from '@/lib/utils';
 
-function CarrierBadge({ name, size = 'md' }: { name: string; size?: 'sm' | 'md' }) {
-  const brand = getCarrierBrand(name);
-  const cls = size === 'sm' ? 'h-7 w-7 text-[9px]' : 'h-9 w-9 text-[11px]';
-  if (brand) {
-    return (
-      <div
-        className={`${cls} flex shrink-0 items-center justify-center rounded-lg font-bold`}
-        style={{ backgroundColor: brand.bg, color: brand.fg }}
-      >
-        {brand.abbr}
-      </div>
-    );
-  }
-
-  return (
-    <div className={`${cls} flex shrink-0 items-center justify-center rounded-lg bg-muted font-bold text-muted-foreground`}>
-      {getCarrierInitials(name)}
-    </div>
-  );
-}
-
-function StatCard({
+function MetricCard({
   icon: Icon,
   label,
   value,
-  accent = false,
+  hint,
+  tone = 'default',
 }: {
   icon: any;
   label: string;
   value: number;
-  accent?: boolean;
+  hint: string;
+  tone?: 'default' | 'danger';
 }) {
   return (
-    <Card className="relative overflow-hidden border-border/70">
-      <CardContent className="p-4">
-        <div className="flex items-center justify-between">
+    <Card className="overflow-hidden rounded-[24px] border-border/70 bg-white/90 shadow-[0_18px_50px_rgba(15,23,42,0.05)]">
+      <CardContent className="p-5">
+        <div className="flex items-start justify-between gap-4">
           <div>
-            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
-            <p className="mt-1 text-3xl font-bold">{value}</p>
+            <p className="text-[11px] font-medium uppercase tracking-[0.24em] text-muted-foreground">{label}</p>
+            <p className="mt-3 text-3xl font-semibold tracking-[-0.04em] text-foreground">{value}</p>
+            <p className="mt-1 text-sm text-muted-foreground">{hint}</p>
           </div>
-          <div className={cn('rounded-xl p-3', accent ? 'bg-destructive/10' : 'bg-primary/10')}>
-            <Icon className={cn('h-5 w-5', accent ? 'text-destructive' : 'text-primary')} />
+          <div
+            className={cn(
+              'rounded-2xl p-3',
+              tone === 'danger' ? 'bg-destructive/10 text-destructive' : 'bg-primary/10 text-primary'
+            )}
+          >
+            <Icon className="h-5 w-5" />
           </div>
         </div>
       </CardContent>
@@ -59,13 +55,14 @@ function StatCard({
 }
 
 export default function DashboardPage() {
-  const [heroCollapsed, setHeroCollapsed] = useState(false);
   const { user } = useAuth();
   const { batches, loading } = useTodayBatches();
   const { carriers } = useCarriers();
   const { employees } = useEmployees();
   const { suppliers } = useSuppliers();
-  const { dates: receiptDates } = useReceiptDates();
+  const { dates: receiptDates, detailsByDate } = useReceiptCalendarDetails();
+  const [selectedCalendarDate, setSelectedCalendarDate] = useState<Date | undefined>();
+  const [calendarCarrierModal, setCalendarCarrierModal] = useState<{ id: string; name: string } | null>(null);
 
   const totalItems = batches.reduce((sum, batch) => sum + batch.receipt_items.length, 0);
   const totalPackages = batches.reduce(
@@ -114,176 +111,264 @@ export default function DashboardPage() {
 
   const today = new Date().toLocaleDateString('en-US', {
     weekday: 'long',
-    year: 'numeric',
     month: 'long',
     day: 'numeric',
+    year: 'numeric',
   });
 
-  useEffect(() => {
-    const timer = window.setTimeout(() => setHeroCollapsed(true), 2600);
-    return () => window.clearTimeout(timer);
-  }, []);
+  const currentTime = new Date().toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+
+  const selectedDateKey = selectedCalendarDate
+    ? `${selectedCalendarDate.getFullYear()}-${String(selectedCalendarDate.getMonth() + 1).padStart(2, '0')}-${String(
+        selectedCalendarDate.getDate()
+      ).padStart(2, '0')}`
+    : undefined;
+
+  const selectedCalendarDetails = selectedDateKey ? detailsByDate[selectedDateKey] : undefined;
+  const selectedCalendarCarrierData =
+    selectedCalendarDetails?.carrierIds
+      .map(id => ({
+        id,
+        name: carriers.find(carrier => carrier.id === id)?.name || 'Unknown carrier',
+        count: selectedCalendarDetails.carrierCounts[id] || 0,
+      }))
+      .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name)) || [];
+  const selectedCarrierSupplierDetails =
+    calendarCarrierModal && selectedCalendarDetails
+      ? Object.entries(selectedCalendarDetails.supplierDetailsByCarrier[calendarCarrierModal.id] || {})
+          .map(([supplierId, detail]) => ({
+            supplierId,
+            name: suppliers.find(supplier => supplier.id === supplierId)?.name || 'Unknown supplier',
+            boxes: detail.boxes,
+            pallets: detail.pallets,
+            batchIds: detail.batchIds,
+          }))
+          .sort((a, b) => a.name.localeCompare(b.name))
+      : [];
+  const selectedVisualTotal = (selectedCalendarDetails?.boxCount || 0) + (selectedCalendarDetails?.palletCount || 0);
+  const selectedBoxPercent = selectedVisualTotal ? Math.round(((selectedCalendarDetails?.boxCount || 0) / selectedVisualTotal) * 100) : 0;
+  const selectedPalletPercent = selectedVisualTotal ? 100 - selectedBoxPercent : 0;
 
   if (loading) {
     return <div className="flex items-center justify-center py-20 text-muted-foreground">Loading...</div>;
   }
 
   return (
-    <div className="space-y-5">
-      <section
-        className={cn(
-          'relative overflow-hidden rounded-[28px] border border-border/70 bg-[linear-gradient(140deg,hsl(var(--card)),hsl(var(--muted)/0.75)),radial-gradient(circle_at_top,hsl(var(--primary)/0.18),transparent_35%)] px-6 shadow-sm transition-all duration-700 ease-out sm:px-10',
-          heroCollapsed ? 'py-6' : 'py-12'
-        )}
-      >
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_bottom_right,hsl(var(--primary)/0.12),transparent_28%)]" />
-        <div className={cn('relative mx-auto flex max-w-3xl flex-col items-center text-center transition-all duration-700 ease-out', heroCollapsed ? 'gap-3' : 'gap-0')}>
-          <div
-            className={cn(
-              'inline-flex items-center gap-2 rounded-full border border-primary/15 bg-primary/10 px-4 py-1.5 text-sm font-medium text-primary transition-all duration-700 ease-out',
-              heroCollapsed ? 'mb-1 scale-95 opacity-80' : 'mb-4'
-            )}
-          >
-            <Sparkles className="h-4 w-4" />
-            Warehouse kiosk ready
+    <div className="space-y-6">
+      <section className="rounded-[32px] border border-white/80 bg-[linear-gradient(180deg,#ffffff_0%,#f7f8fa_100%)] p-6 shadow-[0_24px_70px_rgba(15,23,42,0.05)] sm:p-8">
+        <div className="flex flex-col gap-8 lg:flex-row lg:items-end lg:justify-between">
+          <div className="max-w-2xl">
+            <div className="inline-flex items-center gap-2 rounded-full border border-primary/10 bg-primary/5 px-3 py-1 text-[11px] font-medium uppercase tracking-[0.22em] text-primary">
+              <Sparkles className="h-3.5 w-3.5" />
+              Receiving dashboard
+            </div>
+            <p className="mt-4 text-sm uppercase tracking-[0.24em] text-muted-foreground">{today}</p>
+            <h1 className="mt-3 text-4xl font-semibold tracking-[-0.05em] text-foreground sm:text-5xl">
+              Welcome, <span className="text-primary">{user?.name}</span>
+            </h1>
+            <p className="mt-4 max-w-xl text-base leading-7 text-muted-foreground">
+              Review today&apos;s receipts and start a new intake when needed.
+            </p>
           </div>
-          <p
-            className={cn(
-              'text-sm uppercase tracking-[0.26em] text-muted-foreground transition-all duration-700 ease-out',
-              heroCollapsed ? 'opacity-0 h-0 overflow-hidden' : 'opacity-100'
-            )}
-          >
-            Today {today}
-          </p>
-          <h1
-            className={cn(
-              'font-semibold tracking-tight transition-all duration-700 ease-out',
-              heroCollapsed ? 'mt-0 text-2xl sm:text-3xl' : 'mt-4 text-4xl sm:text-5xl'
-            )}
-          >
-            Welcome
-            <span className="block text-primary">{user?.name}</span>
-          </h1>
-          <p
-            className={cn(
-              'max-w-2xl text-muted-foreground transition-all duration-700 ease-out',
-              heroCollapsed ? 'mt-0 text-sm opacity-0 h-0 overflow-hidden' : 'mt-4 text-base sm:text-lg opacity-100'
-            )}
-          >
-            Everything received in this session will be registered under your name. Start a new receipt when the shipment is ready in front of you.
-          </p>
-          <div className={cn('flex flex-col gap-3 transition-all duration-700 ease-out sm:flex-row', heroCollapsed ? 'mt-3' : 'mt-8')}>
-            <Link to="/receive">
-              <Button size="lg" className="touch-target gap-2 px-8">
-                <Package className="h-5 w-5" /> Start New Receipt
-              </Button>
-            </Link>
-            <Link to="/history">
-              <Button size="lg" variant="outline" className="touch-target px-8">
-                View History
-              </Button>
-            </Link>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Card className="rounded-[24px] border-border/70 bg-[#fafafa] shadow-none">
+              <CardContent className="p-5">
+                <p className="text-[11px] uppercase tracking-[0.22em] text-muted-foreground">Current time</p>
+                <p className="mt-2 text-3xl font-semibold tracking-[-0.05em] text-foreground">{currentTime}</p>
+              </CardContent>
+            </Card>
+            <div className="flex flex-col gap-3">
+              <Link to="/receive">
+                <Button className="h-12 w-full justify-between rounded-2xl px-5 text-base">
+                  Start New Receipt
+                  <ArrowRight className="h-4 w-4" />
+                </Button>
+              </Link>
+              <Link to="/history">
+                <Button variant="outline" className="h-12 w-full justify-between rounded-2xl px-5 text-base">
+                  View History
+                  <ArrowRight className="h-4 w-4" />
+                </Button>
+              </Link>
+            </div>
           </div>
         </div>
       </section>
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatCard icon={ClipboardList} label="Batches" value={batches.length} />
-        <StatCard icon={Package} label="Packages" value={totalPackages} />
-        <StatCard icon={Truck} label="Supplier Lines" value={totalItems} />
-        <StatCard icon={AlertTriangle} label="Damaged" value={damagedCount} accent />
+      <div className="grid grid-cols-2 gap-3 2xl:grid-cols-4">
+        <MetricCard icon={ClipboardList} label="Batches" value={batches.length} hint="Receipts opened today" />
+        <MetricCard icon={Package} label="Packages" value={totalPackages} hint="Total boxes and pallets" />
+        <MetricCard icon={Truck} label="Supplier Lines" value={totalItems} hint="Lines captured across receipts" />
+        <MetricCard icon={AlertTriangle} label="Damaged" value={damagedCount} hint="Items flagged with damage" tone="danger" />
       </div>
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <div className="lg:col-span-2">
-          <Card className="h-full border-border/70">
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-base font-semibold">Today&apos;s Receipts</CardTitle>
-                <Link to="/history" className="text-xs font-medium text-primary hover:underline">
-                  View all →
+      <div className="grid grid-cols-1 gap-5 2xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.55fr)_minmax(320px,0.55fr)]">
+        <Card className="self-start rounded-[28px] border-border/70 bg-white/92 shadow-[0_18px_50px_rgba(15,23,42,0.04)] 2xl:row-span-2">
+          <CardHeader className="pb-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <CardTitle className="text-xl font-semibold tracking-[-0.03em]">Today&apos;s Receipts</CardTitle>
+                <p className="mt-1 text-sm text-muted-foreground">Live summary of everything received during today&apos;s shift.</p>
+              </div>
+              <Link to="/history" className="text-sm font-medium text-primary hover:underline">
+                View full history
+              </Link>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {batches.length === 0 ? (
+              <div className="rounded-[24px] border border-dashed border-border/80 bg-[#fafafa] px-6 py-14 text-center">
+                <Package className="mx-auto mb-4 h-10 w-10 text-muted-foreground/30" />
+                <p className="text-base font-medium text-foreground">No receipts recorded today</p>
+                <p className="mt-1 text-sm text-muted-foreground">Start a new receipt when the next shipment arrives.</p>
+                <Link to="/receive">
+                  <Button variant="outline" size="sm" className="mt-4 rounded-xl">
+                    Start receiving
+                  </Button>
                 </Link>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {batches.slice(0, 8).map(batch => {
+                  const carrier = carriers.find(item => item.id === batch.carrier_id);
+                  const receivedTime = new Date(batch.received_at).toLocaleTimeString('en-US', {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  });
+                  const receivedBy =
+                    employees.find(item => item.id === batch.received_by_employee_id)?.name ||
+                    batch.received_by_text ||
+                    'Unknown';
+                  const supplierSummaries = Object.values(
+                    batch.receipt_items.reduce<
+                      Record<
+                        string,
+                        {
+                          name: string;
+                          boxes: number;
+                          pallets: number;
+                        }
+                      >
+                    >((acc, item) => {
+                      const supplierId = item.supplier_id || `unknown-${item.id}`;
+                      const supplierName = suppliers.find(supplier => supplier.id === item.supplier_id)?.name || 'Unknown';
+                      const packageType = item.package_type.toLowerCase();
+
+                      if (!acc[supplierId]) {
+                        acc[supplierId] = {
+                          name: supplierName,
+                          boxes: 0,
+                          pallets: 0,
+                        };
+                      }
+
+                      if (packageType === 'box' || packageType === 'boxes') {
+                        acc[supplierId].boxes += item.package_count;
+                      }
+
+                      if (packageType === 'pallet' || packageType === 'pallets') {
+                        acc[supplierId].pallets += item.package_count;
+                      }
+
+                      return acc;
+                    }, {})
+                  ).sort((a, b) => a.name.localeCompare(b.name));
+                  const batchBoxes = batch.receipt_items.reduce((sum, item) => {
+                    const packageType = item.package_type.toLowerCase();
+                    return packageType === 'box' || packageType === 'boxes' ? sum + item.package_count : sum;
+                  }, 0);
+                  const batchPallets = batch.receipt_items.reduce((sum, item) => {
+                    const packageType = item.package_type.toLowerCase();
+                    return packageType === 'pallet' || packageType === 'pallets' ? sum + item.package_count : sum;
+                  }, 0);
+                  const hasDamaged = batch.receipt_items.some(item => item.damaged_box);
+
+                  return (
+                    <div
+                      key={batch.id}
+                      className="flex items-start gap-3 rounded-[22px] border border-border/70 bg-[#fcfcfd] p-4 transition-colors hover:bg-muted/30"
+                    >
+                      <CarrierBadge name={carrier?.name || '?'} />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="truncate text-sm font-semibold text-foreground">{carrier?.name || 'Unknown carrier'}</span>
+                          {hasDamaged && (
+                            <span className="rounded-full bg-destructive/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.14em] text-destructive">
+                              Damage
+                            </span>
+                          )}
+                        </div>
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                          {supplierSummaries.map(supplier => (
+                            <span
+                              key={`${batch.id}-${supplier.name}`}
+                              className="rounded-full border border-border/70 bg-white px-2 py-1 text-[11px] text-muted-foreground"
+                            >
+                              {supplier.name}
+                              {supplier.boxes > 0 ? ` • ${supplier.boxes} box${supplier.boxes === 1 ? '' : 'es'}` : ''}
+                              {supplier.pallets > 0 ? ` • ${supplier.pallets} pallet${supplier.pallets === 1 ? '' : 's'}` : ''}
+                            </span>
+                          ))}
+                        </div>
+                        <p className="mt-2 text-xs text-muted-foreground">Received by {receivedBy}</p>
+                      </div>
+                      <div className="shrink-0 text-right">
+                        <p className="text-sm font-semibold text-foreground">
+                          {batchBoxes} box{batchBoxes === 1 ? '' : 'es'}
+                        </p>
+                        <p className="mt-1 text-sm font-semibold text-foreground">
+                          {batchPallets} pallet{batchPallets === 1 ? '' : 's'}
+                        </p>
+                        <p className="mt-1 text-xs text-muted-foreground">{receivedTime}</p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <div className="grid content-start gap-5 self-start">
+          <div className="self-start rounded-[20px] border border-border/70 bg-white/72 px-4 py-3 shadow-[0_10px_24px_rgba(15,23,42,0.03)]">
+            <div className="mb-2">
+              <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-muted-foreground">Operational Split</p>
+            </div>
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <div className="flex min-w-0 flex-1 items-center justify-between rounded-[14px] bg-[#fafafa] px-3.5 py-2.5">
+                <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">Boxes</p>
+                <p className="text-[1.6rem] font-semibold leading-none tracking-[-0.04em] text-foreground">{boxCount}</p>
+              </div>
+              <div className="flex min-w-0 flex-1 items-center justify-between rounded-[14px] bg-[#fafafa] px-3.5 py-2.5">
+                <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">Pallets</p>
+                <p className="text-[1.6rem] font-semibold leading-none tracking-[-0.04em] text-foreground">{palletCount}</p>
+              </div>
+            </div>
+          </div>
+
+          <Card className="self-start rounded-[24px] border-border/70 bg-white/88 shadow-[0_14px_34px_rgba(15,23,42,0.035)]">
+            <CardHeader className="pb-2">
+              <div className="flex items-center gap-2">
+                <Truck className="h-4 w-4 text-primary" />
+                <CardTitle className="text-base font-semibold">By Carrier</CardTitle>
               </div>
             </CardHeader>
             <CardContent>
-              {batches.length === 0 ? (
-                <div className="py-14 text-center">
-                  <Package className="mx-auto mb-3 h-10 w-10 text-muted-foreground/30" />
-                  <p className="text-sm text-muted-foreground">No receipts recorded today</p>
-                  <Link to="/receive">
-                    <Button variant="outline" size="sm" className="mt-3 gap-1.5">
-                      <Package className="h-4 w-4" /> Start receiving
-                    </Button>
-                  </Link>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {batches.slice(0, 8).map(batch => {
-                    const carrier = carriers.find(item => item.id === batch.carrier_id);
-                    const receivedTime = new Date(batch.received_at).toLocaleTimeString('en-US', {
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    });
-                    const receivedBy =
-                      employees.find(item => item.id === batch.received_by_employee_id)?.name ||
-                      batch.received_by_text ||
-                      'Unknown';
-                    const supplierNames = batch.receipt_items
-                      .map(item => suppliers.find(supplier => supplier.id === item.supplier_id)?.name || 'Unknown')
-                      .filter((value, index, array) => array.indexOf(value) === index);
-                    const totalPkg = batch.receipt_items.reduce((sum, item) => sum + item.package_count, 0);
-                    const hasDamaged = batch.receipt_items.some(item => item.damaged_box);
-
-                    return (
-                      <div key={batch.id} className="flex items-center gap-3 rounded-lg border p-3 transition-colors hover:bg-muted/40">
-                        <CarrierBadge name={carrier?.name || '?'} />
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2">
-                            <span className="truncate text-sm font-semibold">{carrier?.name || 'Unknown'}</span>
-                            {hasDamaged && (
-                              <span className="shrink-0 rounded-full bg-destructive/10 px-1.5 py-0.5 text-[10px] font-medium text-destructive">
-                                DMG
-                              </span>
-                            )}
-                          </div>
-                          <div className="mt-0.5 flex flex-wrap gap-1">
-                            {supplierNames.map(name => (
-                              <span key={name} className="rounded bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">
-                                {name}
-                              </span>
-                            ))}
-                          </div>
-                          <p className="mt-1 text-[11px] text-muted-foreground">Received by {receivedBy}</p>
-                        </div>
-                        <div className="shrink-0 space-y-0.5 text-right">
-                          <p className="text-xs font-medium">{totalPkg} pkg</p>
-                          <p className="text-[11px] text-muted-foreground">{receivedTime}</p>
-                        </div>
-                        <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground/40" />
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-
-        <div className="space-y-4">
-          <Card className="border-border/70">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-semibold">By Carrier</CardTitle>
-            </CardHeader>
-            <CardContent className="pb-4">
               {carrierBreakdown.length === 0 ? (
-                <p className="py-3 text-xs text-muted-foreground">No data yet</p>
+                <p className="py-3 text-sm text-muted-foreground">No carrier activity yet today.</p>
               ) : (
                 <div className="space-y-2">
                   {carrierBreakdown.map(carrier => (
-                    <div key={carrier.name} className="flex items-center gap-2">
+                    <div key={carrier.name} className="flex items-center gap-3 rounded-[16px] bg-[#fafafa] px-3 py-2.5">
                       <CarrierBadge name={carrier.name} size="sm" />
-                      <span className="flex-1 truncate text-sm font-medium">{carrier.name}</span>
-                      <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium">{carrier.count}</span>
+                      <span className="flex-1 truncate text-sm font-medium text-foreground">{carrier.name}</span>
+                      <span className="rounded-full border border-border/70 bg-white px-2.5 py-1 text-xs font-medium">
+                        {carrier.count}
+                      </span>
                     </div>
                   ))}
                 </div>
@@ -291,42 +376,206 @@ export default function DashboardPage() {
             </CardContent>
           </Card>
 
-          <Card className="border-border/70">
+          <Card className="self-start rounded-[24px] border-border/70 bg-white/88 shadow-[0_14px_34px_rgba(15,23,42,0.035)]">
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-semibold">Package Types</CardTitle>
+              <CardTitle className="text-base font-semibold">Quick Summary</CardTitle>
             </CardHeader>
-            <CardContent className="pb-4">
-              <div className="grid grid-cols-2 gap-3">
-                <div className="rounded-lg bg-muted/50 p-3 text-center">
-                  <p className="text-2xl font-bold">{boxCount}</p>
-                  <p className="mt-0.5 text-[11px] text-muted-foreground">Boxes</p>
-                </div>
-                <div className="rounded-lg bg-muted/50 p-3 text-center">
-                  <p className="text-2xl font-bold">{palletCount}</p>
-                  <p className="mt-0.5 text-[11px] text-muted-foreground">Pallets</p>
-                </div>
+            <CardContent className="space-y-2.5">
+              <div className="rounded-[16px] bg-[#fafafa] p-3.5">
+                <p className="text-[11px] uppercase tracking-[0.2em] text-muted-foreground">Today</p>
+                <p className="mt-2 text-sm leading-6 text-foreground">
+                  {batches.length === 0
+                    ? 'No receipts have been started yet.'
+                    : `${batches.length} receipts are active today across ${carrierBreakdown.length || 0} carriers.`}
+                </p>
+              </div>
+              <div className="rounded-[16px] bg-[#fafafa] p-3.5">
+                <p className="text-[11px] uppercase tracking-[0.2em] text-muted-foreground">Focus</p>
+                <p className="mt-2 text-sm leading-6 text-foreground">
+                  {damagedCount > 0
+                    ? `There are ${damagedCount} damaged items flagged for review.`
+                    : 'No damaged items have been flagged today.'}
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        <div className="grid content-start gap-5 self-start">
+          <Card
+            className={cn(
+              'self-start rounded-[24px] border-border/70 bg-white/88 shadow-[0_14px_34px_rgba(15,23,42,0.035)] transition-all duration-300',
+              selectedCalendarDate && 'rounded-[28px] bg-white/94 shadow-[0_20px_44px_rgba(15,23,42,0.05)]'
+            )}
+          >
+            <CardHeader className="pb-1">
+              <div className="flex items-center gap-2">
+                <CalendarDays className="h-4 w-4 text-primary" />
+                <CardTitle className="text-base font-semibold">Receipt Calendar</CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-3 pb-3">
+              <div className="flex justify-center">
+                <Calendar
+                  mode="single"
+                  selected={selectedCalendarDate}
+                  onSelect={setSelectedCalendarDate}
+                  className={cn(
+                    'pointer-events-auto p-0 transition-all duration-300 [&_.rdp-table]:w-full',
+                    selectedCalendarDate ? 'scale-100' : 'scale-[0.96]'
+                  )}
+                  modifiers={{
+                    hasReceipt: receiptDates,
+                  }}
+                  modifiersClassNames={{
+                    hasReceipt: 'bg-primary/10 text-foreground font-medium',
+                    selected: 'bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground',
+                  }}
+                />
+              </div>
+
+              <div className="rounded-[16px] bg-[#fafafa] p-3">
+                {!selectedCalendarDate ? (
+                  <p className="text-sm text-muted-foreground">Select a date to expand the calendar view and see what arrived that day.</p>
+                ) : !selectedCalendarDetails ? (
+                  <div className="space-y-1">
+                    <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">{selectedDateKey}</p>
+                    <p className="text-sm text-foreground">No receipts recorded for this date.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">{selectedDateKey}</p>
+                      <span className="rounded-full border border-border/70 bg-white px-2 py-0.5 text-xs font-medium">
+                        {selectedCalendarDetails.count} receipts
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-2">
+                      <div className="rounded-[14px] bg-white px-3 py-2.5">
+                        <p className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">Packages</p>
+                        <p className="mt-1 text-lg font-semibold tracking-[-0.04em] text-foreground">
+                          {selectedCalendarDetails.packageCount}
+                        </p>
+                      </div>
+                      <div className="rounded-[14px] bg-white px-3 py-2.5">
+                        <p className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">Boxes</p>
+                        <p className="mt-1 text-lg font-semibold tracking-[-0.04em] text-foreground">
+                          {selectedCalendarDetails.boxCount}
+                        </p>
+                      </div>
+                      <div className="rounded-[14px] bg-white px-3 py-2.5">
+                        <p className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">Pallets</p>
+                        <p className="mt-1 text-lg font-semibold tracking-[-0.04em] text-foreground">
+                          {selectedCalendarDetails.palletCount}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="rounded-[16px] bg-white p-3">
+                      <div className="flex items-center justify-between text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
+                        <span>Arrival mix</span>
+                        <span>{selectedVisualTotal} total</span>
+                      </div>
+                      <div className="mt-3 h-3 overflow-hidden rounded-full bg-muted">
+                        <div className="flex h-full w-full">
+                          <div className="bg-[#5ea8ff]" style={{ width: `${selectedBoxPercent}%` }} />
+                          <div className="bg-[#9ccf5a]" style={{ width: `${selectedPalletPercent}%` }} />
+                        </div>
+                      </div>
+                      <div className="mt-3 flex items-center gap-4 text-xs text-foreground">
+                        <div className="flex items-center gap-2">
+                          <span className="h-2.5 w-2.5 rounded-full bg-[#5ea8ff]" />
+                          <span>Boxes {selectedBoxPercent}%</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="h-2.5 w-2.5 rounded-full bg-[#9ccf5a]" />
+                          <span>Pallets {selectedPalletPercent}%</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {selectedCalendarCarrierData.length === 0 ? (
+                      <p className="text-sm text-foreground">No carrier linked to these receipts.</p>
+                    ) : (
+                      <div className="space-y-2">
+                        <p className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">Carriers on site</p>
+                        <div className="space-y-2">
+                          {selectedCalendarCarrierData.map(carrier => (
+                            <button
+                              key={carrier.id}
+                              type="button"
+                              onClick={() => setCalendarCarrierModal({ id: carrier.id, name: carrier.name })}
+                              className="flex w-full items-center gap-3 rounded-[14px] bg-white px-3 py-2.5 text-left transition-colors hover:bg-muted/50"
+                            >
+                              <CarrierBadge name={carrier.name} size="sm" />
+                              <span className="min-w-0 flex-1 truncate text-sm text-foreground">{carrier.name}</span>
+                              <span className="rounded-full border border-border/70 px-2 py-0.5 text-xs font-medium">
+                                {carrier.count}
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>
 
-          <Card className="border-border/70">
-            <CardHeader className="pb-1">
-              <CardTitle className="text-sm font-semibold">Receipt Calendar</CardTitle>
-            </CardHeader>
-            <CardContent className="flex justify-center pb-3">
-              <Calendar
-                mode="multiple"
-                selected={receiptDates}
-                className={cn('p-1 pointer-events-auto [&_.rdp-table]:w-full')}
-                modifiersClassNames={{
-                  selected: 'bg-primary text-primary-foreground',
-                }}
-                disabled={() => true}
-              />
-            </CardContent>
-          </Card>
         </div>
       </div>
+
+      <Dialog open={!!calendarCarrierModal} onOpenChange={open => !open && setCalendarCarrierModal(null)}>
+        <DialogContent className="max-w-md rounded-[24px] border-border/70 p-0">
+          <div className="rounded-[24px] bg-[linear-gradient(180deg,#ffffff_0%,#f8f9fb_100%)] p-6">
+            <DialogHeader>
+              <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">{selectedDateKey || 'Selected date'}</p>
+              <DialogTitle className="mt-2 text-2xl tracking-[-0.04em]">{calendarCarrierModal?.name}</DialogTitle>
+            </DialogHeader>
+
+            <div className="mt-5 space-y-3">
+              <div className="rounded-[16px] bg-white p-4">
+                <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">Suppliers delivered</p>
+                {selectedCarrierSupplierDetails.length === 0 ? (
+                  <p className="mt-2 text-sm text-foreground">No suppliers linked to this carrier on that date.</p>
+                ) : (
+                  <div className="mt-3 space-y-2.5">
+                    {selectedCarrierSupplierDetails.map(supplier => (
+                      <div key={supplier.supplierId} className="rounded-[14px] border border-border/70 bg-[#fafafa] p-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-medium text-foreground">{supplier.name}</p>
+                            <div className="mt-2 flex flex-wrap gap-2 text-xs text-muted-foreground">
+                              <span className="rounded-full bg-white px-2.5 py-1">Boxes {supplier.boxes}</span>
+                              <span className="rounded-full bg-white px-2.5 py-1">Pallets {supplier.pallets}</span>
+                            </div>
+                          </div>
+                          <Link
+                            to={`/history?carrier=${encodeURIComponent(calendarCarrierModal?.id || '')}&date=${encodeURIComponent(selectedDateKey || '')}&supplier=${encodeURIComponent(supplier.supplierId)}&open=${encodeURIComponent(supplier.batchIds.join(','))}`}
+                            className="shrink-0 rounded-full border border-border/70 bg-white px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted"
+                            onClick={() => setCalendarCarrierModal(null)}
+                          >
+                            View in History
+                          </Link>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="rounded-[16px] bg-white p-4">
+                <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">Next step</p>
+                <p className="mt-2 text-sm leading-6 text-foreground">
+                  Use the History link on any supplier row to jump straight into the matching receipt cards.
+                </p>
+              </div>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
