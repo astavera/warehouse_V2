@@ -19,6 +19,7 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [successName, setSuccessName] = useState('');
   const [showSuccess, setShowSuccess] = useState(false);
+  const [statusMessage, setStatusMessage] = useState('');
   const [now, setNow] = useState(() => new Date());
   const [verifiedAdminPasscode, setVerifiedAdminPasscode] = useState('');
   const autoSubmitLock = useRef(false);
@@ -32,11 +33,13 @@ export default function LoginPage() {
     if (passcode.length !== 4) return;
 
     setLoading(true);
+    setStatusMessage(isAdminMode ? 'Verifying admin...' : isSignup ? 'Creating employee...' : 'Checking passcode...');
     try {
       if (isAdminMode) {
         setVerifiedAdminPasscode(passcode);
         setMode('register');
         setPasscode('');
+        setStatusMessage('');
         setLoading(false);
         return;
       }
@@ -44,16 +47,18 @@ export default function LoginPage() {
       const employee = isSignup ? await beginSignUp(name, passcode, verifiedAdminPasscode) : await beginSignIn(passcode);
 
       setSuccessName(employee.name);
+      setStatusMessage('Opening workspace...');
       setShowSuccess(true);
 
       window.setTimeout(() => {
         completeSignIn(employee);
-      }, 850);
+      }, 250);
 
       toast.success(`Welcome, ${employee.name}`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Sign-in failed');
       setPasscode('');
+      setStatusMessage('');
     } finally {
       setLoading(false);
     }
@@ -144,7 +149,7 @@ export default function LoginPage() {
                 <div className="mb-4 h-px w-16 bg-foreground/20" />
                 <p className="text-sm uppercase tracking-[0.28em] text-muted-foreground">Welcome</p>
                 <h3 className="mt-4 text-4xl font-semibold tracking-[-0.04em] text-foreground">{successName}</h3>
-                <p className="mt-3 text-sm text-muted-foreground">Preparing your workspace...</p>
+                <p className="mt-3 text-sm text-muted-foreground">{statusMessage || 'Opening workspace...'}</p>
               </div>
 
               <div className="mb-6 lg:hidden">
@@ -209,6 +214,11 @@ export default function LoginPage() {
                       />
                     ))}
                   </div>
+                  {loading && !showSuccess && (
+                    <p className="text-center text-xs font-medium uppercase tracking-[0.22em] text-muted-foreground">
+                      {statusMessage}
+                    </p>
+                  )}
                 </div>
 
                 <div className="grid grid-cols-3 gap-2.5">
