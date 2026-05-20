@@ -38,6 +38,45 @@ function publicEmployee(employee: Employee) {
   return safeEmployee;
 }
 
+async function sha256(value: string) {
+  const bytes = new TextEncoder().encode(value);
+  const hash = await crypto.subtle.digest('SHA-256', bytes);
+  return Array.from(new Uint8Array(hash), byte => byte.toString(16).padStart(2, '0')).join('');
+}
+
+function clientIp(req: Request) {
+  const forwarded = req.headers.get('x-forwarded-for') || '';
+  return forwarded.split(',')[0]?.trim() || req.headers.get('cf-connecting-ip') || 'unknown';
+}
+
+async function isRateLimited(admin: ReturnType<typeof createClient>, ipAddress: string, passcodeHash: string) {
+  const windowStart = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+  const { count, error } = await admin
+    .from('kiosk_login_attempts')
+    .select('id', { count: 'exact', head: true })
+    .eq('ip_address', ipAddress)
+    .eq('passcode_hash', passcodeHash)
+    .eq('success', false)
+    .gte('created_at', windowStart);
+  if (error) throw error;
+  return (count || 0) >= 8;
+}
+
+async function recordLoginAttempt(
+  admin: ReturnType<typeof createClient>,
+  action: string,
+  ipAddress: string,
+  passcodeHash: string,
+  success: boolean
+) {
+  await admin.from('kiosk_login_attempts').insert({
+    action,
+    ip_address: ipAddress,
+    passcode_hash: passcodeHash,
+    success,
+  });
+}
+
 Deno.serve(async req => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
@@ -63,9 +102,14 @@ Deno.serve(async req => {
     const payload = await req.json().catch(() => ({}));
     const action = typeof payload.action === 'string' ? payload.action : '';
     const passcode = typeof payload.passcode === 'string' ? payload.passcode.trim() : '';
+    const ipAddress = clientIp(req);
+    const passcodeHash = await sha256(passcode || 'invalid');
 
     if (!/^[0-9]{4}$/.test(passcode)) {
       return jsonResponse({ error: 'Passcode must be 4 digits' }, 400);
+    }
+    if (await isRateLimited(admin, ipAddress, passcodeHash)) {
+      return jsonResponse({ error: 'Too many attempts. Try again in 10 minutes.' }, 429);
     }
 
     let employee: Employee | null = null;
@@ -78,7 +122,10 @@ Deno.serve(async req => {
         .eq('active', true)
         .maybeSingle();
       if (error) throw error;
-      if (!data) return jsonResponse({ error: 'Incorrect passcode' }, 401);
+      if (!data) {
+        await recordLoginAttempt(admin, action, ipAddress, passcodeHash, false);
+        return jsonResponse({ error: 'Incorrect passcode' }, 401);
+      }
       employee = data as Employee;
     } else if (action === 'sign-up') {
       if (!adminPasscode) return jsonResponse({ error: 'Admin passcode is not configured' }, 500);
@@ -86,6 +133,7 @@ Deno.serve(async req => {
       const name = typeof payload.name === 'string' ? payload.name.trim() : '';
 
       if (requestedAdminPasscode !== adminPasscode) {
+        await recordLoginAttempt(admin, action, ipAddress, passcodeHash, false);
         return jsonResponse({ error: 'Incorrect admin passcode' }, 401);
       }
       if (!name) return jsonResponse({ error: 'Employee name is required' }, 400);
@@ -152,6 +200,7 @@ Deno.serve(async req => {
       password,
     });
     if (signInError) throw signInError;
+    await recordLoginAttempt(admin, action, ipAddress, passcodeHash, true);
 
     return jsonResponse({
       employee: publicEmployee({ ...employee, auth_user_id: authUserId }),
