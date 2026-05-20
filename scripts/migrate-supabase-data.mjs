@@ -35,15 +35,9 @@ const TABLES = [
   'receipt_photos',
 ];
 
-const EMPLOYEE_PASSCODES = {
-  Alejandro: '1991',
-  Katherine: '9688',
-  Jose: '1976',
-  Sebastian: '0315',
-  Sharon: '0301',
-  Richard: '8468',
-  Rosie: '1243',
-};
+const EMPLOYEE_PASSCODES = process.env.EMPLOYEE_PASSCODES_JSON
+  ? JSON.parse(process.env.EMPLOYEE_PASSCODES_JSON)
+  : {};
 
 function buildFallbackPasscode(row, usedPasscodes) {
   let seed = 0;

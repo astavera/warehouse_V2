@@ -27,6 +27,7 @@ type ExpectedBoxesQuery = PromiseLike<{
 const expectedBoxesDb = supabase as unknown as {
   from: (table: string) => ExpectedBoxesQuery;
 };
+const EMPLOYEE_SELECT = 'id, name, active, created_at, updated_at, auth_user_id';
 
 export function useSuppliers() {
   const [data, setData] = useState<Supplier[]>([]);
@@ -101,8 +102,8 @@ export function useEmployees() {
   const [loading, setLoading] = useState(true);
 
   const fetch = useCallback(async () => {
-    const { data } = await supabase.from('employees').select('*').order('name');
-    setData(data || []);
+    const { data } = await supabase.from('employees').select(EMPLOYEE_SELECT).order('name');
+    setData((data || []) as Employee[]);
     setLoading(false);
   }, []);
 

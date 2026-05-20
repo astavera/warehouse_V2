@@ -88,6 +88,17 @@ function errorMessage(error: unknown) {
   return String(error || 'Unknown error');
 }
 
+async function requireAuthenticatedUser(req: Request, supabaseUrl: string, serviceRoleKey: string) {
+  const authHeader = req.headers.get('Authorization') || '';
+  const token = authHeader.replace(/^Bearer\s+/i, '').trim();
+  if (!token) throw new Error('Authentication required');
+
+  const supabase = createClient(supabaseUrl, serviceRoleKey);
+  const { data, error } = await supabase.auth.getUser(token);
+  if (error || !data.user) throw new Error('Authentication required');
+  return data.user;
+}
+
 function easyPostCarrier(carrier: ExpectedBox['carrier']) {
   if (carrier === 'Amazon') return 'AmazonShipping';
   return carrier;
@@ -181,6 +192,7 @@ Deno.serve(async req => {
     if (!supabaseUrl || !serviceRoleKey) {
       return jsonResponse({ error: 'Missing Supabase function secrets' }, 500);
     }
+    await requireAuthenticatedUser(req, supabaseUrl, serviceRoleKey);
     if (!ship24ApiKey && !easyPostApiKey) {
       return jsonResponse({ error: 'Missing tracking provider secret. Configure SHIP24_API_KEY or EASYPOST_API_KEY.' }, 500);
     }

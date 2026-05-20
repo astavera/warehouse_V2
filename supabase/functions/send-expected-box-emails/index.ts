@@ -44,6 +44,17 @@ function formatDate(value: string | null) {
   }).format(new Date(value));
 }
 
+async function requireAuthenticatedUser(req: Request, supabaseUrl: string, serviceRoleKey: string) {
+  const authHeader = req.headers.get('Authorization') || '';
+  const token = authHeader.replace(/^Bearer\s+/i, '').trim();
+  if (!token) throw new Error('Authentication required');
+
+  const supabase = createClient(supabaseUrl, serviceRoleKey);
+  const { data, error } = await supabase.auth.getUser(token);
+  if (error || !data.user) throw new Error('Authentication required');
+  return data.user;
+}
+
 async function sendEmail({
   resendApiKey,
   gmailUser,
@@ -164,6 +175,7 @@ Deno.serve(async req => {
     if (!supabaseUrl || !serviceRoleKey) {
       return jsonResponse({ error: 'Missing Supabase function secrets' }, 500);
     }
+    await requireAuthenticatedUser(req, supabaseUrl, serviceRoleKey);
     if (!resendApiKey && (!gmailUser || !gmailAppPassword)) {
       return jsonResponse({ error: 'Missing email provider secrets' }, 500);
     }

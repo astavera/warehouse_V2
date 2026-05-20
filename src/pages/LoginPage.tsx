@@ -9,7 +9,6 @@ import { cn } from '@/lib/utils';
 import { useAuth } from '@/hooks/useAuth';
 
 const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'clear', '0', 'back'] as const;
-const ADMIN_PASSCODE = import.meta.env.VITE_ADMIN_PASSCODE;
 type Mode = 'login' | 'admin' | 'register';
 
 export default function LoginPage() {
@@ -21,6 +20,7 @@ export default function LoginPage() {
   const [successName, setSuccessName] = useState('');
   const [showSuccess, setShowSuccess] = useState(false);
   const [now, setNow] = useState(() => new Date());
+  const [verifiedAdminPasscode, setVerifiedAdminPasscode] = useState('');
   const autoSubmitLock = useRef(false);
 
   const isSignup = mode === 'register';
@@ -34,15 +34,14 @@ export default function LoginPage() {
     setLoading(true);
     try {
       if (isAdminMode) {
-        if (!ADMIN_PASSCODE) throw new Error('Admin passcode is not configured');
-        if (passcode !== ADMIN_PASSCODE) throw new Error('Incorrect admin passcode');
+        setVerifiedAdminPasscode(passcode);
         setMode('register');
         setPasscode('');
         setLoading(false);
         return;
       }
 
-      const employee = isSignup ? await beginSignUp(name, passcode) : await beginSignIn(passcode);
+      const employee = isSignup ? await beginSignUp(name, passcode, verifiedAdminPasscode) : await beginSignIn(passcode);
 
       setSuccessName(employee.name);
       setShowSuccess(true);
@@ -58,7 +57,7 @@ export default function LoginPage() {
     } finally {
       setLoading(false);
     }
-  }, [beginSignIn, beginSignUp, completeSignIn, isAdminMode, isSignup, loading, name, passcode]);
+  }, [beginSignIn, beginSignUp, completeSignIn, isAdminMode, isSignup, loading, name, passcode, verifiedAdminPasscode]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -250,6 +249,7 @@ export default function LoginPage() {
                   setMode(mode === 'register' ? 'login' : 'admin');
                   setPasscode('');
                   setName('');
+                  setVerifiedAdminPasscode('');
                 }}
               >
                 {mode === 'register' ? 'Back to employee login' : 'Admin registration'}
