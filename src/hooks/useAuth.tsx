@@ -22,6 +22,24 @@ interface AuthCtx {
 const STORAGE_KEY = 'warehouse-kiosk-user-id';
 const EMPLOYEE_SELECT = 'id, name, active, created_at, updated_at, auth_user_id';
 
+async function invokeKioskAuth(body: Record<string, unknown>) {
+  const { data, error } = await supabase.functions.invoke('kiosk-auth', { body });
+  if (error) {
+    const response = 'context' in error ? error.context : null;
+    if (response instanceof Response) {
+      const payload = await response.json().catch(() => null);
+      throw new Error(payload?.error || error.message);
+    }
+    throw error;
+  }
+
+  const result = data as KioskAuthResponse;
+  if (!result?.session?.access_token || !result?.session?.refresh_token || !result?.employee) {
+    throw new Error('Login session was not returned');
+  }
+  return result;
+}
+
 const AuthContext = createContext<AuthCtx>({
   user: null,
   loading: true,
@@ -71,11 +89,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const beginSignIn = async (passcode: string) => {
     const normalizedPasscode = passcode.trim();
-    const { data, error } = await supabase.functions.invoke('kiosk-auth', {
-      body: { action: 'sign-in', passcode: normalizedPasscode },
-    });
-    if (error) throw error;
-    const result = data as KioskAuthResponse;
+    await supabase.auth.signOut();
+    const result = await invokeKioskAuth({ action: 'sign-in', passcode: normalizedPasscode });
     const { error: sessionError } = await supabase.auth.setSession({
       access_token: result.session.access_token,
       refresh_token: result.session.refresh_token,
@@ -87,16 +102,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const beginSignUp = async (name: string, passcode: string, adminPasscode: string) => {
     const normalizedName = name.trim();
     const normalizedPasscode = passcode.trim();
-    const { data, error } = await supabase.functions.invoke('kiosk-auth', {
-      body: {
-        action: 'sign-up',
-        name: normalizedName,
-        passcode: normalizedPasscode,
-        adminPasscode,
-      },
+    await supabase.auth.signOut();
+    const result = await invokeKioskAuth({
+      action: 'sign-up',
+      name: normalizedName,
+      passcode: normalizedPasscode,
+      adminPasscode,
     });
-    if (error) throw error;
-    const result = data as KioskAuthResponse;
     const { error: sessionError } = await supabase.auth.setSession({
       access_token: result.session.access_token,
       refresh_token: result.session.refresh_token,
