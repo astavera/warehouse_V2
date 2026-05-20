@@ -48,12 +48,40 @@ interface EditItemState {
   comments: string;
 }
 
+type ReceiptItem = BatchWithItems['receipt_items'][number];
+type HistoryReceiptItem = ReceiptItem & {
+  suppliers?:
+    | {
+        name: string;
+        code: string | null;
+      }
+    | {
+        name: string;
+        code: string | null;
+      }[]
+    | null;
+};
+type HistoryBatch = Omit<BatchWithItems, 'receipt_items'> & {
+  receipt_items: HistoryReceiptItem[];
+};
+
+function getErrorMessage(error: unknown, fallback: string) {
+  return error instanceof Error ? error.message : fallback;
+}
+
+function getNestedSupplierName(item: HistoryReceiptItem) {
+  if (Array.isArray(item.suppliers)) {
+    return item.suppliers[0]?.name || '';
+  }
+  return item.suppliers?.name || '';
+}
+
 export default function HistoryPage() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const { carriers } = useCarriers();
-  const { suppliers } = useSuppliers();
-  const { employees } = useEmployees();
-  const [allBatches, setAllBatches] = useState<BatchWithItems[]>([]);
+  const { carriers, loading: carriersLoading } = useCarriers();
+  const { suppliers, loading: suppliersLoading } = useSuppliers();
+  const { employees, loading: employeesLoading } = useEmployees();
+  const [allBatches, setAllBatches] = useState<HistoryBatch[]>([]);
   const [loading, setLoading] = useState(true);
   const [openBatches, setOpenBatches] = useState<Set<string>>(new Set());
 
@@ -68,11 +96,11 @@ export default function HistoryPage() {
   const fetchBatches = useCallback(() => {
     supabase
       .from('receipt_batches')
-      .select('*, receipt_items(*)')
+      .select('*, receipt_items(*, suppliers(name, code))')
       .order('received_at', { ascending: false })
       .limit(500)
       .then(({ data }) => {
-        setAllBatches((data as BatchWithItems[]) || []);
+        setAllBatches((data as HistoryBatch[]) || []);
         setLoading(false);
       });
   }, []);
@@ -128,7 +156,9 @@ export default function HistoryPage() {
       if (search) {
         const q = search.toLowerCase();
         const carrier = carriers.find(c => c.id === b.carrier_id);
-        const supplierNames = b.receipt_items.map(i => suppliers.find(s => s.id === i.supplier_id)?.name || '').join(' ');
+        const supplierNames = b.receipt_items
+          .map(i => getNestedSupplierName(i) || suppliers.find(s => s.id === i.supplier_id)?.name || '')
+          .join(' ');
         const haystack = [carrier?.name, b.received_by_text, b.notes, supplierNames, ...b.receipt_items.map(i => i.tracking_number)].join(' ').toLowerCase();
         if (!haystack.includes(q)) return false;
       }
@@ -144,8 +174,8 @@ export default function HistoryPage() {
       await supabase.from('receipt_batches').delete().eq('id', batchId);
       setAllBatches(prev => prev.filter(b => b.id !== batchId));
       toast.success('Batch deleted');
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to delete');
+    } catch (err) {
+      toast.error(getErrorMessage(err, 'Failed to delete'));
     }
   };
 
@@ -157,13 +187,13 @@ export default function HistoryPage() {
         b.id === batchId ? { ...b, receipt_items: b.receipt_items.filter(i => i.id !== itemId) } : b
       ));
       toast.success('Item deleted');
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to delete item');
+    } catch (err) {
+      toast.error(getErrorMessage(err, 'Failed to delete item'));
     }
   };
 
   // Edit batch
-  const openEditBatch = (b: BatchWithItems) => {
+  const openEditBatch = (b: HistoryBatch) => {
     setEditingBatch(b.id);
     setEditNotes(b.notes || '');
     setEditCarrierId(b.carrier_id || '');
@@ -184,15 +214,15 @@ export default function HistoryPage() {
       ));
       setEditingBatch(null);
       toast.success('Batch updated');
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to update');
+    } catch (err) {
+      toast.error(getErrorMessage(err, 'Failed to update'));
     } finally {
       setSaving(false);
     }
   };
 
   // Edit item
-  const openEditItem = (item: any) => {
+  const openEditItem = (item: ReceiptItem) => {
     setEditItem({
       id: item.id,
       supplier_id: item.supplier_id,
@@ -226,8 +256,8 @@ export default function HistoryPage() {
       })));
       setEditItem(null);
       toast.success('Item updated');
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to update item');
+    } catch (err) {
+      toast.error(getErrorMessage(err, 'Failed to update item'));
     } finally {
       setSaving(false);
     }
@@ -242,7 +272,8 @@ export default function HistoryPage() {
       const emp = employees.find(e => e.id === b.received_by_employee_id);
       return b.receipt_items.map(item => {
         const supplier = suppliers.find(s => s.id === item.supplier_id);
-        return [receivedDate, receivedTime, carrier?.name || '', emp?.name || b.received_by_text || '', b.notes || '', supplier?.name || '', item.package_type, String(item.package_count), item.damaged_box ? 'Yes' : 'No', item.damaged_notes || '', item.tracking_number || '', item.comments || ''].map(v => escapeCsv(v));
+        const supplierName = getNestedSupplierName(item) || supplier?.name || '';
+        return [receivedDate, receivedTime, carrier?.name || '', emp?.name || b.received_by_text || '', b.notes || '', supplierName, item.package_type, String(item.package_count), item.damaged_box ? 'Yes' : 'No', item.damaged_notes || '', item.tracking_number || '', item.comments || ''].map(v => escapeCsv(v));
       });
     });
     const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
@@ -255,7 +286,9 @@ export default function HistoryPage() {
     URL.revokeObjectURL(url);
   }, [filtered, carriers, suppliers, employees]);
 
-  if (loading) return <div className="flex items-center justify-center py-20 text-muted-foreground">Loading...</div>;
+  if (loading || carriersLoading || suppliersLoading || employeesLoading) {
+    return <div className="flex items-center justify-center py-20 text-muted-foreground">Loading...</div>;
+  }
 
   return (
     <div className="space-y-6">
@@ -379,11 +412,12 @@ export default function HistoryPage() {
                     <div className="divide-y">
                       {b.receipt_items.map(item => {
                         const supplier = suppliers.find(s => s.id === item.supplier_id);
+                        const supplierName = getNestedSupplierName(item) || supplier?.name || 'Unknown';
                         return (
                           <div key={item.id} className="py-3 space-y-2">
                             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-sm">
                               <div className="flex items-center gap-2">
-                                <span className="font-medium">{supplier?.name || 'Unknown'}</span>
+                                <span className="font-medium">{supplierName}</span>
                                 <span className="text-muted-foreground">{item.package_type === 'pallet' || item.package_type === 'Pallet' ? '🏗️' : '📦'} × {item.package_count}</span>
                                 {item.damaged_box && <span className="text-destructive text-xs font-medium">⚠ Damaged</span>}
                               </div>

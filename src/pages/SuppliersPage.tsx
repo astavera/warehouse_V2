@@ -21,6 +21,10 @@ import {
 import { toast } from 'sonner';
 import { useSuppliers } from '@/hooks/useSupabaseData';
 
+function getErrorMessage(error: unknown, fallback: string) {
+  return error instanceof Error ? error.message : fallback;
+}
+
 function getSupplierCode(name: string, code: string | null) {
   if (code?.trim()) return code.trim();
   return (
@@ -69,16 +73,16 @@ export default function SuppliersPage() {
       setName(''); setCode(''); setContact(''); setPhone(''); setEmail('');
       setAddOpen(false);
       toast.success('Supplier added');
-    } catch (err: any) {
-      toast.error(err.message);
+    } catch (err) {
+      toast.error(getErrorMessage(err, 'Failed to add supplier'));
     }
   };
 
   const toggleActive = async (s: typeof suppliers[0]) => {
     try {
       await updateSupplier(s.id, { active: !s.active });
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to update supplier');
+    } catch (err) {
+      toast.error(getErrorMessage(err, 'Failed to update supplier'));
     }
   };
 
@@ -86,10 +90,11 @@ export default function SuppliersPage() {
     try {
       await deleteSupplier(id);
       toast.success('Supplier deleted');
-    } catch (err: any) {
-      const message = err.message?.toLowerCase().includes('foreign key')
+    } catch (err) {
+      const errorMessage = getErrorMessage(err, 'Failed to delete supplier');
+      const message = errorMessage.toLowerCase().includes('foreign key')
         ? 'Supplier cannot be deleted because it is already used in received items.'
-        : err.message || 'Failed to delete supplier';
+        : errorMessage;
       toast.error(message);
     }
   };
@@ -163,7 +168,17 @@ export default function SuppliersPage() {
             <Button variant="outline" className="gap-1.5 touch-target" onClick={() => fileRef.current?.click()}>
               <Upload className="w-4 h-4" /> Import CSV
             </Button>
-            <input ref={fileRef} type="file" accept=".csv" className="hidden" onChange={e => { e.target.files?.[0] && handleCsvFile(e.target.files[0]); e.target.value = ''; }} />
+            <input
+              ref={fileRef}
+              type="file"
+              accept=".csv"
+              className="hidden"
+              onChange={e => {
+                const file = e.target.files?.[0];
+                if (file) handleCsvFile(file);
+                e.target.value = '';
+              }}
+            />
           </label>
           <Dialog open={addOpen} onOpenChange={setAddOpen}>
             <DialogTrigger asChild>

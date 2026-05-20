@@ -23,6 +23,10 @@ import { toast } from 'sonner';
 import { useCarriers } from '@/hooks/useSupabaseData';
 import CarrierBadge from '@/components/CarrierBadge';
 
+function getErrorMessage(error: unknown, fallback: string) {
+  return error instanceof Error ? error.message : fallback;
+}
+
 export default function CarriersPage() {
   const { carriers, loading, addCarrier, updateCarrier, deleteCarrier } = useCarriers();
   const [addOpen, setAddOpen] = useState(false);
@@ -36,16 +40,16 @@ export default function CarriersPage() {
       setName('');
       setAddOpen(false);
       toast.success('Carrier added');
-    } catch (err: any) {
-      toast.error(err.message);
+    } catch (err) {
+      toast.error(getErrorMessage(err, 'Failed to add carrier'));
     }
   };
 
   const toggleActive = async (c: typeof carriers[0]) => {
     try {
       await updateCarrier(c.id, { active: !c.active });
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to update carrier');
+    } catch (err) {
+      toast.error(getErrorMessage(err, 'Failed to update carrier'));
     }
   };
 
@@ -53,10 +57,11 @@ export default function CarriersPage() {
     try {
       await deleteCarrier(id);
       toast.success('Carrier deleted');
-    } catch (err: any) {
-      const message = err.message?.toLowerCase().includes('foreign key')
+    } catch (err) {
+      const errorMessage = getErrorMessage(err, 'Failed to delete carrier');
+      const message = errorMessage.toLowerCase().includes('foreign key')
         ? 'Carrier cannot be deleted because it is already used in received batches.'
-        : err.message || 'Failed to delete carrier';
+        : errorMessage;
       toast.error(message);
     }
   };

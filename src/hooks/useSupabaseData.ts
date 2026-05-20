@@ -8,6 +8,26 @@ type Employee = Tables<'employees'>;
 type ReceiptBatch = Tables<'receipt_batches'>;
 type ReceiptItem = Tables<'receipt_items'>;
 
+type ExpectedBoxMatch = {
+  id: string;
+  supplier_id: string;
+  po_number: string | null;
+  match_condition: 'supplier_only' | 'supplier_po';
+};
+
+type ExpectedBoxesQuery = PromiseLike<{
+  data: unknown;
+  error: Error | null;
+}> & {
+  select: (...args: unknown[]) => ExpectedBoxesQuery;
+  update: (...args: unknown[]) => ExpectedBoxesQuery;
+  in: (...args: unknown[]) => ExpectedBoxesQuery;
+};
+
+const expectedBoxesDb = supabase as unknown as {
+  from: (table: string) => ExpectedBoxesQuery;
+};
+
 export function useSuppliers() {
   const [data, setData] = useState<Supplier[]>([]);
   const [loading, setLoading] = useState(true);
@@ -313,10 +333,61 @@ export async function saveBatch(
   if (batchErr) throw batchErr;
 
   const itemsWithBatch = items.map(it => ({ ...it, batch_id: batchRow!.id }));
-  const { error: itemsErr } = await supabase.from('receipt_items').insert(itemsWithBatch);
+  const { data: itemRows, error: itemsErr } = await supabase.from('receipt_items').insert(itemsWithBatch).select();
   if (itemsErr) throw itemsErr;
 
-  return batchRow!;
+  const supplierIds = Array.from(new Set((itemRows || []).map(item => item.supplier_id).filter(Boolean)));
+  let expectedBoxesMatched = 0;
+  let expectedBoxIdsMatched: string[] = [];
+
+  if (supplierIds.length > 0) {
+    const { data: expectedBoxes } = await expectedBoxesDb
+      .from('expected_boxes')
+      .select('id, supplier_id, po_number, match_condition')
+      .in('supplier_id', supplierIds)
+      .in('status', ['in_transit', 'delivered', 'needs_review']);
+
+    const matchedIds = new Set<string>();
+    const expectedBoxRows = (expectedBoxes || []) as ExpectedBoxMatch[];
+
+    expectedBoxRows.forEach(box => {
+      const match = (itemRows || []).find(item => {
+        if (item.supplier_id !== box.supplier_id) return false;
+        if (box.match_condition === 'supplier_only') return true;
+        return (item.tracking_number || '').trim().toLowerCase() === (box.po_number || '').trim().toLowerCase();
+      });
+
+      if (match) {
+        matchedIds.add(box.id);
+      }
+    });
+
+    if (matchedIds.size > 0) {
+      const { error: updateErr } = await expectedBoxesDb
+        .from('expected_boxes')
+        .update({
+          status: 'received',
+          warehouse_received_at: batchRow!.received_at,
+          received_batch_id: batchRow!.id,
+          warehouse_received_email_sent: false,
+        })
+        .in('id', Array.from(matchedIds));
+      if (updateErr) throw updateErr;
+      expectedBoxesMatched = matchedIds.size;
+      expectedBoxIdsMatched = Array.from(matchedIds);
+    }
+  }
+
+  return { ...batchRow!, expectedBoxesMatched, expectedBoxIdsMatched };
+}
+
+export async function sendExpectedBoxEmails(expectedBoxIds: string[]) {
+  if (expectedBoxIds.length === 0) return { sent: 0 };
+  const { data, error } = await supabase.functions.invoke('send-expected-box-emails', {
+    body: { expectedBoxIds },
+  });
+  if (error) throw error;
+  return data as { sent: number; sentIds?: string[] };
 }
 
 export async function uploadPhoto(file: File, path: string): Promise<string> {

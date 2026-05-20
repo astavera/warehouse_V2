@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Delete } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -26,7 +26,7 @@ export default function LoginPage() {
   const isSignup = mode === 'register';
   const isAdminMode = mode === 'admin';
 
-  const submit = async () => {
+  const submit = useCallback(async () => {
     if (loading) return;
     if (isSignup && !name.trim()) return;
     if (passcode.length !== 4) return;
@@ -52,13 +52,13 @@ export default function LoginPage() {
       }, 850);
 
       toast.success(`Welcome, ${employee.name}`);
-    } catch (err: any) {
-      toast.error(err.message || 'Sign-in failed');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Sign-in failed');
       setPasscode('');
     } finally {
       setLoading(false);
     }
-  };
+  }, [beginSignIn, beginSignUp, completeSignIn, isAdminMode, isSignup, loading, name, passcode]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -75,7 +75,7 @@ export default function LoginPage() {
 
     autoSubmitLock.current = true;
     void submit();
-  }, [isAdminMode, isSignup, loading, passcode, showSuccess]);
+  }, [isAdminMode, isSignup, loading, passcode, showSuccess, submit]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -110,7 +110,7 @@ export default function LoginPage() {
   });
 
   return (
-    <div className="min-h-screen bg-[linear-gradient(180deg,#f7f7f4_0%,#eef1f4_100%)] px-4 py-5 sm:px-6 sm:py-6">
+    <div className="app-surface min-h-screen px-4 py-5 sm:px-6 sm:py-6">
       <div className="mx-auto flex min-h-screen max-w-6xl items-center justify-center">
         <div className="grid w-full items-center gap-8 lg:grid-cols-[1.08fr_0.92fr] lg:gap-12">
           <div className="hidden lg:flex flex-col justify-center">
@@ -122,7 +122,7 @@ export default function LoginPage() {
                   className="h-[10rem] w-full max-w-[37rem] object-contain mix-blend-multiply"
                 />
               </div>
-              <div className="inline-flex items-center gap-2 rounded-full border border-white/80 bg-white/55 px-3 py-1.5 text-[11px] font-medium uppercase tracking-[0.24em] text-muted-foreground shadow-[0_10px_25px_rgba(15,23,42,0.04)] backdrop-blur-sm">
+              <div className="inline-flex items-center gap-2 rounded-lg border border-border/70 bg-white/75 px-3 py-1.5 text-[11px] font-medium uppercase tracking-[0.24em] text-muted-foreground shadow-sm backdrop-blur-sm">
                 Modern State Warehouse
               </div>
               <h1 className="mt-5 text-5xl font-semibold tracking-[-0.05em] text-foreground xl:text-6xl">
@@ -134,11 +134,11 @@ export default function LoginPage() {
             </div>
           </div>
 
-          <Card className="relative mx-auto w-full max-w-[30rem] overflow-hidden rounded-[32px] border border-white/90 bg-white/96 shadow-[0_30px_90px_rgba(15,23,42,0.08)] backdrop-blur">
+          <Card className="relative mx-auto w-full max-w-[30rem] overflow-hidden rounded-xl border border-white/90 bg-white/96 panel-shadow backdrop-blur">
             <CardContent className="relative p-6 sm:p-7">
               <div
                 className={cn(
-                  'absolute inset-0 z-20 flex flex-col items-center justify-center bg-[radial-gradient(circle_at_top,#ffffff_0%,rgba(255,255,255,0.96)_45%,rgba(248,248,246,0.98)_100%)] px-8 text-center transition-all duration-500',
+                  'absolute inset-0 z-20 flex flex-col items-center justify-center bg-white/96 px-8 text-center transition-all duration-500 backdrop-blur',
                   showSuccess ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'
                 )}
               >
@@ -219,7 +219,7 @@ export default function LoginPage() {
                       type="button"
                       variant="ghost"
                       className={cn(
-                        'h-14 rounded-[20px] text-lg font-medium shadow-none transition-all duration-200 active:scale-[0.98]',
+                        'h-14 rounded-xl text-lg font-medium shadow-none transition-all duration-200 active:scale-[0.98]',
                         key === 'clear'
                           ? 'border-transparent bg-transparent text-muted-foreground hover:bg-muted/60'
                           : 'bg-white/94 ring-1 ring-black/6 hover:bg-[#f7f7f8] hover:ring-black/10'
@@ -235,7 +235,7 @@ export default function LoginPage() {
                   <Button
                     type="submit"
                     disabled={loading || (isSignup && !name.trim()) || passcode.length !== 4}
-                    className="h-12 w-full rounded-2xl bg-foreground text-base font-semibold text-background shadow-[0_18px_40px_rgba(15,23,42,0.16)] transition-transform duration-200 active:scale-[0.99] hover:bg-foreground/92"
+                    className="h-12 w-full rounded-xl bg-foreground text-base font-semibold text-background shadow-[0_18px_40px_rgba(15,23,42,0.16)] transition-transform duration-200 active:scale-[0.99] hover:bg-foreground/92"
                   >
                     {loading ? 'Please wait...' : isAdminMode ? 'Verify admin' : 'Register employee'}
                   </Button>

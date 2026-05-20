@@ -13,6 +13,7 @@ dist-ssr
 .env
 *.local
 *.zip
+supabase/.temp/
 
 # Editor directories and files
 .vscode/*

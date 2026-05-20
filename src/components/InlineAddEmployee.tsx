@@ -13,6 +13,10 @@ interface Props {
   onAdded: (e: Employee) => void;
 }
 
+function getErrorMessage(error: unknown, fallback: string) {
+  return error instanceof Error ? error.message : fallback;
+}
+
 export default function InlineAddEmployee({ onAdded }: Props) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
@@ -32,8 +36,8 @@ export default function InlineAddEmployee({ onAdded }: Props) {
       setName('');
       setPasscode('');
       setOpen(false);
-    } catch (err: any) {
-      toast.error(err.message);
+    } catch (err) {
+      toast.error(getErrorMessage(err, 'Failed to add receiver'));
     } finally {
       setSaving(false);
     }

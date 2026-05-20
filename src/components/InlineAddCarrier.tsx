@@ -14,6 +14,10 @@ interface Props {
   onAdded: (c: Carrier) => void;
 }
 
+function getErrorMessage(error: unknown, fallback: string) {
+  return error instanceof Error ? error.message : fallback;
+}
+
 export default function InlineAddCarrier({ onAdded }: Props) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
@@ -32,8 +36,8 @@ export default function InlineAddCarrier({ onAdded }: Props) {
       onAdded(data!);
       setName('');
       setOpen(false);
-    } catch (err: any) {
-      toast.error(err.message);
+    } catch (err) {
+      toast.error(getErrorMessage(err, 'Failed to add carrier'));
     } finally {
       setSaving(false);
     }

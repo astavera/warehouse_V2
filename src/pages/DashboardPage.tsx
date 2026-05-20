@@ -5,6 +5,7 @@ import {
   ArrowRight,
   CalendarDays,
   ClipboardList,
+  type LucideIcon,
   Package,
   Sparkles,
   Truck,
@@ -25,14 +26,14 @@ function MetricCard({
   hint,
   tone = 'default',
 }: {
-  icon: any;
+  icon: LucideIcon;
   label: string;
   value: number;
   hint: string;
   tone?: 'default' | 'danger';
 }) {
   return (
-    <Card className="overflow-hidden rounded-[24px] border-border/70 bg-white/90 shadow-[0_18px_50px_rgba(15,23,42,0.05)]">
+    <Card className="overflow-hidden rounded-xl border-border/70 bg-white/95 panel-shadow">
       <CardContent className="p-5">
         <div className="flex items-start justify-between gap-4">
           <div>
@@ -42,7 +43,7 @@ function MetricCard({
           </div>
           <div
             className={cn(
-              'rounded-2xl p-3',
+              'rounded-xl p-3',
               tone === 'danger' ? 'bg-destructive/10 text-destructive' : 'bg-primary/10 text-primary'
             )}
           >
@@ -57,10 +58,10 @@ function MetricCard({
 export default function DashboardPage() {
   const { user } = useAuth();
   const { batches, loading } = useTodayBatches();
-  const { carriers } = useCarriers();
-  const { employees } = useEmployees();
-  const { suppliers } = useSuppliers();
-  const { dates: receiptDates, detailsByDate } = useReceiptCalendarDetails();
+  const { carriers, loading: carriersLoading } = useCarriers();
+  const { employees, loading: employeesLoading } = useEmployees();
+  const { suppliers, loading: suppliersLoading } = useSuppliers();
+  const { dates: receiptDates, detailsByDate, loading: calendarLoading } = useReceiptCalendarDetails();
   const [selectedCalendarDate, setSelectedCalendarDate] = useState<Date | undefined>();
   const [calendarCarrierModal, setCalendarCarrierModal] = useState<{ id: string; name: string } | null>(null);
 
@@ -152,16 +153,16 @@ export default function DashboardPage() {
   const selectedBoxPercent = selectedVisualTotal ? Math.round(((selectedCalendarDetails?.boxCount || 0) / selectedVisualTotal) * 100) : 0;
   const selectedPalletPercent = selectedVisualTotal ? 100 - selectedBoxPercent : 0;
 
-  if (loading) {
+  if (loading || carriersLoading || employeesLoading || suppliersLoading || calendarLoading) {
     return <div className="flex items-center justify-center py-20 text-muted-foreground">Loading...</div>;
   }
 
   return (
     <div className="space-y-6">
-      <section className="rounded-[32px] border border-white/80 bg-[linear-gradient(180deg,#ffffff_0%,#f7f8fa_100%)] p-6 shadow-[0_24px_70px_rgba(15,23,42,0.05)] sm:p-8">
+      <section className="rounded-xl border border-white/80 bg-white/92 p-6 panel-shadow sm:p-8">
         <div className="flex flex-col gap-8 lg:flex-row lg:items-end lg:justify-between">
           <div className="max-w-2xl">
-            <div className="inline-flex items-center gap-2 rounded-full border border-primary/10 bg-primary/5 px-3 py-1 text-[11px] font-medium uppercase tracking-[0.22em] text-primary">
+            <div className="inline-flex items-center gap-2 rounded-lg border border-primary/15 bg-primary/8 px-3 py-1.5 text-[11px] font-medium uppercase tracking-[0.22em] text-primary">
               <Sparkles className="h-3.5 w-3.5" />
               Receiving dashboard
             </div>
@@ -175,7 +176,7 @@ export default function DashboardPage() {
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2">
-            <Card className="rounded-[24px] border-border/70 bg-[#fafafa] shadow-none">
+            <Card className="rounded-xl border-border/70 bg-muted/45 shadow-none">
               <CardContent className="p-5">
                 <p className="text-[11px] uppercase tracking-[0.22em] text-muted-foreground">Current time</p>
                 <p className="mt-2 text-3xl font-semibold tracking-[-0.05em] text-foreground">{currentTime}</p>
@@ -207,7 +208,7 @@ export default function DashboardPage() {
       </div>
 
       <div className="grid grid-cols-1 gap-5 2xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.55fr)_minmax(320px,0.55fr)]">
-        <Card className="self-start rounded-[28px] border-border/70 bg-white/92 shadow-[0_18px_50px_rgba(15,23,42,0.04)] 2xl:row-span-2">
+        <Card className="self-start rounded-xl border-border/70 bg-white/95 panel-shadow 2xl:row-span-2">
           <CardHeader className="pb-4">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
               <div>
@@ -221,7 +222,7 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             {batches.length === 0 ? (
-              <div className="rounded-[24px] border border-dashed border-border/80 bg-[#fafafa] px-6 py-14 text-center">
+              <div className="rounded-xl border border-dashed border-border/80 bg-muted/45 px-6 py-14 text-center">
                 <Package className="mx-auto mb-4 h-10 w-10 text-muted-foreground/30" />
                 <p className="text-base font-medium text-foreground">No receipts recorded today</p>
                 <p className="mt-1 text-sm text-muted-foreground">Start a new receipt when the next shipment arrives.</p>
@@ -290,7 +291,7 @@ export default function DashboardPage() {
                   return (
                     <div
                       key={batch.id}
-                      className="flex items-start gap-3 rounded-[22px] border border-border/70 bg-[#fcfcfd] p-4 transition-colors hover:bg-muted/30"
+                      className="flex items-start gap-3 rounded-xl border border-border/70 bg-white p-4 transition-colors hover:bg-muted/35"
                     >
                       <CarrierBadge name={carrier?.name || '?'} />
                       <div className="min-w-0 flex-1">
@@ -306,7 +307,7 @@ export default function DashboardPage() {
                           {supplierSummaries.map(supplier => (
                             <span
                               key={`${batch.id}-${supplier.name}`}
-                              className="rounded-full border border-border/70 bg-white px-2 py-1 text-[11px] text-muted-foreground"
+                            className="rounded-md border border-border/70 bg-muted/45 px-2 py-1 text-[11px] text-muted-foreground"
                             >
                               {supplier.name}
                               {supplier.boxes > 0 ? ` • ${supplier.boxes} box${supplier.boxes === 1 ? '' : 'es'}` : ''}
@@ -334,23 +335,23 @@ export default function DashboardPage() {
         </Card>
 
         <div className="grid content-start gap-5 self-start">
-          <div className="self-start rounded-[20px] border border-border/70 bg-white/72 px-4 py-3 shadow-[0_10px_24px_rgba(15,23,42,0.03)]">
+          <div className="self-start rounded-xl border border-border/70 bg-white/90 px-4 py-3 shadow-sm">
             <div className="mb-2">
               <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-muted-foreground">Operational Split</p>
             </div>
             <div className="flex flex-col gap-2 sm:flex-row">
-              <div className="flex min-w-0 flex-1 items-center justify-between rounded-[14px] bg-[#fafafa] px-3.5 py-2.5">
+              <div className="flex min-w-0 flex-1 items-center justify-between rounded-lg bg-muted/45 px-3.5 py-2.5">
                 <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">Boxes</p>
                 <p className="text-[1.6rem] font-semibold leading-none tracking-[-0.04em] text-foreground">{boxCount}</p>
               </div>
-              <div className="flex min-w-0 flex-1 items-center justify-between rounded-[14px] bg-[#fafafa] px-3.5 py-2.5">
+              <div className="flex min-w-0 flex-1 items-center justify-between rounded-lg bg-muted/45 px-3.5 py-2.5">
                 <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">Pallets</p>
                 <p className="text-[1.6rem] font-semibold leading-none tracking-[-0.04em] text-foreground">{palletCount}</p>
               </div>
             </div>
           </div>
 
-          <Card className="self-start rounded-[24px] border-border/70 bg-white/88 shadow-[0_14px_34px_rgba(15,23,42,0.035)]">
+          <Card className="self-start rounded-xl border-border/70 bg-white/95 shadow-sm">
             <CardHeader className="pb-2">
               <div className="flex items-center gap-2">
                 <Truck className="h-4 w-4 text-primary" />
@@ -363,7 +364,7 @@ export default function DashboardPage() {
               ) : (
                 <div className="space-y-2">
                   {carrierBreakdown.map(carrier => (
-                    <div key={carrier.name} className="flex items-center gap-3 rounded-[16px] bg-[#fafafa] px-3 py-2.5">
+                    <div key={carrier.name} className="flex items-center gap-3 rounded-lg bg-muted/45 px-3 py-2.5">
                       <CarrierBadge name={carrier.name} size="sm" />
                       <span className="flex-1 truncate text-sm font-medium text-foreground">{carrier.name}</span>
                       <span className="rounded-full border border-border/70 bg-white px-2.5 py-1 text-xs font-medium">
@@ -376,12 +377,12 @@ export default function DashboardPage() {
             </CardContent>
           </Card>
 
-          <Card className="self-start rounded-[24px] border-border/70 bg-white/88 shadow-[0_14px_34px_rgba(15,23,42,0.035)]">
+          <Card className="self-start rounded-xl border-border/70 bg-white/95 shadow-sm">
             <CardHeader className="pb-2">
               <CardTitle className="text-base font-semibold">Quick Summary</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2.5">
-              <div className="rounded-[16px] bg-[#fafafa] p-3.5">
+              <div className="rounded-lg bg-muted/45 p-3.5">
                 <p className="text-[11px] uppercase tracking-[0.2em] text-muted-foreground">Today</p>
                 <p className="mt-2 text-sm leading-6 text-foreground">
                   {batches.length === 0
@@ -389,7 +390,7 @@ export default function DashboardPage() {
                     : `${batches.length} receipts are active today across ${carrierBreakdown.length || 0} carriers.`}
                 </p>
               </div>
-              <div className="rounded-[16px] bg-[#fafafa] p-3.5">
+              <div className="rounded-lg bg-muted/45 p-3.5">
                 <p className="text-[11px] uppercase tracking-[0.2em] text-muted-foreground">Focus</p>
                 <p className="mt-2 text-sm leading-6 text-foreground">
                   {damagedCount > 0
@@ -404,8 +405,8 @@ export default function DashboardPage() {
         <div className="grid content-start gap-5 self-start">
           <Card
             className={cn(
-              'self-start rounded-[24px] border-border/70 bg-white/88 shadow-[0_14px_34px_rgba(15,23,42,0.035)] transition-all duration-300',
-              selectedCalendarDate && 'rounded-[28px] bg-white/94 shadow-[0_20px_44px_rgba(15,23,42,0.05)]'
+              'self-start rounded-xl border-border/70 bg-white/95 shadow-sm transition-all duration-300',
+              selectedCalendarDate && 'bg-white panel-shadow'
             )}
           >
             <CardHeader className="pb-1">

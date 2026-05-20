@@ -6,6 +6,7 @@ import AppLayout from "@/components/AppLayout";
 import DashboardPage from "@/pages/DashboardPage";
 import ReceivePage from "@/pages/ReceivePage";
 import HistoryPage from "@/pages/HistoryPage";
+import ExpectedBoxesPage from "@/pages/ExpectedBoxesPage";
 import SuppliersPage from "@/pages/SuppliersPage";
 import CarriersPage from "@/pages/CarriersPage";
 import LoginPage from "@/pages/LoginPage";
@@ -45,6 +46,7 @@ function ProtectedApp() {
       <Routes>
         <Route path="/" element={<DashboardPage />} />
         <Route path="/receive" element={<ReceivePage />} />
+        <Route path="/expected-boxes" element={<ExpectedBoxesPage />} />
         <Route path="/history" element={<HistoryPage />} />
         <Route path="/suppliers" element={<SuppliersPage />} />
         <Route path="/carriers" element={<CarriersPage />} />

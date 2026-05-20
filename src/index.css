@@ -6,50 +6,50 @@
 
 @layer base {
   :root {
-    --background: 220 20% 97%;
-    --foreground: 220 25% 10%;
+    --background: 210 24% 96%;
+    --foreground: 216 28% 12%;
 
     --card: 0 0% 100%;
-    --card-foreground: 220 25% 10%;
+    --card-foreground: 216 28% 12%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 220 25% 10%;
+    --popover-foreground: 216 28% 12%;
 
-    --primary: 217 91% 50%;
+    --primary: 203 78% 38%;
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 220 14% 92%;
-    --secondary-foreground: 220 25% 20%;
+    --secondary: 210 18% 91%;
+    --secondary-foreground: 216 26% 18%;
 
-    --muted: 220 14% 95%;
-    --muted-foreground: 220 10% 46%;
+    --muted: 210 18% 93%;
+    --muted-foreground: 215 11% 43%;
 
-    --accent: 220 14% 92%;
-    --accent-foreground: 220 25% 10%;
+    --accent: 172 30% 90%;
+    --accent-foreground: 185 42% 18%;
 
     --destructive: 0 72% 51%;
     --destructive-foreground: 0 0% 100%;
 
-    --success: 142 71% 45%;
+    --success: 152 62% 35%;
     --success-foreground: 0 0% 100%;
 
-    --warning: 38 92% 50%;
-    --warning-foreground: 0 0% 100%;
+    --warning: 42 91% 48%;
+    --warning-foreground: 36 100% 12%;
 
-    --border: 220 13% 88%;
-    --input: 220 13% 88%;
-    --ring: 217 91% 50%;
+    --border: 212 15% 84%;
+    --input: 212 15% 84%;
+    --ring: 203 78% 38%;
 
-    --radius: 0.625rem;
+    --radius: 0.5rem;
 
     --sidebar-background: 0 0% 100%;
-    --sidebar-foreground: 220 25% 20%;
-    --sidebar-primary: 217 91% 50%;
+    --sidebar-foreground: 216 26% 18%;
+    --sidebar-primary: 203 78% 38%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 220 14% 95%;
-    --sidebar-accent-foreground: 220 25% 10%;
-    --sidebar-border: 220 13% 91%;
-    --sidebar-ring: 217 91% 50%;
+    --sidebar-accent: 210 18% 93%;
+    --sidebar-accent-foreground: 216 28% 12%;
+    --sidebar-border: 212 15% 88%;
+    --sidebar-ring: 203 78% 38%;
 
     --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
     --font-mono: 'JetBrains Mono', monospace;
@@ -97,11 +97,29 @@
   body {
     @apply bg-background text-foreground;
     font-family: var(--font-sans);
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+
+  html {
+    @apply bg-background;
+  }
+
+  ::selection {
+    @apply bg-primary/20 text-foreground;
   }
 }
 
 @layer utilities {
   .touch-target {
     @apply min-h-[44px] min-w-[44px];
+  }
+
+  .app-surface {
+    background:
+      linear-gradient(180deg, hsl(210 24% 97%) 0%, hsl(210 22% 94%) 100%);
+  }
+
+  .panel-shadow {
+    box-shadow: 0 18px 50px rgb(15 23 42 / 0.06);
   }
 }

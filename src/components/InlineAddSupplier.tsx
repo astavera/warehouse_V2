@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
@@ -12,13 +12,25 @@ type Supplier = Tables<'suppliers'>;
 interface Props {
   onAdded: (s: Supplier) => void;
   defaultName?: string;
+  triggerLabel?: string;
+  triggerClassName?: string;
 }
 
-export default function InlineAddSupplier({ onAdded, defaultName = '' }: Props) {
+function getErrorMessage(error: unknown, fallback: string) {
+  return error instanceof Error ? error.message : fallback;
+}
+
+export default function InlineAddSupplier({ onAdded, defaultName = '', triggerLabel = 'Add Supplier', triggerClassName = '' }: Props) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState(defaultName);
   const [code, setCode] = useState('');
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (open && defaultName) {
+      setName(defaultName);
+    }
+  }, [defaultName, open]);
 
   const handleSave = async () => {
     if (!name.trim()) return;
@@ -33,8 +45,8 @@ export default function InlineAddSupplier({ onAdded, defaultName = '' }: Props) 
       setName('');
       setCode('');
       setOpen(false);
-    } catch (err: any) {
-      toast.error(err.message);
+    } catch (err) {
+      toast.error(getErrorMessage(err, 'Failed to add supplier'));
     } finally {
       setSaving(false);
     }
@@ -43,8 +55,8 @@ export default function InlineAddSupplier({ onAdded, defaultName = '' }: Props) 
   return (
     <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (v && defaultName) setName(defaultName); }}>
       <DialogTrigger asChild>
-        <Button variant="ghost" size="sm" className="gap-1 text-primary">
-          <Plus className="w-4 h-4" /> Add Supplier
+        <Button variant="ghost" size="sm" className={`gap-1 text-primary ${triggerClassName}`}>
+          <Plus className="w-4 h-4" /> {triggerLabel}
         </Button>
       </DialogTrigger>
       <DialogContent className="sm:max-w-md">
