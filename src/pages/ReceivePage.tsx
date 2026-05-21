@@ -3,8 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Switch } from '@/components/ui/switch';
-import { CalendarDays, AlertTriangle, Camera, CheckCheck, Copy, PackageCheck, Plus, RotateCcw, Save, Trash2 } from 'lucide-react';
+import { CalendarDays, AlertTriangle, Camera, CheckCheck, Copy, PackageCheck, Plus, RotateCcw, Save, ShieldCheck, Trash2 } from 'lucide-react';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Calendar as CalendarPicker } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -70,6 +69,15 @@ function getCarrierButtonClass(name: string, selected: boolean) {
     : 'border border-border/60 bg-white hover:bg-muted/50';
 
   return `h-11 ${widthClass} rounded-lg p-0 shadow-sm ${stateClass}`;
+}
+
+function getDamageOptionClass(selected: boolean, tone: 'clear' | 'damage') {
+  const selectedClass =
+    tone === 'damage'
+      ? 'border-destructive/35 bg-destructive/10 text-destructive ring-2 ring-destructive/10'
+      : 'border-emerald-300 bg-emerald-50 text-emerald-700 ring-2 ring-emerald-100';
+  const idleClass = 'border-border/60 bg-white text-muted-foreground hover:bg-muted/50 hover:text-foreground';
+  return `h-10 flex-1 rounded-lg border px-2.5 text-xs font-semibold shadow-sm transition-colors ${selected ? selectedClass : idleClass}`;
 }
 
 function parseLocalDate(value: string) {
@@ -704,29 +712,35 @@ export default function ReceivePage() {
 
                 <div className="space-y-1 lg:space-y-0">
                   <Label className="text-xs font-semibold text-muted-foreground lg:hidden">Damage</Label>
-                  <div
-                    className={`flex h-10 w-full items-center justify-between gap-2 rounded-lg border px-3 text-sm font-medium transition-colors ${
-                      item.damagedBox
-                        ? 'border-destructive/30 bg-destructive/8 text-destructive'
-                        : 'border-border bg-background text-muted-foreground hover:bg-muted/30'
-                    }`}
-                  >
-                    <span className="truncate">{item.damagedBox ? 'Damage' : 'No damage'}</span>
-                    <Switch
-                      checked={item.damagedBox}
-                      onCheckedChange={value => {
-                        updateItem(idx, { damagedBox: value });
-                        if (value) {
-                          setOpenDetails(prev => new Set(prev).add(item.id));
-                        } else {
-                          setOpenDetails(prev => {
-                            const next = new Set(prev);
-                            next.delete(item.id);
-                            return next;
-                          });
-                        }
+                  <div className="flex h-11 w-full gap-1.5 rounded-lg border border-border/60 bg-background p-1">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      className={getDamageOptionClass(!item.damagedBox, 'clear')}
+                      onClick={() => {
+                        updateItem(idx, { damagedBox: false });
+                        setOpenDetails(prev => {
+                          const next = new Set(prev);
+                          next.delete(item.id);
+                          return next;
+                        });
                       }}
-                    />
+                    >
+                      <ShieldCheck className="mr-1.5 h-3.5 w-3.5" />
+                      No dmg
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      className={getDamageOptionClass(item.damagedBox, 'damage')}
+                      onClick={() => {
+                        updateItem(idx, { damagedBox: true });
+                        setOpenDetails(prev => new Set(prev).add(item.id));
+                      }}
+                    >
+                      <AlertTriangle className="mr-1.5 h-3.5 w-3.5" />
+                      Damage
+                    </Button>
                   </div>
                 </div>
 
