@@ -384,7 +384,16 @@ export async function saveBatch(
 
 export async function sendExpectedBoxEmails(expectedBoxIds: string[]) {
   if (expectedBoxIds.length === 0) return { sent: 0 };
+  const { data: sessionData } = await supabase.auth.getSession();
+  const accessToken = sessionData.session?.access_token;
+  if (!accessToken) {
+    throw new Error('Your session is still loading. Please try again.');
+  }
+
   const { data, error } = await supabase.functions.invoke('send-expected-box-emails', {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
     body: { expectedBoxIds },
   });
   if (error) throw error;

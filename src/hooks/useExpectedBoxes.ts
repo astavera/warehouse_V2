@@ -137,7 +137,16 @@ export function useExpectedBoxes() {
 }
 
 export async function syncExpectedBoxTracking(expectedBoxId: string) {
+  const { data: sessionData } = await supabase.auth.getSession();
+  const accessToken = sessionData.session?.access_token;
+  if (!accessToken) {
+    throw new Error('Your session is still loading. Please try again.');
+  }
+
   const { data, error } = await supabase.functions.invoke('sync-expected-box-tracking', {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
     body: { expectedBoxId },
   });
   if (error) {
