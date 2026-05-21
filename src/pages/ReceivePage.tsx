@@ -424,8 +424,8 @@ export default function ReceivePage() {
               </div>
             </div>
 
-            <div className="mr-auto grid w-full max-w-[400px] grid-cols-[minmax(0,1fr)_128px] gap-2 rounded-lg border border-border/60 bg-background p-2 sm:grid-cols-[minmax(0,1fr)_128px] xl:max-w-none portrait:max-w-[400px]">
-              <div className="space-y-1">
+            <div className="receive-batch-time mr-auto grid w-full max-w-[400px] grid-cols-[minmax(0,1fr)_128px] gap-2 rounded-lg border border-border/60 bg-background p-2 sm:grid-cols-[minmax(0,1fr)_128px] xl:max-w-none portrait:max-w-[400px]">
+              <div className="receive-date-field space-y-1">
                 <Label className="text-xs font-semibold text-muted-foreground">Date</Label>
                 <Popover open={datePickerOpen} onOpenChange={setDatePickerOpen}>
                   <PopoverTrigger asChild>
@@ -468,15 +468,15 @@ export default function ReceivePage() {
                   </PopoverContent>
                 </Popover>
               </div>
-              <div className="space-y-1">
+              <div className="receive-time-field space-y-1">
                 <Label className="text-xs font-semibold text-muted-foreground">Time</Label>
                 <Input className="h-10 rounded-lg bg-white text-center tabular-nums" type="time" value={receivedTime} onChange={e => setReceivedTime(e.target.value)} />
               </div>
-              <div className="rounded-lg border border-border/60 bg-background px-2.5 py-1.5 sm:col-span-2">
+              <div className="receive-user-field rounded-lg border border-border/60 bg-background px-2.5 py-1.5 sm:col-span-2">
                 <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Received by</p>
                 <p className="truncate text-sm font-semibold text-foreground">{user?.name || 'Signed-in user'}</p>
               </div>
-              <div className="space-y-1 sm:col-span-2">
+              <div className="receive-notes-field space-y-1 sm:col-span-2">
                 <Label className="text-xs font-semibold text-muted-foreground">Notes</Label>
                 <Input className="h-10 rounded-lg bg-white" placeholder="Optional batch notes" value={batchNotes} onChange={e => setBatchNotes(e.target.value)} />
               </div>

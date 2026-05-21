@@ -136,6 +136,27 @@
     padding-bottom: calc(5.5rem + env(safe-area-inset-bottom));
   }
 
+  .receive-batch-time {
+    max-width: none !important;
+    grid-template-columns: minmax(0, 1.25fr) minmax(132px, 0.75fr) !important;
+    width: 100%;
+  }
+
+  .receive-date-field {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .receive-time-field {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .receive-user-field,
+  .receive-notes-field {
+    grid-column: 1 / 3 !important;
+  }
+
   .receive-line-grid {
     grid-template-columns: 56px minmax(0, 1fr) 116px 112px !important;
     align-items: end;
