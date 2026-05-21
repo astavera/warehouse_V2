@@ -109,7 +109,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         </div>
       )}
 
-      <main className="mx-auto w-full max-w-[1600px] flex-1 p-4 md:p-6 xl:px-8">
+      <main className={cn('mx-auto w-full max-w-[1600px] flex-1 p-4 md:p-6 xl:px-8', pathname === '/receive' && 'receive-main')}>
         {children}
       </main>
     </div>

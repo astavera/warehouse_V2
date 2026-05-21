@@ -320,7 +320,7 @@ export default function ReceivePage() {
   };
 
   return (
-    <div className="mx-auto max-w-[1220px] space-y-3 pb-2 portrait:max-w-[760px] portrait:px-1">
+    <div className="receive-page mx-auto max-w-[1220px] space-y-3 pb-2 portrait:max-w-[760px] portrait:px-1">
       {showSaveConfirmation && (
         <div className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center opacity-100 transition-all duration-300">
           <div className="w-[min(92vw,420px)] translate-y-0 scale-100 rounded-2xl border border-white/80 bg-white/98 p-6 text-center shadow-[0_30px_100px_rgba(15,23,42,0.18)] backdrop-blur">
@@ -593,8 +593,8 @@ export default function ReceivePage() {
                         : 'border-l-transparent bg-white'
                   }`}
                 >
-              <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-[78px_minmax(300px,1fr)_116px_82px_minmax(140px,0.72fr)_126px] lg:items-end">
-                <div className="flex items-center justify-between gap-2 lg:block">
+              <div className="receive-line-grid grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-[78px_minmax(300px,1fr)_116px_82px_minmax(140px,0.72fr)_126px] lg:items-end">
+                <div className="receive-line-number flex items-center justify-between gap-2 lg:block">
                   <div className="flex items-center gap-2 lg:block">
                     <div className={`flex h-8 w-8 items-center justify-center rounded-lg text-sm font-semibold shadow-sm ${item.supplierId ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'}`}>
                       {idx + 1}
@@ -636,7 +636,7 @@ export default function ReceivePage() {
                   </div>
                 </div>
 
-                <div className="space-y-1 sm:col-span-2 lg:col-span-1 lg:space-y-0">
+                <div className="receive-line-supplier space-y-1 sm:col-span-2 lg:col-span-1 lg:space-y-0">
                   <Label className="text-xs font-semibold text-muted-foreground lg:hidden">Supplier *</Label>
                   <SupplierCombobox
                     suppliers={suppliers}
@@ -652,7 +652,7 @@ export default function ReceivePage() {
                   />
                 </div>
 
-                <div className="space-y-1 lg:space-y-0">
+                <div className="receive-line-type space-y-1 lg:space-y-0">
                   <Label className="text-xs font-semibold text-muted-foreground lg:hidden">Type</Label>
                   <Select value={item.packageType} onValueChange={value => updateItem(idx, { packageType: value })}>
                     <SelectTrigger className="h-10 rounded-lg bg-white">
@@ -665,7 +665,7 @@ export default function ReceivePage() {
                   </Select>
                 </div>
 
-                <div className="space-y-1 lg:space-y-0">
+                <div className="receive-line-qty space-y-1 lg:space-y-0">
                   <Label className="text-xs font-semibold text-muted-foreground lg:hidden">Qty</Label>
                   <Input
                     ref={node => {
@@ -702,12 +702,12 @@ export default function ReceivePage() {
                   />
                 </div>
 
-                <div className="space-y-1 lg:space-y-0">
+                <div className="receive-line-po space-y-1 lg:space-y-0">
                   <Label className="text-xs font-semibold text-muted-foreground lg:hidden">P.O</Label>
                   <Input className="h-10 rounded-lg bg-white" placeholder="P.O" value={item.trackingNumber} onChange={e => updateItem(idx, { trackingNumber: e.target.value })} />
                 </div>
 
-                <div className="space-y-1 lg:space-y-0">
+                <div className="receive-line-damage space-y-1 lg:space-y-0">
                   <Label className="text-xs font-semibold text-muted-foreground lg:hidden">Damage</Label>
                   <div className="flex h-11 w-full rounded-lg border border-border/60 bg-background p-1">
                     <Button
@@ -842,7 +842,7 @@ export default function ReceivePage() {
         </aside>
       </div>
 
-      <div className="sticky bottom-3 z-10 flex flex-col gap-2 rounded-2xl border border-white/80 bg-white/95 p-3 shadow-[0_20px_70px_rgba(15,23,42,0.14)] backdrop-blur portrait:bottom-2 portrait:mx-2 sm:flex-row sm:items-center">
+      <div className="receive-save-bar sticky bottom-3 z-10 flex flex-col gap-2 rounded-2xl border border-white/80 bg-white/95 p-3 shadow-[0_20px_70px_rgba(15,23,42,0.14)] backdrop-blur portrait:bottom-2 portrait:mx-2 sm:flex-row sm:items-center">
         <div className="min-w-[240px] rounded-xl border border-border/60 bg-muted/30 px-3 py-2 portrait:min-w-0">
           <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Receipt summary</p>
           <p className="mt-1 text-sm text-muted-foreground">
