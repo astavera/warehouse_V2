@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import type { Tables, TablesInsert } from '@/integrations/supabase/types';
+import { invokeProtectedFunction } from '@/lib/protectedFunctions';
 
 type Supplier = Tables<'suppliers'>;
 type Carrier = Tables<'carriers'>;
@@ -384,20 +385,7 @@ export async function saveBatch(
 
 export async function sendExpectedBoxEmails(expectedBoxIds: string[]) {
   if (expectedBoxIds.length === 0) return { sent: 0 };
-  const { data: sessionData } = await supabase.auth.getSession();
-  const accessToken = sessionData.session?.access_token;
-  if (!accessToken) {
-    throw new Error('Your session is still loading. Please try again.');
-  }
-
-  const { data, error } = await supabase.functions.invoke('send-expected-box-emails', {
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-    },
-    body: { expectedBoxIds },
-  });
-  if (error) throw error;
-  return data as { sent: number; sentIds?: string[] };
+  return invokeProtectedFunction<{ sent: number; sentIds?: string[] }>('send-expected-box-emails', { expectedBoxIds });
 }
 
 export async function uploadPhoto(file: File, path: string): Promise<string> {

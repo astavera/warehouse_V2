@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { invokeProtectedFunction } from '@/lib/protectedFunctions';
 
 export type ExpectedBoxStatus = 'in_transit' | 'delivered' | 'received' | 'needs_review';
 export type ExpectedBoxCarrier = 'FedEx' | 'UPS' | 'USPS' | 'Amazon';
@@ -137,31 +138,7 @@ export function useExpectedBoxes() {
 }
 
 export async function syncExpectedBoxTracking(expectedBoxId: string) {
-  const { data: sessionData } = await supabase.auth.getSession();
-  const accessToken = sessionData.session?.access_token;
-  if (!accessToken) {
-    throw new Error('Your session is still loading. Please try again.');
-  }
-
-  const { data, error } = await supabase.functions.invoke('sync-expected-box-tracking', {
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-    },
-    body: { expectedBoxId },
-  });
-  if (error) {
-    const response = 'context' in error ? error.context : null;
-    if (response instanceof Response) {
-      const body = await response.json().catch(() => null);
-      const message =
-        body?.details?.error?.message ||
-        body?.error ||
-        error.message;
-      throw new Error(message);
-    }
-    throw error;
-  }
-  return data as { box: ExpectedBox; tracker: unknown };
+  return invokeProtectedFunction<{ box: ExpectedBox; tracker: unknown }>('sync-expected-box-tracking', { expectedBoxId });
 }
 
 export function useExpectedBoxAccess() {
