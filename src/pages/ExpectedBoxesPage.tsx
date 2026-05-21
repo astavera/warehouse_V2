@@ -109,6 +109,8 @@ export default function ExpectedBoxesPage() {
   const [editStatus, setEditStatus] = useState<ExpectedBoxStatus>('in_transit');
   const [editNotes, setEditNotes] = useState('');
   const [syncingId, setSyncingId] = useState('');
+  const [syncingList, setSyncingList] = useState(false);
+  const [syncProgress, setSyncProgress] = useState({ done: 0, total: 0 });
 
   const filteredBoxes = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -263,6 +265,41 @@ export default function ExpectedBoxesPage() {
       toast.error(getErrorMessage(err, 'Failed to update carrier tracking'));
     } finally {
       setSyncingId('');
+    }
+  };
+
+  const handleSyncVisibleTracking = async () => {
+    const boxesToSync = filteredBoxes.filter(box => box.status !== 'received');
+    if (boxesToSync.length === 0) {
+      toast.info('No active tracking rows to refresh');
+      return;
+    }
+
+    setSyncingList(true);
+    setSyncProgress({ done: 0, total: boxesToSync.length });
+    let failed = 0;
+
+    try {
+      for (const box of boxesToSync) {
+        setSyncingId(box.id);
+        try {
+          await syncExpectedBoxTracking(box.id);
+        } catch {
+          failed += 1;
+        } finally {
+          setSyncProgress(progress => ({ ...progress, done: progress.done + 1 }));
+        }
+      }
+
+      await refetchExpectedBoxes();
+      if (failed > 0) {
+        toast.warning(`Tracking refreshed with ${failed} failed update${failed === 1 ? '' : 's'}`);
+      } else {
+        toast.success(`Tracking refreshed for ${boxesToSync.length} expected box${boxesToSync.length === 1 ? '' : 'es'}`);
+      }
+    } finally {
+      setSyncingId('');
+      setSyncingList(false);
     }
   };
 
@@ -583,16 +620,28 @@ export default function ExpectedBoxesPage() {
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input className="h-10 rounded-lg bg-white pl-9" placeholder="Search tracking, supplier, P.O..." value={search} onChange={e => setSearch(e.target.value)} />
             </div>
-            <Select value={statusFilter} onValueChange={value => setStatusFilter(value as typeof statusFilter)}>
-              <SelectTrigger className="h-10 rounded-lg bg-white md:w-[190px]"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All statuses</SelectItem>
-                <SelectItem value="in_transit">In transit</SelectItem>
-                <SelectItem value="delivered">Delivered</SelectItem>
-                <SelectItem value="received">Received in WH</SelectItem>
-                <SelectItem value="needs_review">Needs review</SelectItem>
-              </SelectContent>
-            </Select>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <Button
+                type="button"
+                variant="outline"
+                className="h-10 gap-2 rounded-lg bg-white"
+                onClick={handleSyncVisibleTracking}
+                disabled={syncingList || boxesLoading || filteredBoxes.length === 0}
+              >
+                {syncingList ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                {syncingList ? `Refreshing ${syncProgress.done}/${syncProgress.total}` : 'Refresh list'}
+              </Button>
+              <Select value={statusFilter} onValueChange={value => setStatusFilter(value as typeof statusFilter)}>
+                <SelectTrigger className="h-10 rounded-lg bg-white md:w-[190px]"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All statuses</SelectItem>
+                  <SelectItem value="in_transit">In transit</SelectItem>
+                  <SelectItem value="delivered">Delivered</SelectItem>
+                  <SelectItem value="received">Received in WH</SelectItem>
+                  <SelectItem value="needs_review">Needs review</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
 
           <div className="hidden border-b border-border/70 bg-white px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground lg:grid lg:grid-cols-[150px_minmax(220px,1fr)_160px_130px_150px_140px] lg:gap-3">
@@ -662,7 +711,7 @@ export default function ExpectedBoxesPage() {
                         </div>
 
                         <div className="grid grid-cols-3 gap-2 xl:w-[360px]">
-                          <Button type="button" className="h-10 gap-2 rounded-lg px-3 text-sm" onClick={() => handleSyncTracking(box)} disabled={syncingId === box.id}>
+                          <Button type="button" className="h-10 gap-2 rounded-lg px-3 text-sm" onClick={() => handleSyncTracking(box)} disabled={syncingList || syncingId === box.id}>
                             {syncingId === box.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
                             Refresh
                           </Button>
