@@ -368,8 +368,8 @@ export async function saveBatch(
     if (matchedBoxes.length > 0) {
       const uniqueMatches = Array.from(new Map(matchedBoxes.map(match => [match.id, match])).values());
       for (const match of uniqueMatches) {
-        const packageType = (match.item.package_type || '').toLowerCase();
-        const receivedBoxCount = packageType === 'box' || packageType === 'boxes' ? Math.max(0, match.item.package_count || 0) : 0;
+        const packageType = (match.item.package_type || '').trim().toLowerCase();
+        const receivedBoxCount = packageType.includes('box') ? Math.max(0, match.item.package_count || 0) : 0;
         const { error: updateErr } = await expectedBoxesDb
           .from('expected_boxes')
           .update({

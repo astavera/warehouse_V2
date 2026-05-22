@@ -66,6 +66,18 @@ function formatEventTime(value: string | null) {
   }).format(new Date(value));
 }
 
+function formatDateTime(value: string | null) {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(date);
+}
+
 function formatEventStatus(status: string | null) {
   if (!status) return 'Carrier update';
   return status.replace(/_/g, ' ').replace(/\b\w/g, letter => letter.toUpperCase());
@@ -74,6 +86,14 @@ function formatEventStatus(status: string | null) {
 function formatReceivedBoxes(count: number | null | undefined) {
   const value = Math.max(0, count || 0);
   return `${value} box${value === 1 ? '' : 'es'}`;
+}
+
+function formatWarehouseReceived(box: ExpectedBox) {
+  if (!box.warehouse_received_at) return 'Pending WH';
+  if ((box.warehouse_received_box_count || 0) > 0) {
+    return `${formatReceivedBoxes(box.warehouse_received_box_count)} received`;
+  }
+  return 'Received - count pending';
 }
 
 function getErrorMessage(error: unknown, fallback: string) {
@@ -702,9 +722,9 @@ export default function ExpectedBoxesPage() {
                     </span>
                     <span className="truncate text-sm font-medium text-foreground">{supplierName}</span>
                     <span className="text-xs font-semibold text-muted-foreground">{getMatchLabel(box.match_condition)}</span>
-                    <span className="text-sm text-muted-foreground">{box.carrier_delivered_at || box.carrier_eta || 'Pending'}</span>
+                    <span className="text-sm text-muted-foreground">{formatDateTime(box.carrier_delivered_at) || box.carrier_eta || 'Pending'}</span>
                     <span className="text-sm text-muted-foreground">
-                      {box.warehouse_received_at ? `${formatReceivedBoxes(box.warehouse_received_box_count)} received` : 'Pending WH'}
+                      {formatWarehouseReceived(box)}
                     </span>
                   </button>
 
@@ -716,8 +736,8 @@ export default function ExpectedBoxesPage() {
                             ['Supplier', box.suppliers?.name || 'Unknown supplier'],
                             ['Match rule', getMatchLabel(box.match_condition)],
                             ['P.O', box.po_number || 'Not required'],
-                            ['Carrier delivered', box.carrier_delivered_at || 'Pending'],
-                            ['Warehouse received', box.warehouse_received_at ? `${formatReceivedBoxes(box.warehouse_received_box_count)} received` : 'Pending'],
+                            ['Carrier delivered', formatDateTime(box.carrier_delivered_at) || 'Pending'],
+                            ['Warehouse received', formatWarehouseReceived(box)],
                           ].map(([label, value]) => (
                             <div
                               key={label}
