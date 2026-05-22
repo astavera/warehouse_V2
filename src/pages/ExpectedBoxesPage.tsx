@@ -71,6 +71,11 @@ function formatEventStatus(status: string | null) {
   return status.replace(/_/g, ' ').replace(/\b\w/g, letter => letter.toUpperCase());
 }
 
+function formatReceivedBoxes(count: number | null | undefined) {
+  const value = Math.max(0, count || 0);
+  return `${value} box${value === 1 ? '' : 'es'}`;
+}
+
 function getErrorMessage(error: unknown, fallback: string) {
   if (error instanceof Error) return error.message;
   if (typeof error === 'object' && error && 'message' in error && typeof error.message === 'string') {
@@ -122,7 +127,8 @@ export default function ExpectedBoxesPage() {
         box.tracking_number.toLowerCase().includes(q) ||
         supplierName.toLowerCase().includes(q) ||
         box.carrier.toLowerCase().includes(q) ||
-        (box.po_number || '').toLowerCase().includes(q);
+        (box.po_number || '').toLowerCase().includes(q) ||
+        (box.notes || '').toLowerCase().includes(q);
       return matchesStatus && matchesSearch;
     });
   }, [boxes, search, statusFilter]);
@@ -678,11 +684,14 @@ export default function ExpectedBoxesPage() {
                     <span className="min-w-0">
                       <span className="block truncate text-sm font-semibold text-foreground">{box.tracking_number}</span>
                       <span className="block truncate text-xs text-muted-foreground">{box.carrier} - {box.last_carrier_event || 'Tracking saved'}</span>
+                      {box.notes && <span className="block truncate text-xs font-medium text-primary">Note: {box.notes}</span>}
                     </span>
                     <span className="truncate text-sm font-medium text-foreground">{supplierName}</span>
                     <span className="text-xs font-semibold text-muted-foreground">{getMatchLabel(box.match_condition)}</span>
                     <span className="text-sm text-muted-foreground">{box.carrier_delivered_at || box.carrier_eta || 'Pending'}</span>
-                    <span className="text-sm text-muted-foreground">{box.warehouse_received_at || 'Pending WH'}</span>
+                    <span className="text-sm text-muted-foreground">
+                      {box.warehouse_received_at ? `${formatReceivedBoxes(box.warehouse_received_box_count)} received` : 'Pending WH'}
+                    </span>
                   </button>
 
                   {isSelected && (
@@ -694,7 +703,7 @@ export default function ExpectedBoxesPage() {
                             ['Match rule', getMatchLabel(box.match_condition)],
                             ['P.O', box.po_number || 'Not required'],
                             ['Carrier delivered', box.carrier_delivered_at || 'Pending'],
-                            ['Warehouse received', box.warehouse_received_at || 'Pending'],
+                            ['Warehouse received', box.warehouse_received_at ? `${formatReceivedBoxes(box.warehouse_received_box_count)} received` : 'Pending'],
                           ].map(([label, value]) => (
                             <div
                               key={label}
@@ -723,6 +732,13 @@ export default function ExpectedBoxesPage() {
                           </Button>
                         </div>
                       </div>
+
+                      {box.notes && (
+                        <div className="mt-2 rounded-lg border border-primary/15 bg-primary/5 px-2.5 py-2">
+                          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-primary">Notes</p>
+                          <p className="mt-1 text-sm font-medium leading-5 text-foreground">{box.notes}</p>
+                        </div>
+                      )}
 
                       <div className="mt-2 rounded-lg border border-border/70 bg-white p-2.5">
                         <div className="flex items-center justify-between gap-2">

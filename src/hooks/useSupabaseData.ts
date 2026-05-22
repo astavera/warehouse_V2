@@ -23,6 +23,7 @@ type ExpectedBoxesQuery = PromiseLike<{
   select: (...args: unknown[]) => ExpectedBoxesQuery;
   update: (...args: unknown[]) => ExpectedBoxesQuery;
   in: (...args: unknown[]) => ExpectedBoxesQuery;
+  eq: (...args: unknown[]) => ExpectedBoxesQuery;
 };
 
 const expectedBoxesDb = supabase as unknown as {
@@ -349,7 +350,7 @@ export async function saveBatch(
       .in('supplier_id', supplierIds)
       .in('status', ['in_transit', 'delivered', 'needs_review']);
 
-    const matchedIds = new Set<string>();
+    const matchedBoxes: Array<{ id: string; item: ReceiptItem }> = [];
     const expectedBoxRows = (expectedBoxes || []) as ExpectedBoxMatch[];
 
     expectedBoxRows.forEach(box => {
@@ -360,23 +361,30 @@ export async function saveBatch(
       });
 
       if (match) {
-        matchedIds.add(box.id);
+        matchedBoxes.push({ id: box.id, item: match as ReceiptItem });
       }
     });
 
-    if (matchedIds.size > 0) {
-      const { error: updateErr } = await expectedBoxesDb
-        .from('expected_boxes')
-        .update({
-          status: 'received',
-          warehouse_received_at: batchRow!.received_at,
-          received_batch_id: batchRow!.id,
-          warehouse_received_email_sent: false,
-        })
-        .in('id', Array.from(matchedIds));
-      if (updateErr) throw updateErr;
-      expectedBoxesMatched = matchedIds.size;
-      expectedBoxIdsMatched = Array.from(matchedIds);
+    if (matchedBoxes.length > 0) {
+      const uniqueMatches = Array.from(new Map(matchedBoxes.map(match => [match.id, match])).values());
+      for (const match of uniqueMatches) {
+        const packageType = (match.item.package_type || '').toLowerCase();
+        const receivedBoxCount = packageType === 'box' || packageType === 'boxes' ? Math.max(0, match.item.package_count || 0) : 0;
+        const { error: updateErr } = await expectedBoxesDb
+          .from('expected_boxes')
+          .update({
+            status: 'received',
+            warehouse_received_at: batchRow!.received_at,
+            warehouse_received_box_count: receivedBoxCount,
+            received_batch_id: batchRow!.id,
+            received_item_id: match.item.id,
+            warehouse_received_email_sent: false,
+          })
+          .eq('id', match.id);
+        if (updateErr) throw updateErr;
+      }
+      expectedBoxesMatched = uniqueMatches.length;
+      expectedBoxIdsMatched = uniqueMatches.map(match => match.id);
     }
   }
 

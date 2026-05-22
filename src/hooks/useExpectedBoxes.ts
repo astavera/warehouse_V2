@@ -18,6 +18,7 @@ export type ExpectedBox = {
   carrier_delivered_at: string | null;
   carrier_tracking_events?: CarrierTrackingEvent[] | null;
   warehouse_received_at: string | null;
+  warehouse_received_box_count: number;
   last_carrier_event: string | null;
   notes: string | null;
   created_by_employee_id: string | null;

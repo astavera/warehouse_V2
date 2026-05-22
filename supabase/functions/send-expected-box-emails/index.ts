@@ -14,7 +14,9 @@ type ExpectedBox = {
   carrier: string;
   po_number: string | null;
   warehouse_received_at: string | null;
+  warehouse_received_box_count: number;
   warehouse_received_email_sent: boolean;
+  notes: string | null;
   suppliers: {
     name: string;
   } | null;
@@ -42,6 +44,15 @@ function formatDate(value: string | null) {
     timeStyle: 'short',
     timeZone: 'America/New_York',
   }).format(new Date(value));
+}
+
+function escapeHtml(value: string | null | undefined) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
 }
 
 async function requireAuthenticatedUser(req: Request, supabaseUrl: string, serviceRoleKey: string) {
@@ -78,7 +89,9 @@ async function sendEmail({
     return { skipped: true };
   }
 
-  const boxCount = boxes.length;
+  const matchedCount = boxes.length;
+  const receivedBoxCount = boxes.reduce((sum, box) => sum + Math.max(0, box.warehouse_received_box_count || 0), 0);
+  const boxCount = receivedBoxCount || matchedCount;
   const supplierNames = [...new Set(boxes.map(box => box.suppliers?.name || 'Unknown supplier'))];
   const supplierSummary = supplierNames.length === 1 ? supplierNames[0] : `${supplierNames.length} suppliers`;
   const subject = `Warehouse received: ${boxCount} box${boxCount === 1 ? '' : 'es'} from ${supplierSummary}`;
@@ -88,27 +101,31 @@ async function sendEmail({
       const receivedAt = formatDate(box.warehouse_received_at);
       return `
         <tr>
-          <td style="padding: 8px; border: 1px solid #e5e7eb;">${supplierName}</td>
-          <td style="padding: 8px; border: 1px solid #e5e7eb;">${box.carrier}</td>
-          <td style="padding: 8px; border: 1px solid #e5e7eb;">${box.tracking_number}</td>
-          <td style="padding: 8px; border: 1px solid #e5e7eb;">${box.po_number || 'Not required'}</td>
+          <td style="padding: 8px; border: 1px solid #e5e7eb;">${escapeHtml(supplierName)}</td>
+          <td style="padding: 8px; border: 1px solid #e5e7eb;">${escapeHtml(box.carrier)}</td>
+          <td style="padding: 8px; border: 1px solid #e5e7eb;">${escapeHtml(box.tracking_number)}</td>
+          <td style="padding: 8px; border: 1px solid #e5e7eb;">${box.warehouse_received_box_count || 0}</td>
+          <td style="padding: 8px; border: 1px solid #e5e7eb;">${escapeHtml(box.po_number || 'Not required')}</td>
           <td style="padding: 8px; border: 1px solid #e5e7eb;">${receivedAt}</td>
+          <td style="padding: 8px; border: 1px solid #e5e7eb;">${escapeHtml(box.notes || '')}</td>
         </tr>
       `;
     })
     .join('');
   const html = `
     <div style="font-family: Arial, sans-serif; color: #111827; line-height: 1.5;">
-      <h2 style="margin: 0 0 12px;">${boxCount} expected box${boxCount === 1 ? '' : 'es'} received in warehouse</h2>
-      <p style="margin: 0 0 16px;">Receiving matched ${boxCount} expected box${boxCount === 1 ? '' : 'es'}.</p>
-      <table style="border-collapse: collapse; width: 100%; max-width: 760px;">
+      <h2 style="margin: 0 0 12px;">${boxCount} box${boxCount === 1 ? '' : 'es'} received in warehouse</h2>
+      <p style="margin: 0 0 16px;">Receiving matched ${matchedCount} expected tracking record${matchedCount === 1 ? '' : 's'}.</p>
+      <table style="border-collapse: collapse; width: 100%; max-width: 920px;">
         <thead>
           <tr>
             <th align="left" style="padding: 8px; border: 1px solid #e5e7eb; background: #f9fafb;">Supplier</th>
             <th align="left" style="padding: 8px; border: 1px solid #e5e7eb; background: #f9fafb;">Carrier</th>
             <th align="left" style="padding: 8px; border: 1px solid #e5e7eb; background: #f9fafb;">Tracking</th>
+            <th align="left" style="padding: 8px; border: 1px solid #e5e7eb; background: #f9fafb;">Boxes received</th>
             <th align="left" style="padding: 8px; border: 1px solid #e5e7eb; background: #f9fafb;">P.O</th>
             <th align="left" style="padding: 8px; border: 1px solid #e5e7eb; background: #f9fafb;">WH received</th>
+            <th align="left" style="padding: 8px; border: 1px solid #e5e7eb; background: #f9fafb;">Notes</th>
           </tr>
         </thead>
         <tbody>${rows}</tbody>
@@ -186,7 +203,7 @@ Deno.serve(async req => {
 
     let query = supabase
       .from('expected_boxes')
-      .select('id, tracking_number, carrier, po_number, warehouse_received_at, warehouse_received_email_sent, suppliers(name)')
+      .select('id, tracking_number, carrier, po_number, warehouse_received_at, warehouse_received_box_count, warehouse_received_email_sent, notes, suppliers(name)')
       .eq('status', 'received')
       .eq('warehouse_received_email_sent', false);
 
