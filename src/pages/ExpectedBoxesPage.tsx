@@ -116,7 +116,7 @@ export default function ExpectedBoxesPage() {
   const [syncingId, setSyncingId] = useState('');
   const [syncingList, setSyncingList] = useState(false);
   const [syncProgress, setSyncProgress] = useState({ done: 0, total: 0 });
-  const listRef = useRef<HTMLElement | null>(null);
+  const selectedItemRef = useRef<HTMLDivElement | null>(null);
 
   const filteredBoxes = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -150,12 +150,12 @@ export default function ExpectedBoxesPage() {
 
     const handlePointerDown = (event: PointerEvent) => {
       const target = event.target as Node | null;
-      if (!target || listRef.current?.contains(target)) return;
+      if (!target || selectedItemRef.current?.contains(target)) return;
       setSelectedId('');
     };
 
-    document.addEventListener('pointerdown', handlePointerDown);
-    return () => document.removeEventListener('pointerdown', handlePointerDown);
+    document.addEventListener('pointerdown', handlePointerDown, true);
+    return () => document.removeEventListener('pointerdown', handlePointerDown, true);
   }, [selectedId, addOpen, editOpen, recipientOpen]);
 
   const handleGrantAccess = async () => {
@@ -634,7 +634,7 @@ export default function ExpectedBoxesPage() {
       )}
 
       {canUseExpectedBoxes && <div className="grid grid-cols-1 gap-3">
-        <section ref={listRef} className="min-w-0 rounded-xl border border-border/70 bg-white/96 shadow-sm">
+        <section className="min-w-0 rounded-xl border border-border/70 bg-white/96 shadow-sm">
           <div className="flex flex-col gap-2 border-b border-border/70 bg-muted/20 px-3 py-2.5 md:flex-row md:items-center md:justify-between">
             <div className="relative md:w-[360px]">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -686,7 +686,7 @@ export default function ExpectedBoxesPage() {
               const supplierName = box.suppliers?.name || 'Unknown supplier';
               const isSelected = selectedBox?.id === box.id;
               return (
-                <div key={box.id} className={isSelected ? 'bg-primary/5' : 'bg-white'}>
+                <div ref={isSelected ? selectedItemRef : null} key={box.id} className={isSelected ? 'bg-primary/5' : 'bg-white'}>
                   <button
                     type="button"
                     className="grid w-full grid-cols-1 gap-2 px-3 py-3 text-left transition-colors hover:bg-muted/20 lg:grid-cols-[150px_minmax(220px,1fr)_160px_130px_150px_140px] lg:items-center lg:gap-3"
