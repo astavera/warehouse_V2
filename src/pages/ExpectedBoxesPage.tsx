@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Bell, CheckCircle2, Clock3, Loader2, PackageSearch, Pencil, Plus, RefreshCw, Search, Settings, Trash2, Truck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
@@ -116,6 +116,7 @@ export default function ExpectedBoxesPage() {
   const [syncingId, setSyncingId] = useState('');
   const [syncingList, setSyncingList] = useState(false);
   const [syncProgress, setSyncProgress] = useState({ done: 0, total: 0 });
+  const listRef = useRef<HTMLElement | null>(null);
 
   const filteredBoxes = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -143,6 +144,19 @@ export default function ExpectedBoxesPage() {
   const accessEmployees = employees;
   const allowedExpectedBoxUsers = accessEmployees.filter(employee => access.some(entry => entry.employee_id === employee.id && entry.can_view));
   const selectableAccessUsers = accessEmployees.filter(employee => !allowedExpectedBoxUsers.some(allowed => allowed.id === employee.id));
+
+  useEffect(() => {
+    if (!selectedId || addOpen || editOpen || recipientOpen) return;
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target as Node | null;
+      if (!target || listRef.current?.contains(target)) return;
+      setSelectedId('');
+    };
+
+    document.addEventListener('pointerdown', handlePointerDown);
+    return () => document.removeEventListener('pointerdown', handlePointerDown);
+  }, [selectedId, addOpen, editOpen, recipientOpen]);
 
   const handleGrantAccess = async () => {
     if (!accessEmployeeId) return;
@@ -620,7 +634,7 @@ export default function ExpectedBoxesPage() {
       )}
 
       {canUseExpectedBoxes && <div className="grid grid-cols-1 gap-3">
-        <section className="min-w-0 rounded-xl border border-border/70 bg-white/96 shadow-sm">
+        <section ref={listRef} className="min-w-0 rounded-xl border border-border/70 bg-white/96 shadow-sm">
           <div className="flex flex-col gap-2 border-b border-border/70 bg-muted/20 px-3 py-2.5 md:flex-row md:items-center md:justify-between">
             <div className="relative md:w-[360px]">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
