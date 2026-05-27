@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { CalendarDays, AlertTriangle, Camera, CheckCheck, Copy, PackageCheck, Plus, RotateCcw, Save, Trash2 } from 'lucide-react';
+import { CalendarDays, AlertTriangle, Camera, CheckCheck, Copy, History, PackageCheck, Plus, RotateCcw, Save, Trash2 } from 'lucide-react';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Calendar as CalendarPicker } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -118,6 +119,8 @@ export default function ReceivePage() {
   const [datePickerOpen, setDatePickerOpen] = useState(false);
   const [showSaveConfirmation, setShowSaveConfirmation] = useState(false);
   const [savedLineCount, setSavedLineCount] = useState(0);
+  const [lastSavedBatchId, setLastSavedBatchId] = useState<string | null>(null);
+  const [lastSavedSignature, setLastSavedSignature] = useState('');
   const qtyRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
   const activeCarriers = carriers.filter(c => c.active);
@@ -160,6 +163,28 @@ export default function ReceivePage() {
 
     return summary;
   }, []);
+  const currentBatchSignature = useMemo(
+    () =>
+      JSON.stringify({
+        carrierId,
+        receivedDate,
+        receivedTime,
+        batchNotes: batchNotes.trim(),
+        items: items.map(item => ({
+          supplierId: item.supplierId,
+          packageType: item.packageType,
+          packageCount: item.packageCount,
+          damagedBox: item.damagedBox,
+          damagedNotes: item.damagedNotes.trim(),
+          trackingNumber: item.trackingNumber.trim(),
+          comments: item.comments.trim(),
+          photoName: item.photoFile?.name || '',
+          photoPreview: item.photoPreview || '',
+        })),
+      }),
+    [batchNotes, carrierId, items, receivedDate, receivedTime]
+  );
+  const currentReceiptAlreadySaved = Boolean(lastSavedBatchId && lastSavedSignature === currentBatchSignature);
 
   useEffect(() => {
     if (!showSaveConfirmation) return;
@@ -205,6 +230,9 @@ export default function ReceivePage() {
     setBatchNotes('');
     setItems([emptyItem()]);
     setOpenDetails(new Set());
+    setLastSavedBatchId(null);
+    setLastSavedSignature('');
+    setShowSaveConfirmation(false);
   };
 
   const toggleDetails = (id: string) => {
@@ -257,10 +285,15 @@ export default function ReceivePage() {
   };
 
   const handleSave = async (andNew: boolean) => {
+    if (!andNew && currentReceiptAlreadySaved) {
+      toast.info('This receipt is already saved');
+      return;
+    }
     if (!validate()) return;
 
     setSaving(true);
     try {
+      const signatureBeforeSave = currentBatchSignature;
       const receivedAt = new Date(`${receivedDate}T${receivedTime}`).toISOString();
       const batchData = {
         carrier_id: carrierId,
@@ -295,7 +328,12 @@ export default function ReceivePage() {
 
       const savedBatch = await saveBatch(batchData, itemsData);
       setSavedLineCount(items.length);
+      setLastSavedBatchId(savedBatch.id);
+      setLastSavedSignature(signatureBeforeSave);
       setShowSaveConfirmation(true);
+      if ('offlineQueued' in savedBatch && savedBatch.offlineQueued) {
+        toast.success('Receipt saved offline and queued for sync');
+      }
       if (savedBatch.expectedBoxesMatched > 0) {
         toast.success(`${savedBatch.expectedBoxesMatched} expected box${savedBatch.expectedBoxesMatched === 1 ? '' : 'es'} marked as received`);
         sendExpectedBoxEmails(savedBatch.expectedBoxIdsMatched)
@@ -419,6 +457,7 @@ export default function ReceivePage() {
                   onAdded={c => {
                     refetchCarriers();
                     setCarrierId(c.id);
+                    window.setTimeout(() => document.querySelector<HTMLInputElement>('input[placeholder="Search supplier..."]')?.focus(), 0);
                   }}
                 />
               </div>
@@ -850,15 +889,30 @@ export default function ReceivePage() {
             {' '}<span className="font-semibold text-foreground">{completedLines}</span> ready lines
           </p>
         </div>
-        <Button onClick={() => handleSave(false)} size="lg" className="h-12 gap-2 rounded-xl sm:flex-1" disabled={saving}>
-          <Save className="h-5 w-5" /> {saving ? 'Saving...' : 'Save Batch'}
-        </Button>
-        <Button onClick={() => handleSave(true)} size="lg" variant="secondary" className="h-12 gap-2 rounded-xl sm:flex-1" disabled={saving}>
-          <RotateCcw className="h-5 w-5" /> Save & New
-        </Button>
-        <Button onClick={resetBatch} size="lg" variant="outline" className="h-12 gap-2 rounded-xl bg-white" disabled={saving}>
-          <RotateCcw className="h-5 w-5" /> Reset
-        </Button>
+        {currentReceiptAlreadySaved ? (
+          <>
+            <Button asChild size="lg" className="h-12 gap-2 rounded-xl sm:flex-1">
+              <Link to={`/history?open=${encodeURIComponent(lastSavedBatchId || '')}`}>
+                <History className="h-5 w-5" /> View in History
+              </Link>
+            </Button>
+            <Button onClick={resetBatch} size="lg" variant="secondary" className="h-12 gap-2 rounded-xl sm:flex-1">
+              <RotateCcw className="h-5 w-5" /> Start New
+            </Button>
+          </>
+        ) : (
+          <>
+            <Button onClick={() => handleSave(false)} size="lg" className="h-12 gap-2 rounded-xl sm:flex-1" disabled={saving}>
+              <Save className="h-5 w-5" /> {saving ? 'Saving...' : 'Save Batch'}
+            </Button>
+            <Button onClick={() => handleSave(true)} size="lg" variant="secondary" className="h-12 gap-2 rounded-xl sm:flex-1" disabled={saving}>
+              <RotateCcw className="h-5 w-5" /> Save & New
+            </Button>
+            <Button onClick={resetBatch} size="lg" variant="outline" className="h-12 gap-2 rounded-xl bg-white" disabled={saving}>
+              <RotateCcw className="h-5 w-5" /> Reset
+            </Button>
+          </>
+        )}
       </div>
     </div>
   );

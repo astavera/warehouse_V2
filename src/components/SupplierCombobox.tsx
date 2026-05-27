@@ -8,6 +8,7 @@ import { Plus } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import type { Tables } from '@/integrations/supabase/types';
 import { toast } from 'sonner';
+import { createLocalSupplier, isMockLocal, shouldUseLocalData } from '@/lib/localWarehouseData';
 
 type Supplier = Tables<'suppliers'>;
 
@@ -60,6 +61,21 @@ export default function SupplierCombobox({ suppliers, value, onChange, onSupplie
 
     setSaving(true);
     try {
+      if (shouldUseLocalData()) {
+        const row = createLocalSupplier({
+          name: normalizedName,
+          code: newCode.trim() || normalizedName.substring(0, 4).toUpperCase(),
+          active: true,
+        }, { queueSync: !isMockLocal });
+        setQuery('');
+        setNewName('');
+        setNewCode('');
+        setAddOpen(false);
+        onSupplierAdded(row);
+        onChange(row.id);
+        return;
+      }
+
       const { data, error } = await supabase
         .from('suppliers')
         .insert({
@@ -71,13 +87,28 @@ export default function SupplierCombobox({ suppliers, value, onChange, onSupplie
         .single();
 
       if (error) throw error;
-      onSupplierAdded(data!);
-      onChange(data!.id);
       setQuery('');
       setNewName('');
       setNewCode('');
       setAddOpen(false);
+      onSupplierAdded(data!);
+      onChange(data!.id);
     } catch (err) {
+      if (!shouldUseLocalData()) {
+        const row = createLocalSupplier({
+          name: normalizedName,
+          code: newCode.trim() || normalizedName.substring(0, 4).toUpperCase(),
+          active: true,
+        }, { queueSync: true });
+        setQuery('');
+        setNewName('');
+        setNewCode('');
+        setAddOpen(false);
+        onSupplierAdded(row);
+        onChange(row.id);
+        toast.success('Supplier saved offline');
+        return;
+      }
       toast.error(getErrorMessage(err, 'Failed to add supplier'));
     } finally {
       setSaving(false);

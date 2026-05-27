@@ -2,6 +2,26 @@ import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import type { Tables, TablesInsert } from '@/integrations/supabase/types';
 import { invokeProtectedFunction } from '@/lib/protectedFunctions';
+import {
+  createLocalCarrier,
+  createLocalEmployee,
+  createLocalSupplier,
+  deleteLocalCarrier,
+  deleteLocalSupplier,
+  getPendingOfflineChanges,
+  isMockLocal,
+  listLocalBatches,
+  listLocalCarriers,
+  listLocalEmployees,
+  listLocalSuppliers,
+  removePendingOfflineChange,
+  saveLocalBatch,
+  shouldUseLocalData,
+  updateLocalCarrier,
+  updateLocalEmployee,
+  updateLocalSupplier,
+  type OfflineQueueItem,
+} from '@/lib/localWarehouseData';
 
 type Supplier = Tables<'suppliers'>;
 type Carrier = Tables<'carriers'>;
@@ -36,27 +56,65 @@ export function useSuppliers() {
   const [loading, setLoading] = useState(true);
 
   const fetch = useCallback(async () => {
-    const { data } = await supabase.from('suppliers').select('*').order('name');
-    setData(data || []);
-    setLoading(false);
+    setLoading(true);
+    try {
+      if (shouldUseLocalData()) {
+        setData(listLocalSuppliers());
+        return;
+      }
+
+      const { data, error } = await supabase.from('suppliers').select('*').order('name');
+      if (error) throw error;
+      setData(data || []);
+    } catch (err) {
+      console.error('Failed to load suppliers', err);
+      setData(listLocalSuppliers());
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => { fetch(); }, [fetch]);
 
   const add = async (s: TablesInsert<'suppliers'>) => {
-    const { data: row, error } = await supabase.from('suppliers').insert(s).select().single();
-    if (error) throw error;
-    await fetch();
-    return row!;
+    if (shouldUseLocalData()) {
+      const row = createLocalSupplier(s, { queueSync: !isMockLocal });
+      await fetch();
+      return row;
+    }
+
+    try {
+      const { data: row, error } = await supabase.from('suppliers').insert(s).select().single();
+      if (error) throw error;
+      await fetch();
+      return row!;
+    } catch (err) {
+      console.warn('Supplier saved offline because remote save failed', err);
+      const row = createLocalSupplier(s, { queueSync: true });
+      await fetch();
+      return row;
+    }
   };
 
   const update = async (id: string, patch: Partial<Supplier>) => {
+    if (shouldUseLocalData()) {
+      updateLocalSupplier(id, patch);
+      await fetch();
+      return;
+    }
+
     const { error } = await supabase.from('suppliers').update(patch).eq('id', id);
     if (error) throw error;
     await fetch();
   };
 
   const remove = async (id: string) => {
+    if (shouldUseLocalData()) {
+      deleteLocalSupplier(id);
+      await fetch();
+      return;
+    }
+
     const { error } = await supabase.from('suppliers').delete().eq('id', id);
     if (error) throw error;
     await fetch();
@@ -70,27 +128,65 @@ export function useCarriers() {
   const [loading, setLoading] = useState(true);
 
   const fetch = useCallback(async () => {
-    const { data } = await supabase.from('carriers').select('*').order('name');
-    setData(data || []);
-    setLoading(false);
+    setLoading(true);
+    try {
+      if (shouldUseLocalData()) {
+        setData(listLocalCarriers());
+        return;
+      }
+
+      const { data, error } = await supabase.from('carriers').select('*').order('name');
+      if (error) throw error;
+      setData(data || []);
+    } catch (err) {
+      console.error('Failed to load carriers', err);
+      setData(listLocalCarriers());
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => { fetch(); }, [fetch]);
 
   const add = async (s: TablesInsert<'carriers'>) => {
-    const { data: row, error } = await supabase.from('carriers').insert(s).select().single();
-    if (error) throw error;
-    await fetch();
-    return row!;
+    if (shouldUseLocalData()) {
+      const row = createLocalCarrier(s, { queueSync: !isMockLocal });
+      await fetch();
+      return row;
+    }
+
+    try {
+      const { data: row, error } = await supabase.from('carriers').insert(s).select().single();
+      if (error) throw error;
+      await fetch();
+      return row!;
+    } catch (err) {
+      console.warn('Carrier saved offline because remote save failed', err);
+      const row = createLocalCarrier(s, { queueSync: true });
+      await fetch();
+      return row;
+    }
   };
 
   const update = async (id: string, patch: Partial<Carrier>) => {
+    if (shouldUseLocalData()) {
+      updateLocalCarrier(id, patch);
+      await fetch();
+      return;
+    }
+
     const { error } = await supabase.from('carriers').update(patch).eq('id', id);
     if (error) throw error;
     await fetch();
   };
 
   const remove = async (id: string) => {
+    if (shouldUseLocalData()) {
+      deleteLocalCarrier(id);
+      await fetch();
+      return;
+    }
+
     const { error } = await supabase.from('carriers').delete().eq('id', id);
     if (error) throw error;
     await fetch();
@@ -104,14 +200,33 @@ export function useEmployees() {
   const [loading, setLoading] = useState(true);
 
   const fetch = useCallback(async () => {
-    const { data } = await supabase.from('employees').select(EMPLOYEE_SELECT).order('name');
-    setData((data || []) as Employee[]);
-    setLoading(false);
+    setLoading(true);
+    try {
+      if (shouldUseLocalData()) {
+        setData(listLocalEmployees());
+        return;
+      }
+
+      const { data, error } = await supabase.from('employees').select(EMPLOYEE_SELECT).order('name');
+      if (error) throw error;
+      setData((data || []) as Employee[]);
+    } catch (err) {
+      console.error('Failed to load employees', err);
+      setData(listLocalEmployees());
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => { fetch(); }, [fetch]);
 
   const add = async (s: TablesInsert<'employees'>) => {
+    if (shouldUseLocalData()) {
+      const row = createLocalEmployee(s);
+      await fetch();
+      return row;
+    }
+
     const { data: row, error } = await supabase.from('employees').insert(s).select().single();
     if (error) throw error;
     await fetch();
@@ -119,6 +234,12 @@ export function useEmployees() {
   };
 
   const update = async (id: string, patch: Partial<Employee>) => {
+    if (shouldUseLocalData()) {
+      updateLocalEmployee(id, patch);
+      await fetch();
+      return;
+    }
+
     await supabase.from('employees').update(patch).eq('id', id);
     await fetch();
   };
@@ -135,18 +256,31 @@ export function useBatches(dateFilter?: string) {
   const [loading, setLoading] = useState(true);
 
   const fetch = useCallback(async () => {
-    let query = supabase
-      .from('receipt_batches')
-      .select('*, receipt_items(*)')
-      .order('received_at', { ascending: false });
+    setLoading(true);
+    try {
+      if (shouldUseLocalData()) {
+        setData(listLocalBatches(dateFilter));
+        return;
+      }
 
-    if (dateFilter) {
-      query = query.gte('received_at', `${dateFilter}T00:00:00`).lte('received_at', `${dateFilter}T23:59:59`);
+      let query = supabase
+        .from('receipt_batches')
+        .select('*, receipt_items(*)')
+        .order('received_at', { ascending: false });
+
+      if (dateFilter) {
+        query = query.gte('received_at', `${dateFilter}T00:00:00`).lte('received_at', `${dateFilter}T23:59:59`);
+      }
+
+      const { data, error } = await query;
+      if (error) throw error;
+      setData((data as BatchWithItems[]) || []);
+    } catch (err) {
+      console.error('Failed to load batches', err);
+      setData(listLocalBatches(dateFilter));
+    } finally {
+      setLoading(false);
     }
-
-    const { data } = await query;
-    setData((data as BatchWithItems[]) || []);
-    setLoading(false);
   }, [dateFilter]);
 
   useEffect(() => { fetch(); }, [fetch]);
@@ -165,14 +299,25 @@ export function useReceiptDates() {
 
   useEffect(() => {
     (async () => {
-      const { data } = await supabase
-        .from('receipt_batches')
-        .select('received_at');
-      if (data) {
-        const unique = new Set(data.map(r => r.received_at.split('T')[0]));
+      try {
+        if (shouldUseLocalData()) {
+          const unique = new Set(listLocalBatches().map(row => row.received_at.split('T')[0]));
+          setDates(Array.from(unique).map(d => new Date(`${d}T12:00:00`)));
+          return;
+        }
+
+        const { data, error } = await supabase
+          .from('receipt_batches')
+          .select('received_at');
+        if (error) throw error;
+        const unique = new Set((data || []).map(r => r.received_at.split('T')[0]));
         setDates(Array.from(unique).map(d => new Date(d + 'T12:00:00')));
+      } catch (err) {
+        console.error('Failed to load receipt dates', err);
+        setDates([]);
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     })();
   }, []);
 
@@ -210,11 +355,16 @@ export function useReceiptCalendarDetails() {
 
   useEffect(() => {
     (async () => {
-      const { data } = await supabase
-        .from('receipt_batches')
-        .select('id, received_at, carrier_id, receipt_items(package_count, package_type, supplier_id)');
+      try {
+        const data = shouldUseLocalData()
+          ? listLocalBatches()
+          : (
+              await supabase
+                .from('receipt_batches')
+                .select('id, received_at, carrier_id, receipt_items(package_count, package_type, supplier_id)')
+            ).data;
 
-      if (data) {
+        if (data) {
         const nextDetails: Record<
           string,
           {
@@ -316,8 +466,13 @@ export function useReceiptCalendarDetails() {
         setDetailsByDate(nextDetails);
         setDates(Object.keys(nextDetails).map(d => new Date(`${d}T12:00:00`)));
       }
-
-      setLoading(false);
+      } catch (err) {
+        console.error('Failed to load receipt calendar details', err);
+        setDates([]);
+        setDetailsByDate({});
+      } finally {
+        setLoading(false);
+      }
     })();
   }, []);
 
@@ -328,12 +483,23 @@ export async function saveBatch(
   batch: TablesInsert<'receipt_batches'>,
   items: TablesInsert<'receipt_items'>[]
 ) {
-  const { data: batchRow, error: batchErr } = await supabase
-    .from('receipt_batches')
-    .insert(batch)
-    .select()
-    .single();
-  if (batchErr) throw batchErr;
+  if (shouldUseLocalData()) {
+    return saveLocalBatch(batch, items, { queueSync: !isMockLocal });
+  }
+
+  let batchRow: ReceiptBatch | null = null;
+  try {
+    const { data, error: batchErr } = await supabase
+      .from('receipt_batches')
+      .insert(batch)
+      .select()
+      .single();
+    if (batchErr) throw batchErr;
+    batchRow = data;
+  } catch (err) {
+    console.warn('Batch saved offline because remote save failed', err);
+    return saveLocalBatch(batch, items, { queueSync: true });
+  }
 
   const itemsWithBatch = items.map(it => ({ ...it, batch_id: batchRow!.id }));
   const { data: itemRows, error: itemsErr } = await supabase.from('receipt_items').insert(itemsWithBatch).select();
@@ -391,12 +557,59 @@ export async function saveBatch(
   return { ...batchRow!, expectedBoxesMatched, expectedBoxIdsMatched };
 }
 
+async function syncOfflineQueueItem(item: OfflineQueueItem) {
+  if (item.action === 'supplier:create') {
+    const { error } = await supabase.from('suppliers').upsert(item.payload).select().single();
+    if (error) throw error;
+    return;
+  }
+
+  if (item.action === 'carrier:create') {
+    const { error } = await supabase.from('carriers').upsert(item.payload).select().single();
+    if (error) throw error;
+    return;
+  }
+
+  const { batch, items } = item.payload;
+  const { error: batchError } = await supabase.from('receipt_batches').upsert(batch).select().single();
+  if (batchError) throw batchError;
+  if (items.length > 0) {
+    const { error: itemsError } = await supabase.from('receipt_items').upsert(items).select();
+    if (itemsError) throw itemsError;
+  }
+}
+
+export async function syncPendingOfflineChanges() {
+  if (isMockLocal || shouldUseLocalData()) {
+    return { synced: 0, pending: getPendingOfflineChanges().length };
+  }
+
+  let synced = 0;
+  for (const item of getPendingOfflineChanges()) {
+    await syncOfflineQueueItem(item);
+    removePendingOfflineChange(item.id);
+    synced += 1;
+  }
+
+  return { synced, pending: getPendingOfflineChanges().length };
+}
+
 export async function sendExpectedBoxEmails(expectedBoxIds: string[]) {
+  if (shouldUseLocalData()) return { sent: 0 };
   if (expectedBoxIds.length === 0) return { sent: 0 };
   return invokeProtectedFunction<{ sent: number; sentIds?: string[] }>('send-expected-box-emails', { expectedBoxIds });
 }
 
 export async function uploadPhoto(file: File, path: string): Promise<string> {
+  if (shouldUseLocalData()) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || path));
+      reader.onerror = () => reject(new Error('Failed to read local photo'));
+      reader.readAsDataURL(file);
+    });
+  }
+
   const { error } = await supabase.storage
     .from('receipts_photos')
     .upload(path, file, { upsert: true });

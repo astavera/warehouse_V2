@@ -15,6 +15,14 @@ import { useCarriers, useSuppliers, useEmployees, type BatchWithItems } from '@/
 import { supabase } from '@/integrations/supabase/client';
 import CarrierBadge from '@/components/CarrierBadge';
 import { toast } from 'sonner';
+import {
+  deleteLocalBatch,
+  deleteLocalItem,
+  isMockLocal,
+  listLocalHistoryBatches,
+  updateLocalBatch,
+  updateLocalItem,
+} from '@/lib/localWarehouseData';
 
 function escapeCsv(val: string) {
   if (val.includes(',') || val.includes('"') || val.includes('\n')) {
@@ -24,6 +32,19 @@ function escapeCsv(val: string) {
 }
 
 function PhotoPreview({ path }: { path: string }) {
+  if (path.startsWith('data:') || path.startsWith('blob:') || path.startsWith('http')) {
+    return (
+      <a href={path} target="_blank" rel="noopener noreferrer" className="block">
+        <img
+          src={path}
+          alt="Receipt photo"
+          className="rounded-lg border max-h-48 object-contain bg-muted"
+          loading="lazy"
+        />
+      </a>
+    );
+  }
+
   const { data } = supabase.storage.from('receipts_photos').getPublicUrl(path);
   return (
     <a href={data.publicUrl} target="_blank" rel="noopener noreferrer" className="block">
@@ -94,13 +115,27 @@ export default function HistoryPage() {
   const [saving, setSaving] = useState(false);
 
   const fetchBatches = useCallback(() => {
+    setLoading(true);
+    if (isMockLocal) {
+      setAllBatches(listLocalHistoryBatches());
+      setLoading(false);
+      return;
+    }
+
     supabase
       .from('receipt_batches')
       .select('*, receipt_items(*, suppliers(name, code))')
       .order('received_at', { ascending: false })
       .limit(500)
-      .then(({ data }) => {
+      .then(({ data, error }) => {
+        if (error) throw error;
         setAllBatches((data as HistoryBatch[]) || []);
+      })
+      .catch(err => {
+        console.error('Failed to load receipt history', err);
+        setAllBatches([]);
+      })
+      .finally(() => {
         setLoading(false);
       });
   }, []);
@@ -169,9 +204,13 @@ export default function HistoryPage() {
   // Delete batch
   const deleteBatch = async (batchId: string) => {
     try {
-      await supabase.from('receipt_items').delete().eq('batch_id', batchId);
-      await supabase.from('receipt_photos').delete().eq('batch_id', batchId);
-      await supabase.from('receipt_batches').delete().eq('id', batchId);
+      if (isMockLocal) {
+        deleteLocalBatch(batchId);
+      } else {
+        await supabase.from('receipt_items').delete().eq('batch_id', batchId);
+        await supabase.from('receipt_photos').delete().eq('batch_id', batchId);
+        await supabase.from('receipt_batches').delete().eq('id', batchId);
+      }
       setAllBatches(prev => prev.filter(b => b.id !== batchId));
       toast.success('Batch deleted');
     } catch (err) {
@@ -182,7 +221,11 @@ export default function HistoryPage() {
   // Delete single item
   const deleteItem = async (itemId: string, batchId: string) => {
     try {
-      await supabase.from('receipt_items').delete().eq('id', itemId);
+      if (isMockLocal) {
+        deleteLocalItem(itemId);
+      } else {
+        await supabase.from('receipt_items').delete().eq('id', itemId);
+      }
       setAllBatches(prev => prev.map(b =>
         b.id === batchId ? { ...b, receipt_items: b.receipt_items.filter(i => i.id !== itemId) } : b
       ));
@@ -204,11 +247,16 @@ export default function HistoryPage() {
     if (!editingBatch) return;
     setSaving(true);
     try {
-      await supabase.from('receipt_batches').update({
+      const patch = {
         notes: editNotes || null,
         carrier_id: editCarrierId || null,
         received_by_employee_id: editEmployeeId || null,
-      }).eq('id', editingBatch);
+      };
+      if (isMockLocal) {
+        updateLocalBatch(editingBatch, patch);
+      } else {
+        await supabase.from('receipt_batches').update(patch).eq('id', editingBatch);
+      }
       setAllBatches(prev => prev.map(b =>
         b.id === editingBatch ? { ...b, notes: editNotes || null, carrier_id: editCarrierId || null, received_by_employee_id: editEmployeeId || null } : b
       ));
@@ -239,7 +287,7 @@ export default function HistoryPage() {
     if (!editItem) return;
     setSaving(true);
     try {
-      await supabase.from('receipt_items').update({
+      const patch = {
         supplier_id: editItem.supplier_id,
         package_type: editItem.package_type,
         package_count: editItem.package_count,
@@ -247,7 +295,12 @@ export default function HistoryPage() {
         damaged_notes: editItem.damaged_notes || null,
         tracking_number: editItem.tracking_number || null,
         comments: editItem.comments || null,
-      }).eq('id', editItem.id);
+      };
+      if (isMockLocal) {
+        updateLocalItem(editItem.id, patch);
+      } else {
+        await supabase.from('receipt_items').update(patch).eq('id', editItem.id);
+      }
       setAllBatches(prev => prev.map(b => ({
         ...b,
         receipt_items: b.receipt_items.map(i =>
@@ -423,12 +476,12 @@ export default function HistoryPage() {
                               </div>
                               <div className="flex items-center gap-2">
                                 {item.tracking_number && <span className="text-xs text-muted-foreground">#{item.tracking_number}</span>}
-                                <button onClick={() => openEditItem(item)} className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors" title="Edit item">
+                                <button onClick={() => openEditItem(item)} className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors" title="Edit item" aria-label={`Edit ${supplierName}`}>
                                   <Pencil className="w-3.5 h-3.5" />
                                 </button>
                                 <AlertDialog>
                                   <AlertDialogTrigger asChild>
-                                    <button className="p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors" title="Delete item">
+                                    <button className="p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors" title="Delete item" aria-label={`Delete ${supplierName}`}>
                                       <Trash2 className="w-3.5 h-3.5" />
                                     </button>
                                   </AlertDialogTrigger>

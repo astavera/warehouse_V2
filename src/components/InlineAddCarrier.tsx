@@ -7,6 +7,7 @@ import { supabase } from '@/integrations/supabase/client';
 import type { Tables } from '@/integrations/supabase/types';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
+import { createLocalCarrier, isMockLocal, shouldUseLocalData } from '@/lib/localWarehouseData';
 
 type Carrier = Tables<'carriers'>;
 
@@ -28,15 +29,37 @@ export default function InlineAddCarrier({ onAdded }: Props) {
     if (!name.trim()) return;
     setSaving(true);
     try {
+      if (shouldUseLocalData()) {
+        const row = createLocalCarrier({
+          name: name.trim(),
+          carrier_type: type,
+        }, { queueSync: !isMockLocal });
+        setName('');
+        setOpen(false);
+        onAdded(row);
+        return;
+      }
+
       const { data, error } = await supabase.from('carriers').insert({
         name: name.trim(),
         carrier_type: type,
       }).select().single();
       if (error) throw error;
-      onAdded(data!);
       setName('');
       setOpen(false);
+      onAdded(data!);
     } catch (err) {
+      if (!shouldUseLocalData()) {
+        const row = createLocalCarrier({
+          name: name.trim(),
+          carrier_type: type,
+        }, { queueSync: true });
+        setName('');
+        setOpen(false);
+        onAdded(row);
+        toast.success('Carrier saved offline');
+        return;
+      }
       toast.error(getErrorMessage(err, 'Failed to add carrier'));
     } finally {
       setSaving(false);

@@ -6,6 +6,7 @@ import { Plus } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import type { Tables } from '@/integrations/supabase/types';
 import { toast } from 'sonner';
+import { createLocalEmployee, shouldUseLocalData } from '@/lib/localWarehouseData';
 
 type Employee = Tables<'employees'>;
 
@@ -27,15 +28,28 @@ export default function InlineAddEmployee({ onAdded }: Props) {
     if (!name.trim() || passcode.length !== 4) return;
     setSaving(true);
     try {
+      if (shouldUseLocalData()) {
+        const row = createLocalEmployee({
+          name: name.trim(),
+          passcode,
+          active: true,
+        });
+        setName('');
+        setPasscode('');
+        setOpen(false);
+        onAdded(row);
+        return;
+      }
+
       const { data, error } = await supabase.from('employees').insert({
         name: name.trim(),
         passcode,
       }).select().single();
       if (error) throw error;
-      onAdded(data!);
       setName('');
       setPasscode('');
       setOpen(false);
+      onAdded(data!);
     } catch (err) {
       toast.error(getErrorMessage(err, 'Failed to add receiver'));
     } finally {

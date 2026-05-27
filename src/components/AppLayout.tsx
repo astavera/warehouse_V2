@@ -1,10 +1,11 @@
 import { Link, useLocation } from 'react-router-dom';
-import { Package, ClipboardList, Truck, Users, BarChart3, Menu, X, LogOut, Warehouse, PackageSearch } from 'lucide-react';
+import { Package, ClipboardList, Truck, Users, BarChart3, Menu, X, LogOut, Warehouse, PackageSearch, Cloud, RefreshCw, WifiOff } from 'lucide-react';
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { useExpectedBoxAccess } from '@/hooks/useExpectedBoxes';
+import { useOfflineStatus } from '@/hooks/useOfflineStatus';
 
 const NAV = [
   { to: '/', label: 'Dashboard', icon: BarChart3 },
@@ -26,19 +27,27 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = useState(false);
   const { user, signOut } = useAuth();
   const { access } = useExpectedBoxAccess();
+  const { isLocalDemo, isOffline, pendingCount, syncing, syncNow } = useOfflineStatus();
   const hasExpectedBoxesAccess = Boolean(user && access.some(entry => entry.employee_id === user.id && entry.can_view));
   const canConfigureExpectedBoxes = Boolean(user?.name?.trim().toLowerCase() === 'sebastian' || user?.name?.trim().toLowerCase().includes('admin'));
   const visibleNav = NAV.filter(item => {
     if (item.to !== '/expected-boxes') return canSeeNavItem(user?.name, item);
     return hasExpectedBoxesAccess || canConfigureExpectedBoxes;
   });
+  const statusLabel = isLocalDemo ? 'Local' : isOffline ? 'Offline' : pendingCount > 0 ? `Pending ${pendingCount}` : '';
+  const StatusIcon = isOffline ? WifiOff : pendingCount > 0 ? RefreshCw : Cloud;
+  const showDataStatus = Boolean(statusLabel);
 
   return (
     <div className="app-surface min-h-screen flex flex-col">
       <header className="sticky top-0 z-50 border-b border-border/70 bg-white/88 px-4 backdrop-blur-xl">
         <div className="mx-auto flex h-16 w-full max-w-[1600px] items-center justify-between">
         <div className="flex min-w-0 items-center gap-3">
-          <button className="lg:hidden touch-target flex items-center justify-center rounded-lg hover:bg-muted" onClick={() => setOpen(!open)}>
+          <button
+            className="lg:hidden touch-target flex items-center justify-center rounded-lg hover:bg-muted"
+            onClick={() => setOpen(!open)}
+            aria-label={open ? 'Close navigation menu' : 'Open navigation menu'}
+          >
             {open ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
           </button>
           <Link to="/" className="flex min-w-0 items-center gap-3 font-semibold">
@@ -69,6 +78,24 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           ))}
         </nav>
         <div className="hidden items-center gap-3 lg:flex">
+          {showDataStatus && (
+            <button
+              type="button"
+              onClick={() => void syncNow()}
+              disabled={isLocalDemo || isOffline || pendingCount === 0 || syncing}
+              className={cn(
+                'inline-flex h-10 items-center gap-2 rounded-xl border px-3 text-sm font-medium',
+                isOffline
+                  ? 'border-amber-200 bg-amber-50 text-amber-700'
+                  : 'border-border/70 bg-white text-muted-foreground',
+                pendingCount > 0 && !isOffline && !isLocalDemo && 'text-primary'
+              )}
+              aria-label={pendingCount > 0 ? `Sync ${pendingCount} pending offline changes` : statusLabel}
+            >
+              <StatusIcon className={cn('h-4 w-4', syncing && 'animate-spin')} />
+              {statusLabel}
+            </button>
+          )}
           <div className="rounded-xl border border-border/70 bg-white px-3 py-2 text-sm">
             <span className="text-muted-foreground">Welcome, </span>
             <span className="font-medium text-foreground">{user?.name}</span>
@@ -86,6 +113,18 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             <div className="px-4 py-2 text-sm text-muted-foreground">
               Welcome, <span className="font-medium text-foreground">{user?.name}</span>
             </div>
+            {showDataStatus && (
+              <button
+                type="button"
+                onClick={() => void syncNow()}
+                disabled={isLocalDemo || isOffline || pendingCount === 0 || syncing}
+                className="mx-4 mb-2 inline-flex items-center gap-2 rounded-lg border border-border/70 bg-white px-3 py-2 text-sm font-medium text-muted-foreground"
+                aria-label={pendingCount > 0 ? `Sync ${pendingCount} pending offline changes` : statusLabel}
+              >
+                <StatusIcon className={cn('h-4 w-4', syncing && 'animate-spin')} />
+                {statusLabel}
+              </button>
+            )}
             {visibleNav.map(n => (
               <Link
                 key={n.to}

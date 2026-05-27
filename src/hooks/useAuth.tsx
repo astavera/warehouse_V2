@@ -21,6 +21,15 @@ interface AuthCtx {
 
 const STORAGE_KEY = 'warehouse-kiosk-user-id';
 const EMPLOYEE_SELECT = 'id, name, active, created_at, updated_at, auth_user_id';
+const MOCK_LOCAL = import.meta.env.VITE_MOCK_LOCAL === 'true';
+const MOCK_USER: PublicEmployee = {
+  id: '00000000-0000-0000-0000-000000000101',
+  name: 'Test User',
+  active: true,
+  created_at: new Date().toISOString(),
+  updated_at: new Date().toISOString(),
+  auth_user_id: null,
+};
 
 async function invokeKioskAuth(body: Record<string, unknown>) {
   const { data, error } = await supabase.functions.invoke('kiosk-auth', { body });
@@ -59,6 +68,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const restoreUser = async () => {
+      if (MOCK_LOCAL && localStorage.getItem(STORAGE_KEY) === MOCK_USER.id) {
+        setUser(MOCK_USER);
+        setLoading(false);
+        return;
+      }
+
       const { data: sessionData } = await supabase.auth.getSession();
       const authUserId = sessionData.session?.user.id;
       if (!authUserId) {
@@ -89,6 +104,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const beginSignIn = async (passcode: string) => {
     const normalizedPasscode = passcode.trim();
+    if (MOCK_LOCAL) {
+      if (normalizedPasscode !== '0315') throw new Error('Incorrect passcode');
+      return MOCK_USER;
+    }
+
     await supabase.auth.signOut();
     const result = await invokeKioskAuth({ action: 'sign-in', passcode: normalizedPasscode });
     const { error: sessionError } = await supabase.auth.setSession({
@@ -102,6 +122,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const beginSignUp = async (name: string, passcode: string, adminPasscode: string) => {
     const normalizedName = name.trim();
     const normalizedPasscode = passcode.trim();
+    if (MOCK_LOCAL) {
+      if (!normalizedName || normalizedPasscode.length !== 4 || !adminPasscode) throw new Error('Invalid test registration');
+      return { ...MOCK_USER, name: normalizedName };
+    }
+
     await supabase.auth.signOut();
     const result = await invokeKioskAuth({
       action: 'sign-up',
@@ -124,6 +149,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signOut = async () => {
     localStorage.removeItem(STORAGE_KEY);
+    if (MOCK_LOCAL) {
+      setUser(null);
+      return;
+    }
+
     await supabase.auth.signOut();
     setUser(null);
   };

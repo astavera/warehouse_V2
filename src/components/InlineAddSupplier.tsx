@@ -6,6 +6,7 @@ import { Plus } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import type { Tables } from '@/integrations/supabase/types';
 import { toast } from 'sonner';
+import { createLocalSupplier, isMockLocal, shouldUseLocalData } from '@/lib/localWarehouseData';
 
 type Supplier = Tables<'suppliers'>;
 
@@ -36,16 +37,42 @@ export default function InlineAddSupplier({ onAdded, defaultName = '', triggerLa
     if (!name.trim()) return;
     setSaving(true);
     try {
+      if (shouldUseLocalData()) {
+        const row = createLocalSupplier({
+          name: name.trim(),
+          code: code.trim() || name.trim().substring(0, 4).toUpperCase(),
+          active: true,
+        }, { queueSync: !isMockLocal });
+        setName('');
+        setCode('');
+        setOpen(false);
+        onAdded(row);
+        return;
+      }
+
       const { data, error } = await supabase.from('suppliers').insert({
         name: name.trim(),
         code: code.trim() || name.trim().substring(0, 4).toUpperCase(),
       }).select().single();
       if (error) throw error;
-      onAdded(data!);
       setName('');
       setCode('');
       setOpen(false);
+      onAdded(data!);
     } catch (err) {
+      if (!shouldUseLocalData()) {
+        const row = createLocalSupplier({
+          name: name.trim(),
+          code: code.trim() || name.trim().substring(0, 4).toUpperCase(),
+          active: true,
+        }, { queueSync: true });
+        setName('');
+        setCode('');
+        setOpen(false);
+        onAdded(row);
+        toast.success('Supplier saved offline');
+        return;
+      }
       toast.error(getErrorMessage(err, 'Failed to add supplier'));
     } finally {
       setSaving(false);
