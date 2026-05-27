@@ -183,6 +183,8 @@
   .receive-line-supplier {
     grid-column: 2 / 5 !important;
     grid-row: 1;
+    justify-self: start;
+    width: min(100%, 30rem);
   }
 
   .receive-line-type {
@@ -224,6 +226,7 @@
   .receive-line-supplier {
     grid-column: 2 / 4 !important;
     grid-row: 1;
+    width: min(100%, 24rem);
   }
 
   .receive-line-type {
