@@ -183,15 +183,8 @@
   .receive-line-supplier {
     grid-column: 2 / 5 !important;
     grid-row: 1;
-    justify-self: start;
+    justify-self: center;
     width: min(100%, 30rem);
-  }
-
-  .receive-line-supplier .supplier-combobox-list {
-    position: static !important;
-    min-width: 0 !important;
-    width: 100% !important;
-    max-height: 13.5rem;
   }
 
   .receive-line-type {
