@@ -195,6 +195,20 @@ export function listLocalSuppliers() {
   return sortByName(read<Supplier[]>(KEYS.suppliers, []));
 }
 
+export function cacheRemoteSuppliers(rows: Supplier[]) {
+  ensureSeeded();
+  const queuedSuppliers = getPendingOfflineChanges()
+    .filter((item): item is Extract<OfflineQueueItem, { action: 'supplier:create' }> => item.action === 'supplier:create')
+    .map(item => item.payload);
+  const merged = [...rows];
+  queuedSuppliers.forEach(supplier => {
+    if (!merged.some(row => row.id === supplier.id)) {
+      merged.push(supplier);
+    }
+  });
+  write(KEYS.suppliers, sortByName(merged));
+}
+
 export function createLocalSupplier(payload: TablesInsert<'suppliers'>, options: { queueSync?: boolean } = {}) {
   ensureSeeded();
   const timestamp = nowIso();
@@ -241,6 +255,20 @@ export function listLocalCarriers() {
   return sortByName(read<Carrier[]>(KEYS.carriers, []));
 }
 
+export function cacheRemoteCarriers(rows: Carrier[]) {
+  ensureSeeded();
+  const queuedCarriers = getPendingOfflineChanges()
+    .filter((item): item is Extract<OfflineQueueItem, { action: 'carrier:create' }> => item.action === 'carrier:create')
+    .map(item => item.payload);
+  const merged = [...rows];
+  queuedCarriers.forEach(carrier => {
+    if (!merged.some(row => row.id === carrier.id)) {
+      merged.push(carrier);
+    }
+  });
+  write(KEYS.carriers, sortByName(merged));
+}
+
 export function createLocalCarrier(payload: TablesInsert<'carriers'>, options: { queueSync?: boolean } = {}) {
   ensureSeeded();
   const timestamp = nowIso();
@@ -281,6 +309,11 @@ export function deleteLocalCarrier(id: string) {
 export function listLocalEmployees() {
   ensureSeeded();
   return sortByName(read<Employee[]>(KEYS.employees, []));
+}
+
+export function cacheRemoteEmployees(rows: Employee[]) {
+  ensureSeeded();
+  write(KEYS.employees, sortByName(rows));
 }
 
 export function createLocalEmployee(payload: TablesInsert<'employees'>) {

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
   clearLocalWarehouseData,
+  cacheRemoteSuppliers,
   createLocalCarrier,
   createLocalSupplier,
   deleteLocalBatch,
@@ -71,5 +72,28 @@ describe('localWarehouseData', () => {
         []
       )
     ).toThrow(/at least one receiving line/i);
+  });
+
+  it('keeps queued offline suppliers when refreshing the remote cache', () => {
+    const queuedSupplier = createLocalSupplier({ name: 'Queued Supplier', code: 'QS', active: true }, { queueSync: true });
+
+    cacheRemoteSuppliers([
+      {
+        id: 'remote-supplier-1',
+        name: 'Remote Supplier',
+        code: 'RS',
+        contact_name: null,
+        phone: null,
+        email: null,
+        notes: null,
+        active: true,
+        created_at: '2026-05-26T12:00:00.000Z',
+        updated_at: '2026-05-26T12:00:00.000Z',
+      },
+    ]);
+
+    const supplierNames = listLocalSuppliers().map(supplier => supplier.name);
+    expect(supplierNames).toContain('Remote Supplier');
+    expect(supplierNames).toContain(queuedSupplier.name);
   });
 });

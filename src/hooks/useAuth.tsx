@@ -20,6 +20,7 @@ interface AuthCtx {
 }
 
 const STORAGE_KEY = 'warehouse-kiosk-user-id';
+const USER_STORAGE_KEY = 'warehouse-kiosk-user';
 const EMPLOYEE_SELECT = 'id, name, active, created_at, updated_at, auth_user_id';
 const MOCK_LOCAL = import.meta.env.VITE_MOCK_LOCAL === 'true';
 const MOCK_USER: PublicEmployee = {
@@ -30,6 +31,24 @@ const MOCK_USER: PublicEmployee = {
   updated_at: new Date().toISOString(),
   auth_user_id: null,
 };
+
+function isOffline() {
+  return typeof navigator !== 'undefined' && navigator.onLine === false;
+}
+
+function readCachedUser() {
+  try {
+    const raw = localStorage.getItem(USER_STORAGE_KEY);
+    return raw ? (JSON.parse(raw) as PublicEmployee) : null;
+  } catch {
+    return null;
+  }
+}
+
+function cacheUser(employee: PublicEmployee) {
+  localStorage.setItem(STORAGE_KEY, employee.id);
+  localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(employee));
+}
 
 async function invokeKioskAuth(body: Record<string, unknown>) {
   const { data, error } = await supabase.functions.invoke('kiosk-auth', { body });
@@ -74,10 +93,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
+      const cachedUser = readCachedUser();
+      if (isOffline() && cachedUser) {
+        setUser(cachedUser);
+        setLoading(false);
+        return;
+      }
+
       const { data: sessionData } = await supabase.auth.getSession();
       const authUserId = sessionData.session?.user.id;
       if (!authUserId) {
         localStorage.removeItem(STORAGE_KEY);
+        localStorage.removeItem(USER_STORAGE_KEY);
         setLoading(false);
         return;
       }
@@ -89,12 +116,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         .eq('active', true)
         .maybeSingle();
 
-      if (error || !data) {
+      if (error) {
+        if (cachedUser && (cachedUser.auth_user_id === authUserId || localStorage.getItem(STORAGE_KEY) === cachedUser.id)) {
+          setUser(cachedUser);
+          setLoading(false);
+          return;
+        }
+
         await supabase.auth.signOut();
         setUser(null);
+      } else if (!data) {
+        await supabase.auth.signOut();
+        localStorage.removeItem(STORAGE_KEY);
+        localStorage.removeItem(USER_STORAGE_KEY);
+        setUser(null);
       } else {
-        localStorage.setItem(STORAGE_KEY, data.id);
-        setUser(data as PublicEmployee);
+        const employee = data as PublicEmployee;
+        cacheUser(employee);
+        setUser(employee);
       }
       setLoading(false);
     };
@@ -107,6 +146,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (MOCK_LOCAL) {
       if (normalizedPasscode !== '0315') throw new Error('Incorrect passcode');
       return MOCK_USER;
+    }
+    if (isOffline()) {
+      throw new Error('Reconnect to sign in. Offline mode works after a user has already opened the workspace on this device.');
     }
 
     await supabase.auth.signOut();
@@ -126,6 +168,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (!normalizedName || normalizedPasscode.length !== 4 || !adminPasscode) throw new Error('Invalid test registration');
       return { ...MOCK_USER, name: normalizedName };
     }
+    if (isOffline()) {
+      throw new Error('Reconnect to register a new employee.');
+    }
 
     await supabase.auth.signOut();
     const result = await invokeKioskAuth({
@@ -143,12 +188,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const completeSignIn = (employee: PublicEmployee) => {
-    localStorage.setItem(STORAGE_KEY, employee.id);
+    cacheUser(employee);
     setUser(employee);
   };
 
   const signOut = async () => {
     localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(USER_STORAGE_KEY);
     if (MOCK_LOCAL) {
       setUser(null);
       return;

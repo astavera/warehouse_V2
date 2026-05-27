@@ -3,6 +3,9 @@ import { supabase } from '@/integrations/supabase/client';
 import type { Tables, TablesInsert } from '@/integrations/supabase/types';
 import { invokeProtectedFunction } from '@/lib/protectedFunctions';
 import {
+  cacheRemoteCarriers,
+  cacheRemoteEmployees,
+  cacheRemoteSuppliers,
   createLocalCarrier,
   createLocalEmployee,
   createLocalSupplier,
@@ -65,7 +68,9 @@ export function useSuppliers() {
 
       const { data, error } = await supabase.from('suppliers').select('*').order('name');
       if (error) throw error;
-      setData(data || []);
+      const rows = data || [];
+      cacheRemoteSuppliers(rows);
+      setData(rows);
     } catch (err) {
       console.error('Failed to load suppliers', err);
       setData(listLocalSuppliers());
@@ -137,7 +142,9 @@ export function useCarriers() {
 
       const { data, error } = await supabase.from('carriers').select('*').order('name');
       if (error) throw error;
-      setData(data || []);
+      const rows = data || [];
+      cacheRemoteCarriers(rows);
+      setData(rows);
     } catch (err) {
       console.error('Failed to load carriers', err);
       setData(listLocalCarriers());
@@ -209,7 +216,9 @@ export function useEmployees() {
 
       const { data, error } = await supabase.from('employees').select(EMPLOYEE_SELECT).order('name');
       if (error) throw error;
-      setData((data || []) as Employee[]);
+      const rows = (data || []) as Employee[];
+      cacheRemoteEmployees(rows);
+      setData(rows);
     } catch (err) {
       console.error('Failed to load employees', err);
       setData(listLocalEmployees());
@@ -509,7 +518,12 @@ export async function saveBatch(
   const { data: itemRows, error: itemsErr } = await supabase.from('receipt_items').insert(itemsWithBatch).select();
   if (itemsErr) throw itemsErr;
 
-  const supplierIds = Array.from(new Set((itemRows || []).map(item => item.supplier_id).filter(Boolean)));
+  const expectedBoxMatches = await markExpectedBoxesReceived(batchRow!, (itemRows || []) as ReceiptItem[]);
+  return { ...batchRow!, ...expectedBoxMatches };
+}
+
+async function markExpectedBoxesReceived(batchRow: ReceiptBatch, itemRows: ReceiptItem[]) {
+  const supplierIds = Array.from(new Set(itemRows.map(item => item.supplier_id).filter(Boolean)));
   let expectedBoxesMatched = 0;
   let expectedBoxIdsMatched: string[] = [];
 
@@ -524,7 +538,7 @@ export async function saveBatch(
     const expectedBoxRows = (expectedBoxes || []) as ExpectedBoxMatch[];
 
     expectedBoxRows.forEach(box => {
-      const match = (itemRows || []).find(item => {
+      const match = itemRows.find(item => {
         if (item.supplier_id !== box.supplier_id) return false;
         if (box.match_condition === 'supplier_only') return true;
         return (item.tracking_number || '').trim().toLowerCase() === (box.po_number || '').trim().toLowerCase();
@@ -544,9 +558,9 @@ export async function saveBatch(
           .from('expected_boxes')
           .update({
             status: 'received',
-            warehouse_received_at: batchRow!.received_at,
+            warehouse_received_at: batchRow.received_at,
             warehouse_received_box_count: receivedBoxCount,
-            received_batch_id: batchRow!.id,
+            received_batch_id: batchRow.id,
             received_item_id: match.item.id,
             warehouse_received_email_sent: false,
           })
@@ -558,7 +572,7 @@ export async function saveBatch(
     }
   }
 
-  return { ...batchRow!, expectedBoxesMatched, expectedBoxIdsMatched };
+  return { expectedBoxesMatched, expectedBoxIdsMatched };
 }
 
 async function syncOfflineQueueItem(item: OfflineQueueItem) {
@@ -575,11 +589,12 @@ async function syncOfflineQueueItem(item: OfflineQueueItem) {
   }
 
   const { batch, items } = item.payload;
-  const { error: batchError } = await supabase.from('receipt_batches').upsert(batch).select().single();
+  const { data: batchRow, error: batchError } = await supabase.from('receipt_batches').upsert(batch).select().single();
   if (batchError) throw batchError;
   if (items.length > 0) {
-    const { error: itemsError } = await supabase.from('receipt_items').upsert(items).select();
+    const { data: itemRows, error: itemsError } = await supabase.from('receipt_items').upsert(items).select();
     if (itemsError) throw itemsError;
+    await markExpectedBoxesReceived((batchRow || batch) as ReceiptBatch, (itemRows || items) as ReceiptItem[]);
   }
 }
 

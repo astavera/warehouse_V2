@@ -37,6 +37,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const statusLabel = isLocalDemo ? 'Local' : isOffline ? 'Offline' : pendingCount > 0 ? `Pending ${pendingCount}` : '';
   const StatusIcon = isOffline ? WifiOff : pendingCount > 0 ? RefreshCw : Cloud;
   const showDataStatus = Boolean(statusLabel);
+  const showOfflineBanner = !isLocalDemo && (isOffline || pendingCount > 0 || syncing);
+  const offlineBannerText = isOffline
+    ? `Offline mode active${pendingCount > 0 ? ` - ${pendingCount} change${pendingCount === 1 ? '' : 's'} waiting to sync` : ''}. Receipts save on this device.`
+    : pendingCount > 0
+      ? `${pendingCount} offline change${pendingCount === 1 ? '' : 's'} ready to sync.`
+      : 'Syncing offline changes...';
 
   return (
     <div className="app-surface min-h-screen flex flex-col">
@@ -106,6 +112,36 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         </div>
         </div>
       </header>
+
+      {showOfflineBanner && (
+        <div
+          className={cn(
+            'border-b px-4 py-2 text-sm font-medium',
+            isOffline
+              ? 'border-amber-200 bg-amber-50 text-amber-800'
+              : 'border-primary/20 bg-primary/8 text-primary'
+          )}
+        >
+          <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-2">
+              <StatusIcon className={cn('h-4 w-4 shrink-0', syncing && 'animate-spin')} />
+              <span>{offlineBannerText}</span>
+            </div>
+            {!isOffline && pendingCount > 0 && (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-8 w-fit rounded-lg bg-white"
+                disabled={syncing}
+                onClick={() => void syncNow()}
+              >
+                {syncing ? 'Syncing...' : 'Sync now'}
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
 
       {open && (
         <div className="fixed inset-0 top-16 z-40 bg-background/80 backdrop-blur-sm lg:hidden" onClick={() => setOpen(false)}>
