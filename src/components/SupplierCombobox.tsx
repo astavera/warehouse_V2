@@ -136,7 +136,7 @@ export default function SupplierCombobox({ suppliers, value, onChange, onSupplie
         </Button>
       </div>
       {open && (
-        <div className="absolute left-0 top-full z-[80] mt-1 max-h-72 min-w-full w-[min(440px,calc(100vw-2rem))] overflow-auto rounded-lg border bg-popover shadow-xl">
+        <div className="supplier-combobox-list absolute left-0 top-full z-[80] mt-1 max-h-72 min-w-full w-[min(440px,calc(100vw-2rem))] overflow-auto rounded-lg border bg-popover shadow-xl">
           {filtered.length === 0 ? (
             <div className="space-y-2 p-3 text-sm text-muted-foreground">
               <p>No suppliers found</p>
