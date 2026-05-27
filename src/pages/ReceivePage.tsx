@@ -103,6 +103,20 @@ function isLineReady(item: LineItem) {
   );
 }
 
+function isBlankDraftLine(item: LineItem) {
+  return Boolean(
+    !item.supplierId &&
+    !item.trackingNumber.trim() &&
+    !item.comments.trim() &&
+    !item.damagedNotes.trim() &&
+    !item.photoFile &&
+    !item.photoPreview &&
+    !item.damagedBox &&
+    (item.packageCount === 0 || item.packageCount === 1) &&
+    (item.packageType === 'boxes' || item.packageType === 'box')
+  );
+}
+
 export default function ReceivePage() {
   const { user } = useAuth();
   const { suppliers, refetch: refetchSuppliers } = useSuppliers();
@@ -125,15 +139,16 @@ export default function ReceivePage() {
 
   const activeCarriers = carriers.filter(c => c.active);
   const selectedCarrier = carriers.find(c => c.id === carrierId);
-  const completedLines = items.filter(isLineReady).length;
-  const totalPackages = items.reduce((sum, item) => sum + Math.max(0, item.packageCount || 0), 0);
-  const boxTotal = items
+  const readyItems = useMemo(() => items.filter(isLineReady), [items]);
+  const completedLines = readyItems.length;
+  const totalPackages = readyItems.reduce((sum, item) => sum + Math.max(0, item.packageCount || 0), 0);
+  const boxTotal = readyItems
     .filter(item => {
       const value = item.packageType.toLowerCase();
       return value === 'box' || value === 'boxes';
     })
     .reduce((sum, item) => sum + Math.max(0, item.packageCount || 0), 0);
-  const palletTotal = items
+  const palletTotal = readyItems
     .filter(item => {
       const value = item.packageType.toLowerCase();
       return value === 'pallet' || value === 'pallets';
@@ -142,7 +157,7 @@ export default function ReceivePage() {
   const damagedLines = items.filter(item => item.damagedBox).length;
   const firstIncompleteIndex = items.findIndex(item => !isLineReady(item));
   const selectedReceivedDate = parseLocalDate(receivedDate);
-  const receivedSupplierSummary = items.reduce<Array<{ id: string; name: string; lines: number; packages: number }>>((summary, item) => {
+  const receivedSupplierSummary = readyItems.reduce<Array<{ id: string; name: string; lines: number; packages: number }>>((summary, item) => {
     if (!item.supplierId) return summary;
     const supplier = suppliers.find(entry => entry.id === item.supplierId);
     if (!supplier) return summary;
@@ -259,8 +274,13 @@ export default function ReceivePage() {
       toast.error('You must be signed in');
       return false;
     }
+    if (readyItems.length === 0) {
+      toast.error('Add at least one complete receiving line');
+      return false;
+    }
 
     for (let i = 0; i < items.length; i++) {
+      if (isLineReady(items[i]) || isBlankDraftLine(items[i])) continue;
       if (!items[i].supplierId) {
         toast.error(`Line ${i + 1}: select a supplier`);
         return false;
@@ -303,7 +323,7 @@ export default function ReceivePage() {
       };
 
       const itemsData = await Promise.all(
-        items.map(async it => {
+        readyItems.map(async it => {
           let photoPath: string | null = null;
           if (it.photoFile) {
             const ext = it.photoFile.name.split('.').pop() || 'jpg';
@@ -327,7 +347,7 @@ export default function ReceivePage() {
       );
 
       const savedBatch = await saveBatch(batchData, itemsData);
-      setSavedLineCount(items.length);
+      setSavedLineCount(readyItems.length);
       setLastSavedBatchId(savedBatch.id);
       setLastSavedSignature(signatureBeforeSave);
       setShowSaveConfirmation(true);
@@ -566,7 +586,7 @@ export default function ReceivePage() {
           <div className="flex flex-row items-center justify-between gap-3">
             <div className="min-w-0">
               <h2 className="truncate text-sm font-semibold text-foreground">Receiving lines</h2>
-              <p className="truncate text-xs text-muted-foreground">{items.length - completedLines} pending, {totalPackages} packages total</p>
+              <p className="truncate text-xs text-muted-foreground">{items.length - completedLines} pending, {totalPackages} ready packages</p>
             </div>
             <Button onClick={addItem} size="sm" className="h-9 shrink-0 gap-2 rounded-lg px-3">
               <Plus className="h-4 w-4" /> New line

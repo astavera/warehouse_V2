@@ -90,10 +90,11 @@ function formatReceivedBoxes(count: number | null | undefined) {
 
 function formatWarehouseReceived(box: ExpectedBox) {
   if (!box.warehouse_received_at) return 'Pending WH';
+  const receivedAt = formatDateTime(box.warehouse_received_at);
   if ((box.warehouse_received_box_count || 0) > 0) {
-    return `${formatReceivedBoxes(box.warehouse_received_box_count)} received`;
+    return `${formatReceivedBoxes(box.warehouse_received_box_count)} received${receivedAt ? ` - ${receivedAt}` : ''}`;
   }
-  return 'Received - count pending';
+  return receivedAt ? `Received - ${receivedAt}` : 'Received - count pending';
 }
 
 function getErrorMessage(error: unknown, fallback: string) {
@@ -282,8 +283,11 @@ export default function ExpectedBoxesPage() {
   };
 
   const handleDeleteExpectedBox = async (box: ExpectedBox) => {
-    const confirmed = window.confirm(`Delete expected box ${box.tracking_number}?`);
-    if (!confirmed) return;
+    const confirmedTrackingNumber = window.prompt(`Type ${box.tracking_number} to permanently delete this expected box.`);
+    if (confirmedTrackingNumber?.trim() !== box.tracking_number) {
+      toast.info('Expected box was not deleted');
+      return;
+    }
     try {
       await deleteExpectedBox(box.id);
       if (selectedId === box.id) setSelectedId('');
@@ -722,7 +726,7 @@ export default function ExpectedBoxesPage() {
                     </span>
                     <span className="truncate text-sm font-medium text-foreground">{supplierName}</span>
                     <span className="text-xs font-semibold text-muted-foreground">{getMatchLabel(box.match_condition)}</span>
-                    <span className="text-sm text-muted-foreground">{formatDateTime(box.carrier_delivered_at) || box.carrier_eta || 'Pending'}</span>
+                    <span className="text-sm text-muted-foreground">{formatDateTime(box.carrier_delivered_at || box.carrier_eta) || 'Pending'}</span>
                     <span className="text-sm text-muted-foreground">
                       {formatWarehouseReceived(box)}
                     </span>
@@ -736,7 +740,7 @@ export default function ExpectedBoxesPage() {
                             ['Supplier', box.suppliers?.name || 'Unknown supplier'],
                             ['Match rule', getMatchLabel(box.match_condition)],
                             ['P.O', box.po_number || 'Not required'],
-                            ['Carrier delivered', formatDateTime(box.carrier_delivered_at) || 'Pending'],
+                            ['Carrier delivered', formatDateTime(box.carrier_delivered_at || box.carrier_eta) || 'Pending'],
                             ['Warehouse received', formatWarehouseReceived(box)],
                           ].map(([label, value]) => (
                             <div

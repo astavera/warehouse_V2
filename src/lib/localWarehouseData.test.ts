@@ -56,4 +56,20 @@ describe('localWarehouseData', () => {
     deleteLocalBatch(batch.id);
     expect(() => deleteLocalSupplier(supplier.id)).not.toThrow();
   });
+
+  it('rejects receipts without receiving lines', () => {
+    const carrier = createLocalCarrier({ name: 'No Items Carrier', carrier_type: 'parcel' });
+
+    expect(() =>
+      saveLocalBatch(
+        {
+          carrier_id: carrier.id,
+          received_by_employee_id: 'employee-1',
+          received_at: '2026-05-26T12:00:00.000Z',
+          notes: null,
+        },
+        []
+      )
+    ).toThrow(/at least one receiving line/i);
+  });
 });

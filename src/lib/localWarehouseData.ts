@@ -378,6 +378,10 @@ export function saveLocalBatch(
   options: { queueSync?: boolean } = {}
 ) {
   ensureSeeded();
+  if (itemPayloads.length === 0) {
+    throw new Error('Cannot save a receipt without at least one receiving line');
+  }
+
   const timestamp = nowIso();
   const batch: ReceiptBatch = {
     id: payload.id || createId('batch'),

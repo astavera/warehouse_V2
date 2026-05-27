@@ -483,6 +483,10 @@ export async function saveBatch(
   batch: TablesInsert<'receipt_batches'>,
   items: TablesInsert<'receipt_items'>[]
 ) {
+  if (items.length === 0) {
+    throw new Error('Cannot save a receipt without at least one receiving line');
+  }
+
   if (shouldUseLocalData()) {
     return saveLocalBatch(batch, items, { queueSync: !isMockLocal });
   }

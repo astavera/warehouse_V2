@@ -32,6 +32,7 @@ export default function CarriersPage() {
   const [addOpen, setAddOpen] = useState(false);
   const [name, setName] = useState('');
   const [type, setType] = useState('parcel');
+  const [deleteConfirmName, setDeleteConfirmName] = useState('');
 
   const handleAdd = async () => {
     if (!name.trim()) return;
@@ -120,9 +121,15 @@ export default function CarriersPage() {
                   <TableCell className="capitalize text-muted-foreground">{c.carrier_type}</TableCell>
                   <TableCell><Switch checked={c.active} onCheckedChange={() => toggleActive(c)} /></TableCell>
                   <TableCell className="text-right">
-                    <AlertDialog>
+                    <AlertDialog onOpenChange={open => !open && setDeleteConfirmName('')}>
                       <AlertDialogTrigger asChild>
-                        <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" aria-label={`Delete ${c.name}`}>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-destructive hover:text-destructive"
+                          aria-label={`Delete ${c.name}`}
+                          onClick={() => setDeleteConfirmName('')}
+                        >
                           <Trash2 className="h-4 w-4" />
                         </Button>
                       </AlertDialogTrigger>
@@ -133,10 +140,20 @@ export default function CarriersPage() {
                             This will permanently remove <strong>{c.name}</strong> if it is not already referenced by received batches.
                           </AlertDialogDescription>
                         </AlertDialogHeader>
+                        <div className="space-y-2">
+                          <Label htmlFor={`delete-carrier-${c.id}`}>Type carrier name to confirm</Label>
+                          <Input
+                            id={`delete-carrier-${c.id}`}
+                            value={deleteConfirmName}
+                            onChange={event => setDeleteConfirmName(event.target.value)}
+                            placeholder={c.name}
+                          />
+                        </div>
                         <AlertDialogFooter>
                           <AlertDialogCancel>Cancel</AlertDialogCancel>
                           <AlertDialogAction
                             className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                            disabled={deleteConfirmName.trim() !== c.name}
                             onClick={() => handleDelete(c.id)}
                           >
                             Delete

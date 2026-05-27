@@ -46,6 +46,7 @@ export default function SuppliersPage() {
   const [csvPreview, setCsvPreview] = useState<string[][]>([]);
   const [csvDuplicates, setCsvDuplicates] = useState<Set<number>>(new Set());
   const [importing, setImporting] = useState(false);
+  const [deleteConfirmName, setDeleteConfirmName] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
 
   const [name, setName] = useState('');
@@ -266,9 +267,15 @@ export default function SuppliersPage() {
                   <TableCell className="hidden md:table-cell">{s.phone || '—'}</TableCell>
                   <TableCell><Switch checked={s.active} onCheckedChange={() => toggleActive(s)} /></TableCell>
                   <TableCell className="text-right">
-                    <AlertDialog>
+                    <AlertDialog onOpenChange={open => !open && setDeleteConfirmName('')}>
                       <AlertDialogTrigger asChild>
-                        <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" aria-label={`Delete ${s.name}`}>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-destructive hover:text-destructive"
+                          aria-label={`Delete ${s.name}`}
+                          onClick={() => setDeleteConfirmName('')}
+                        >
                           <Trash2 className="h-4 w-4" />
                         </Button>
                       </AlertDialogTrigger>
@@ -279,10 +286,20 @@ export default function SuppliersPage() {
                             This will permanently remove <strong>{s.name}</strong> if it is not already referenced by received items.
                           </AlertDialogDescription>
                         </AlertDialogHeader>
+                        <div className="space-y-2">
+                          <Label htmlFor={`delete-supplier-${s.id}`}>Type supplier name to confirm</Label>
+                          <Input
+                            id={`delete-supplier-${s.id}`}
+                            value={deleteConfirmName}
+                            onChange={event => setDeleteConfirmName(event.target.value)}
+                            placeholder={s.name}
+                          />
+                        </div>
                         <AlertDialogFooter>
                           <AlertDialogCancel>Cancel</AlertDialogCancel>
                           <AlertDialogAction
                             className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                            disabled={deleteConfirmName.trim() !== s.name}
                             onClick={() => handleDelete(s.id)}
                           >
                             Delete
