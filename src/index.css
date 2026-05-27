@@ -207,7 +207,7 @@
     grid-row: 2;
   }
 
-  .receive-line-damage > div {
+  .receive-line-damage .receive-damage-toggle-wrap {
     align-items: center;
   }
 
@@ -254,8 +254,8 @@
     align-self: end;
   }
 
-  .receive-line-damage > div {
-    height: 2.75rem;
+  .receive-line-damage .receive-damage-toggle-wrap {
+    height: 2.5rem;
     min-height: 0;
   }
 }

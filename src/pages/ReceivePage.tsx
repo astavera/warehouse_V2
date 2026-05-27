@@ -768,7 +768,7 @@ export default function ReceivePage() {
 
                 <div className="receive-line-damage space-y-1 lg:space-y-0">
                   <Label className="receive-line-damage-label text-xs font-semibold text-muted-foreground lg:hidden">Damage</Label>
-                  <div className="flex h-11 w-full rounded-lg border border-border/60 bg-background p-1">
+                  <div className="receive-damage-toggle-wrap flex h-10 w-full items-center">
                     <Button
                       type="button"
                       variant="ghost"
