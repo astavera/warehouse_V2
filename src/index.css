@@ -207,6 +207,10 @@
     grid-row: 2;
   }
 
+  .receive-line-damage > div {
+    align-items: center;
+  }
+
   .receive-save-bar {
     bottom: max(0.5rem, env(safe-area-inset-bottom)) !important;
     margin-inline: 0.25rem !important;
@@ -246,12 +250,12 @@
 
   .receive-line-damage {
     grid-column: 3;
-    grid-row: 2 / 4;
-    align-self: stretch;
+    grid-row: 2;
+    align-self: end;
   }
 
   .receive-line-damage > div {
-    height: 100%;
-    min-height: 4.6rem;
+    height: 2.75rem;
+    min-height: 0;
   }
 }

@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { CalendarDays, AlertTriangle, Camera, CheckCheck, Copy, History, PackageCheck, Plus, RotateCcw, Save, Trash2 } from 'lucide-react';
+import { CalendarDays, AlertTriangle, Camera, CheckCheck, CheckCircle2, Copy, History, PackageCheck, Plus, RotateCcw, Save, Trash2 } from 'lucide-react';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Calendar as CalendarPicker } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -73,9 +73,9 @@ function getCarrierButtonClass(name: string, selected: boolean) {
 }
 
 function getDamageButtonClass(selected: boolean) {
-  const selectedClass = 'border-destructive/35 bg-destructive/10 text-destructive ring-2 ring-destructive/10 hover:bg-destructive/12 hover:text-destructive';
-  const idleClass = 'border-border/60 bg-white text-muted-foreground hover:bg-muted/50 hover:text-foreground';
-  return `h-10 w-full rounded-lg border px-2.5 text-xs font-semibold shadow-sm transition-colors ${selected ? selectedClass : idleClass}`;
+  const selectedClass = 'border-destructive/40 bg-destructive/10 text-destructive ring-2 ring-destructive/10 hover:bg-destructive/12 hover:text-destructive';
+  const idleClass = 'border-emerald-200 bg-emerald-50/70 text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800';
+  return `receive-damage-button h-10 w-full justify-center rounded-lg border px-2 text-[11px] font-semibold shadow-sm transition-colors ${selected ? selectedClass : idleClass}`;
 }
 
 function parseLocalDate(value: string) {
@@ -767,7 +767,7 @@ export default function ReceivePage() {
                 </div>
 
                 <div className="receive-line-damage space-y-1 lg:space-y-0">
-                  <Label className="text-xs font-semibold text-muted-foreground lg:hidden">Damage</Label>
+                  <Label className="receive-line-damage-label text-xs font-semibold text-muted-foreground lg:hidden">Damage</Label>
                   <div className="flex h-11 w-full rounded-lg border border-border/60 bg-background p-1">
                     <Button
                       type="button"
@@ -787,8 +787,12 @@ export default function ReceivePage() {
                         });
                       }}
                     >
-                      <AlertTriangle className="mr-1.5 h-3.5 w-3.5" />
-                      Damage
+                      {item.damagedBox ? (
+                        <AlertTriangle className="receive-damage-icon mr-1.5 h-3.5 w-3.5" />
+                      ) : (
+                        <CheckCircle2 className="receive-damage-icon mr-1.5 h-3.5 w-3.5" />
+                      )}
+                      <span>{item.damagedBox ? 'Damaged' : 'No damage'}</span>
                     </Button>
                   </div>
                 </div>
