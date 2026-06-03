@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Bell, CheckCircle2, Clock3, Loader2, PackageSearch, Pencil, Plus, RefreshCw, Search, Settings, Trash2, Truck } from 'lucide-react';
+import { Bell, CheckCircle2, ChevronDown, ChevronRight, Clock3, Loader2, Package, PackageSearch, Pencil, Plus, RefreshCw, Search, Settings, Trash2, Truck, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -123,10 +123,10 @@ export default function ExpectedBoxesPage() {
   const [recipientName, setRecipientName] = useState('');
   const [recipientEmail, setRecipientEmail] = useState('');
   const [carrier, setCarrier] = useState<'FedEx' | 'UPS' | 'USPS' | 'Amazon'>('FedEx');
-  const [trackingNumber, setTrackingNumber] = useState('');
   const [supplierId, setSupplierId] = useState('');
-  const [poNumber, setPoNumber] = useState('');
+  const [batchRows, setBatchRows] = useState<{ tracking: string; po: string }[]>([{ tracking: '', po: '' }]);
   const [notes, setNotes] = useState('');
+  const [collapsedBatches, setCollapsedBatches] = useState<Set<string>>(new Set());
   const [editCarrier, setEditCarrier] = useState<'FedEx' | 'UPS' | 'USPS' | 'Amazon'>('FedEx');
   const [editTrackingNumber, setEditTrackingNumber] = useState('');
   const [editSupplierId, setEditSupplierId] = useState('');
@@ -154,6 +154,43 @@ export default function ExpectedBoxesPage() {
       return matchesStatus && matchesSearch;
     });
   }, [boxes, search, statusFilter]);
+
+  type BoxGroup = { batchGroupId: string | null; boxes: typeof boxes };
+  const groupedBoxes = useMemo<BoxGroup[]>(() => {
+    const batchMap = new Map<string, typeof boxes>();
+    const singles: typeof boxes = [];
+    for (const box of filteredBoxes) {
+      if (box.batch_group_id) {
+        const group = batchMap.get(box.batch_group_id) || [];
+        group.push(box);
+        batchMap.set(box.batch_group_id, group);
+      } else {
+        singles.push(box);
+      }
+    }
+    const result: BoxGroup[] = [];
+    for (const [batchGroupId, groupBoxes] of batchMap) {
+      result.push({ batchGroupId, boxes: groupBoxes });
+    }
+    for (const box of singles) {
+      result.push({ batchGroupId: null, boxes: [box] });
+    }
+    result.sort((a, b) => {
+      const aTime = a.boxes[0]?.created_at || '';
+      const bTime = b.boxes[0]?.created_at || '';
+      return bTime.localeCompare(aTime);
+    });
+    return result;
+  }, [filteredBoxes]);
+
+  const toggleBatchCollapse = (batchGroupId: string) => {
+    setCollapsedBatches(prev => {
+      const next = new Set(prev);
+      if (next.has(batchGroupId)) next.delete(batchGroupId);
+      else next.add(batchGroupId);
+      return next;
+    });
+  };
 
   const selectedBox = selectedId ? boxes.find(box => box.id === selectedId) || null : null;
   const activeRecipients = recipients.filter(recipient => recipient.active);
@@ -212,33 +249,38 @@ export default function ExpectedBoxesPage() {
   };
 
   const handleAddExpectedBox = async () => {
-    if (!trackingNumber.trim() || !supplierId) return;
-    if (matchCondition === 'supplier_po' && !poNumber.trim()) {
-      toast.error('P.O is required for Supplier + P.O matching');
-      return;
-    }
+    const validRows = batchRows.filter(row => row.tracking.trim());
+    if (validRows.length === 0 || !supplierId) return;
     try {
-      const newBox = await addExpectedBox({
-        carrier,
-        tracking_number: trackingNumber.trim(),
-        supplier_id: supplierId,
-        match_condition: matchCondition,
-        po_number: matchCondition === 'supplier_po' ? poNumber.trim() : null,
-        status: 'in_transit',
-        last_carrier_event: 'Tracking saved, waiting for carrier update',
-        notes: notes.trim() || null,
-        created_by_employee_id: user?.id || null,
-      });
-      setTrackingNumber('');
+      const batchGroupId = validRows.length > 1 ? crypto.randomUUID() : null;
+      const saved: import('@/hooks/useExpectedBoxes').ExpectedBox[] = [];
+      for (const row of validRows) {
+        const poTrimmed = row.po.trim() || null;
+        const box = await addExpectedBox({
+          carrier,
+          tracking_number: row.tracking.trim(),
+          supplier_id: supplierId,
+          match_condition: poTrimmed ? 'supplier_po' : 'supplier_only',
+          po_number: poTrimmed,
+          status: 'in_transit',
+          last_carrier_event: 'Tracking saved, waiting for carrier update',
+          notes: notes.trim() || null,
+          created_by_employee_id: user?.id || null,
+          batch_group_id: batchGroupId,
+        });
+        saved.push(box);
+      }
+      setBatchRows([{ tracking: '', po: '' }]);
       setSupplierId('');
-      setPoNumber('');
       setNotes('');
       setMatchCondition('supplier_only');
       setCarrier('FedEx');
       setAddOpen(false);
-      toast.success('Expected box added');
-      setSelectedId(newBox.id);
-      void handleSyncTracking(newBox);
+      toast.success(saved.length > 1 ? `${saved.length} expected boxes added as a batch` : 'Expected box added');
+      setSelectedId(saved[0].id);
+      for (const box of saved) {
+        void handleSyncTracking(box);
+      }
     } catch (err) {
       toast.error(getErrorMessage(err, 'Failed to add expected box'));
     }
@@ -486,64 +528,104 @@ export default function ExpectedBoxesPage() {
             </DialogTrigger>
             <DialogContent className="max-w-2xl">
               <DialogHeader>
-                <DialogTitle>Add expected box</DialogTitle>
+                <DialogTitle>Add expected boxes</DialogTitle>
               </DialogHeader>
-              <div className="grid grid-cols-1 gap-3 pt-2 sm:grid-cols-2">
+              <div className="space-y-3 pt-2">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <div className="space-y-1">
+                    <Label>Carrier</Label>
+                    <Select value={carrier} onValueChange={value => setCarrier(value as typeof carrier)}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="FedEx">FedEx</SelectItem>
+                        <SelectItem value="UPS">UPS</SelectItem>
+                        <SelectItem value="USPS">USPS</SelectItem>
+                        <SelectItem value="Amazon">Amazon Shipping</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1">
+                    <Label>Supplier</Label>
+                    <Select value={supplierId} onValueChange={setSupplierId}>
+                      <SelectTrigger><SelectValue placeholder="Select supplier" /></SelectTrigger>
+                      <SelectContent>
+                        {suppliers.map(supplier => (
+                          <SelectItem key={supplier.id} value={supplier.id}>{supplier.name}</SelectItem>
+                        ))}
+                        {suppliers.length === 0 && <SelectItem value="sample">Sample Supplier</SelectItem>}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                <div className="rounded-lg border border-border/70 bg-muted/10 p-2.5">
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <p className="text-xs font-semibold text-foreground">Tracking numbers &amp; P.O.s</p>
+                    <span className="text-[10px] text-muted-foreground">Leave P.O. blank if not applicable</span>
+                  </div>
+                  <div className="hidden grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)_28px] gap-2 px-0.5 pb-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground sm:grid">
+                    <span>Tracking number</span>
+                    <span>P.O.</span>
+                    <span />
+                  </div>
+                  <div className="space-y-2">
+                    {batchRows.map((row, idx) => (
+                      <div key={idx} className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)_28px] sm:items-center">
+                        <Input
+                          placeholder="Tracking number"
+                          value={row.tracking}
+                          onChange={e => setBatchRows(rows => rows.map((r, i) => i === idx ? { ...r, tracking: e.target.value } : r))}
+                        />
+                        <Input
+                          placeholder="P.O. (optional)"
+                          value={row.po}
+                          onChange={e => setBatchRows(rows => rows.map((r, i) => i === idx ? { ...r, po: e.target.value } : r))}
+                        />
+                        {batchRows.length > 1 ? (
+                          <button
+                            type="button"
+                            className="flex h-7 w-7 items-center justify-center rounded-md border border-border/70 bg-background text-muted-foreground hover:text-destructive"
+                            onClick={() => setBatchRows(rows => rows.filter((_, i) => i !== idx))}
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        ) : <div />}
+                      </div>
+                    ))}
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="mt-2 h-8 gap-1.5 rounded-lg bg-white text-xs"
+                    onClick={() => setBatchRows(rows => [...rows, { tracking: '', po: '' }])}
+                  >
+                    <Plus className="h-3.5 w-3.5" /> Add another tracking
+                  </Button>
+                </div>
+
+                {batchRows.length > 1 && (
+                  <div className="rounded-lg border border-primary/20 bg-primary/5 px-2.5 py-2">
+                    <p className="text-xs font-semibold text-primary">Batch of {batchRows.filter(r => r.tracking.trim()).length} trackings</p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">These will be grouped together under {suppliers.find(s => s.id === supplierId)?.name || 'the selected supplier'}. Box count will be shared across the batch.</p>
+                  </div>
+                )}
+
                 <div className="space-y-1">
-                  <Label>Carrier</Label>
-                <Select value={carrier} onValueChange={value => setCarrier(value as typeof carrier)}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="FedEx">FedEx</SelectItem>
-                      <SelectItem value="UPS">UPS</SelectItem>
-                      <SelectItem value="USPS">USPS</SelectItem>
-                      <SelectItem value="Amazon">Amazon Shipping</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <Label>Notes</Label>
+                  <Input placeholder="Optional internal notes" value={notes} onChange={event => setNotes(event.target.value)} />
                 </div>
-                <div className="space-y-1">
-                  <Label>Tracking number</Label>
-                <Input placeholder="Paste carrier tracking number" value={trackingNumber} onChange={event => setTrackingNumber(event.target.value)} />
-                </div>
-                <div className="space-y-1">
-                  <Label>Supplier</Label>
-                <Select value={supplierId} onValueChange={setSupplierId}>
-                    <SelectTrigger><SelectValue placeholder="Select supplier" /></SelectTrigger>
-                    <SelectContent>
-                      {suppliers.map(supplier => (
-                        <SelectItem key={supplier.id} value={supplier.id}>{supplier.name}</SelectItem>
-                      ))}
-                      {suppliers.length === 0 && <SelectItem value="sample">Sample Supplier</SelectItem>}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1">
-                  <Label>Match condition</Label>
-                  <Select value={matchCondition} onValueChange={value => setMatchCondition(value as MatchCondition)}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="supplier_only">Supplier only</SelectItem>
-                      <SelectItem value="supplier_po">Supplier + P.O</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                {matchCondition === 'supplier_po' && (
-                  <div className="space-y-1 sm:col-span-2">
-                    <Label>P.O *</Label>
-                  <Input placeholder="Required for Supplier + P.O matching" value={poNumber} onChange={event => setPoNumber(event.target.value)} />
-                </div>
-              )}
-              <div className="space-y-1 sm:col-span-2">
-                <Label>Notes</Label>
-                <Input placeholder="Optional internal notes" value={notes} onChange={event => setNotes(event.target.value)} />
-              </div>
-                <div className="rounded-lg border border-border/70 bg-muted/20 p-2.5 sm:col-span-2">
+
+                <div className="rounded-lg border border-border/70 bg-muted/20 p-2.5">
                   <p className="text-xs font-semibold text-foreground">Notification recipients</p>
                   <p className="mt-1 text-xs text-muted-foreground">This expected box will use {activeRecipients.length} active recipients configured for this module.</p>
                 </div>
-              <Button className="h-10 rounded-lg sm:col-span-2" onClick={handleAddExpectedBox} disabled={!trackingNumber.trim() || !supplierId}>
-                Save expected box
-              </Button>
+                <Button
+                  className="h-10 w-full rounded-lg"
+                  onClick={handleAddExpectedBox}
+                  disabled={!batchRows.some(r => r.tracking.trim()) || !supplierId}
+                >
+                  Save {batchRows.filter(r => r.tracking.trim()).length > 1 ? `${batchRows.filter(r => r.tracking.trim()).length} expected boxes` : 'expected box'}
+                </Button>
               </div>
             </DialogContent>
           </Dialog>
@@ -704,117 +786,160 @@ export default function ExpectedBoxesPage() {
             {!boxesLoading && filteredBoxes.length === 0 && (
               <div className="px-3 py-8 text-center text-sm text-muted-foreground">No expected boxes yet.</div>
             )}
-            {filteredBoxes.map(box => {
-              const meta = STATUS_META[box.status];
-              const StatusIcon = meta.icon;
-              const supplierName = box.suppliers?.name || 'Unknown supplier';
-              const isSelected = selectedBox?.id === box.id;
+            {groupedBoxes.map(group => {
+              const isBatch = group.batchGroupId !== null && group.boxes.length > 1;
+              const isCollapsed = isBatch && collapsedBatches.has(group.batchGroupId!);
+              const batchSupplier = group.boxes[0]?.suppliers?.name || 'Unknown supplier';
+              const batchCarrier = group.boxes[0]?.carrier || '';
+              const batchStatuses = [...new Set(group.boxes.map(b => b.status))];
+              const allReceived = group.boxes.every(b => b.status === 'received');
+              const anyDelivered = group.boxes.some(b => b.status === 'delivered');
+              const batchStatusLabel = allReceived ? 'received' : anyDelivered ? 'delivered' : 'in_transit';
+              const totalShipped = group.boxes.some(b => b.carrier_shipped_count != null)
+                ? group.boxes.reduce((sum, b) => sum + (b.carrier_shipped_count || 0), 0)
+                : null;
+
               return (
-                <div ref={isSelected ? selectedItemRef : null} key={box.id} className={isSelected ? 'bg-primary/5' : 'bg-white'}>
-                  <button
-                    type="button"
-                    className="grid w-full grid-cols-1 gap-2 px-3 py-3 text-left transition-colors hover:bg-muted/20 lg:grid-cols-[150px_minmax(220px,1fr)_160px_130px_150px_140px] lg:items-center lg:gap-3"
-                    onClick={() => setSelectedId(isSelected ? '' : box.id)}
-                  >
-                    <span className={`inline-flex w-fit items-center gap-1.5 rounded-md border px-2 py-1 text-xs font-semibold ${meta.className}`}>
-                      <StatusIcon className="h-3.5 w-3.5" /> {meta.label}
-                    </span>
-                    <span className="min-w-0">
-                      <span className="block truncate text-sm font-semibold text-foreground">{box.tracking_number}</span>
-                      <span className="block truncate text-xs text-muted-foreground">{box.carrier} - {box.last_carrier_event || 'Tracking saved'}</span>
-                      {box.notes && <span className="block truncate text-xs font-medium text-primary">Note: {box.notes}</span>}
-                    </span>
-                    <span className="truncate text-sm font-medium text-foreground">{supplierName}</span>
-                    <span className="text-xs font-semibold text-muted-foreground">{getMatchLabel(box.match_condition)}</span>
-                    <span className="text-sm text-muted-foreground">{formatDateTime(box.carrier_delivered_at || box.carrier_eta) || 'Pending'}</span>
-                    <span className="text-sm text-muted-foreground">
-                      {formatWarehouseReceived(box)}
-                    </span>
-                  </button>
-
-                  {isSelected && (
-                    <div className="border-t border-border/70 bg-muted/15 px-3 py-2">
-                      <div className="flex flex-col gap-2 xl:flex-row xl:items-start">
-                        <div className="grid flex-1 grid-cols-2 gap-1 md:grid-cols-5">
-                          {[
-                            ['Supplier', box.suppliers?.name || 'Unknown supplier'],
-                            ['Match rule', getMatchLabel(box.match_condition)],
-                            ['P.O', box.po_number || 'Not required'],
-                            ['Carrier delivered', formatDateTime(box.carrier_delivered_at || box.carrier_eta) || 'Pending'],
-                            ['Warehouse received', formatWarehouseReceived(box)],
-                          ].map(([label, value]) => (
-                            <div
-                              key={label}
-                              className={`min-h-[38px] rounded border bg-white px-1.5 py-0.5 ${
-                                label === 'Supplier' ? getDetailAccentClass(box.status) : 'border-border/70'
-                              } ${
-                                label === 'Supplier' ? 'flex flex-col' : ''
-                              }`}
-                            >
-                              <p className="text-[9px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{label}</p>
-                              <p className={`truncate font-semibold leading-tight text-foreground ${label === 'Supplier' ? 'flex flex-1 items-center justify-center text-center text-base font-bold' : 'text-[11px]'}`}>{value}</p>
-                            </div>
-                          ))}
-                        </div>
-
-                        <div className="grid grid-cols-3 gap-2 xl:w-[360px]">
-                          <Button type="button" className="h-10 gap-2 rounded-lg px-3 text-sm" onClick={() => handleSyncTracking(box)} disabled={syncingList || syncingId === box.id}>
-                            {syncingId === box.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-                            Refresh
-                          </Button>
-                          <Button type="button" variant="outline" className="h-10 gap-2 rounded-lg bg-white px-3 text-sm" onClick={() => openEditExpectedBox(box)}>
-                            <Pencil className="h-4 w-4" /> Edit
-                          </Button>
-                          <Button type="button" variant="destructive" className="h-10 gap-2 rounded-lg px-3 text-sm" onClick={() => handleDeleteExpectedBox(box)}>
-                            <Trash2 className="h-4 w-4" /> Delete
-                          </Button>
-                        </div>
-                      </div>
-
-                      {box.notes && (
-                        <div className="mt-2 rounded-lg border border-primary/15 bg-primary/5 px-2.5 py-2">
-                          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-primary">Notes</p>
-                          <p className="mt-1 text-sm font-medium leading-5 text-foreground">{box.notes}</p>
-                        </div>
-                      )}
-
-                      <div className="mt-2 rounded-lg border border-border/70 bg-white p-2.5">
-                        <div className="flex items-center justify-between gap-2">
-                          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Carrier events</p>
-                          {(box.carrier_tracking_events || []).length > 0 && (
-                            <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
-                              Latest {(box.carrier_tracking_events || []).slice(0, 6).length}
+                <div key={group.batchGroupId || group.boxes[0]?.id}>
+                  {isBatch && (
+                    <button
+                      type="button"
+                      className="flex w-full items-center gap-3 border-b border-border/40 bg-muted/30 px-3 py-2 text-left hover:bg-muted/50"
+                      onClick={() => toggleBatchCollapse(group.batchGroupId!)}
+                    >
+                      {isCollapsed ? <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />}
+                      <Package className="h-4 w-4 shrink-0 text-primary" />
+                      <span className="flex-1 text-sm font-semibold text-foreground">
+                        {batchSupplier} — {batchCarrier} batch
+                        <span className="ml-2 text-xs font-normal text-muted-foreground">
+                          {group.boxes.length} trackings
+                          {totalShipped != null && ` · ${totalShipped} shipped by carrier`}
+                        </span>
+                      </span>
+                      <span className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs font-semibold ${STATUS_META[batchStatusLabel].className}`}>
+                        {batchStatuses.length > 1 ? `${batchStatuses.length} statuses` : STATUS_META[batchStatusLabel].label}
+                      </span>
+                    </button>
+                  )}
+                  {!isCollapsed && group.boxes.map(box => {
+                    const meta = STATUS_META[box.status];
+                    const StatusIcon = meta.icon;
+                    const supplierName = box.suppliers?.name || 'Unknown supplier';
+                    const isSelected = selectedBox?.id === box.id;
+                    return (
+                      <div ref={isSelected ? selectedItemRef : null} key={box.id} className={`${isBatch ? 'pl-8' : ''} ${isSelected ? 'bg-primary/5' : 'bg-white'}`}>
+                        <button
+                          type="button"
+                          className="grid w-full grid-cols-1 gap-2 px-3 py-3 text-left transition-colors hover:bg-muted/20 lg:grid-cols-[150px_minmax(220px,1fr)_160px_130px_150px_140px] lg:items-center lg:gap-3"
+                          onClick={() => setSelectedId(isSelected ? '' : box.id)}
+                        >
+                          <span className={`inline-flex w-fit items-center gap-1.5 rounded-md border px-2 py-1 text-xs font-semibold ${meta.className}`}>
+                            <StatusIcon className="h-3.5 w-3.5" /> {meta.label}
+                          </span>
+                          <span className="min-w-0">
+                            <span className="block truncate text-sm font-semibold text-foreground">{box.tracking_number}</span>
+                            <span className="block truncate text-xs text-muted-foreground">
+                              {box.carrier} - {box.last_carrier_event || 'Tracking saved'}
+                              {box.po_number && <span className="ml-2 font-semibold text-foreground">P.O: {box.po_number}</span>}
                             </span>
-                          )}
-                        </div>
-                        <div className="mt-2 max-h-64 space-y-1.5 overflow-auto">
-                          {(box.carrier_tracking_events || []).length === 0 && (
-                            <p className="text-sm text-muted-foreground">No carrier scans saved yet.</p>
-                          )}
-                          {(box.carrier_tracking_events || []).slice(0, 6).map((event, index) => (
-                            <div key={`${event.datetime || 'event'}-${index}`} className="grid grid-cols-[18px_minmax(0,1fr)] gap-2 rounded-md border border-border/60 bg-background px-2.5 py-2">
-                              <div className="flex flex-col items-center pt-0.5">
-                                <span className={`h-2.5 w-2.5 rounded-full ${index === 0 ? 'bg-primary' : 'bg-muted-foreground/35'}`} />
-                                {index < Math.min((box.carrier_tracking_events || []).length, 6) - 1 && (
-                                  <span className="mt-1 h-full min-h-8 w-px bg-border" />
+                            {box.notes && <span className="block truncate text-xs font-medium text-primary">Note: {box.notes}</span>}
+                          </span>
+                          <span className="truncate text-sm font-medium text-foreground">{isBatch ? '' : supplierName}</span>
+                          <span className="text-xs font-semibold text-muted-foreground">
+                            {box.po_number ? `P.O: ${box.po_number}` : getMatchLabel(box.match_condition)}
+                          </span>
+                          <span className="text-sm text-muted-foreground">{formatDateTime(box.carrier_delivered_at || box.carrier_eta) || 'Pending'}</span>
+                          <span className="text-sm text-muted-foreground">
+                            {formatWarehouseReceived(box)}
+                          </span>
+                        </button>
+
+                        {isSelected && (
+                          <div className="border-t border-border/70 bg-muted/15 px-3 py-2">
+                            <div className="flex flex-col gap-2 xl:flex-row xl:items-start">
+                              <div className="grid flex-1 grid-cols-2 gap-1 md:grid-cols-5">
+                                {[
+                                  ['Supplier', box.suppliers?.name || 'Unknown supplier'],
+                                  ['P.O', box.po_number || '—'],
+                                  ['Shipped by carrier', box.carrier_shipped_count != null ? `${box.carrier_shipped_count} boxes` : 'Not reported'],
+                                  ['Carrier delivered', formatDateTime(box.carrier_delivered_at || box.carrier_eta) || 'Pending'],
+                                  ['Warehouse received', formatWarehouseReceived(box)],
+                                ].map(([label, value]) => (
+                                  <div
+                                    key={label}
+                                    className={`min-h-[38px] rounded border bg-white px-1.5 py-0.5 ${
+                                      label === 'Supplier' ? getDetailAccentClass(box.status) : 'border-border/70'
+                                    } ${
+                                      label === 'Supplier' ? 'flex flex-col' : ''
+                                    }`}
+                                  >
+                                    <p className="text-[9px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{label}</p>
+                                    <p className={`truncate font-semibold leading-tight text-foreground ${label === 'Supplier' ? 'flex flex-1 items-center justify-center text-center text-base font-bold' : 'text-[11px]'}`}>{value}</p>
+                                  </div>
+                                ))}
+                              </div>
+
+                              <div className="grid grid-cols-3 gap-2 xl:w-[360px]">
+                                <Button type="button" className="h-10 gap-2 rounded-lg px-3 text-sm" onClick={() => handleSyncTracking(box)} disabled={syncingList || syncingId === box.id}>
+                                  {syncingId === box.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                                  Refresh
+                                </Button>
+                                <Button type="button" variant="outline" className="h-10 gap-2 rounded-lg bg-white px-3 text-sm" onClick={() => openEditExpectedBox(box)}>
+                                  <Pencil className="h-4 w-4" /> Edit
+                                </Button>
+                                <Button type="button" variant="destructive" className="h-10 gap-2 rounded-lg px-3 text-sm" onClick={() => handleDeleteExpectedBox(box)}>
+                                  <Trash2 className="h-4 w-4" /> Delete
+                                </Button>
+                              </div>
+                            </div>
+
+                            {box.notes && (
+                              <div className="mt-2 rounded-lg border border-primary/15 bg-primary/5 px-2.5 py-2">
+                                <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-primary">Notes</p>
+                                <p className="mt-1 text-sm font-medium leading-5 text-foreground">{box.notes}</p>
+                              </div>
+                            )}
+
+                            <div className="mt-2 rounded-lg border border-border/70 bg-white p-2.5">
+                              <div className="flex items-center justify-between gap-2">
+                                <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Carrier events</p>
+                                {(box.carrier_tracking_events || []).length > 0 && (
+                                  <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
+                                    Latest {(box.carrier_tracking_events || []).slice(0, 6).length}
+                                  </span>
                                 )}
                               </div>
-                              <div className="min-w-0">
-                                <div className="flex flex-wrap items-center gap-1.5">
-                                  <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">
-                                    {index === 0 ? 'Latest' : formatEventStatus(event.status)}
-                                  </span>
-                                  <span className="text-[11px] font-medium text-muted-foreground">{formatEventTime(event.datetime)}</span>
-                                </div>
-                                <p className="mt-1 text-sm font-semibold leading-snug text-foreground">{event.message || 'Carrier update'}</p>
-                                <p className="mt-0.5 truncate text-xs text-muted-foreground">{event.location || 'Location unavailable'}</p>
+                              <div className="mt-2 max-h-64 space-y-1.5 overflow-auto">
+                                {(box.carrier_tracking_events || []).length === 0 && (
+                                  <p className="text-sm text-muted-foreground">No carrier scans saved yet.</p>
+                                )}
+                                {(box.carrier_tracking_events || []).slice(0, 6).map((event, index) => (
+                                  <div key={`${event.datetime || 'event'}-${index}`} className="grid grid-cols-[18px_minmax(0,1fr)] gap-2 rounded-md border border-border/60 bg-background px-2.5 py-2">
+                                    <div className="flex flex-col items-center pt-0.5">
+                                      <span className={`h-2.5 w-2.5 rounded-full ${index === 0 ? 'bg-primary' : 'bg-muted-foreground/35'}`} />
+                                      {index < Math.min((box.carrier_tracking_events || []).length, 6) - 1 && (
+                                        <span className="mt-1 h-full min-h-8 w-px bg-border" />
+                                      )}
+                                    </div>
+                                    <div className="min-w-0">
+                                      <div className="flex flex-wrap items-center gap-1.5">
+                                        <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">
+                                          {index === 0 ? 'Latest' : formatEventStatus(event.status)}
+                                        </span>
+                                        <span className="text-[11px] font-medium text-muted-foreground">{formatEventTime(event.datetime)}</span>
+                                      </div>
+                                      <p className="mt-1 text-sm font-semibold leading-snug text-foreground">{event.message || 'Carrier update'}</p>
+                                      <p className="mt-0.5 truncate text-xs text-muted-foreground">{event.location || 'Location unavailable'}</p>
+                                    </div>
+                                  </div>
+                                ))}
                               </div>
                             </div>
-                          ))}
-                        </div>
+                          </div>
+                        )}
                       </div>
-                    </div>
-                  )}
+                    );
+                  })}
                 </div>
               );
             })}

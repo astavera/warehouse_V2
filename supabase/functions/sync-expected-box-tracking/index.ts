@@ -56,6 +56,7 @@ type FedExTrackResult = {
       countryCode?: string;
     };
   }[];
+  packageCount?: number;
 };
 
 type FedExTrackResponse = {
@@ -84,6 +85,8 @@ type Ship24Tracking = {
     statusCode?: string | null;
     statusCategory?: string | null;
     statusMilestone?: string | null;
+    packageCount?: number | null;
+    numberOfPieces?: number | null;
     delivery?: {
       estimatedDeliveryDate?: string | null;
       courierEstimatedDeliveryDate?: {
@@ -122,6 +125,7 @@ type NormalizedTrackingResult = {
   eta: string | null;
   lastEvent: string;
   deliveredAt: string | null;
+  shippedCount: number | null;
 };
 
 const corsHeaders = {
@@ -272,6 +276,10 @@ async function fetchFedExTracking(apiKey: string, secretKey: string, box: Expect
     trackResult.dateAndTimes?.find(item => item.type === 'ACTUAL_DELIVERY')?.dateTime ||
     null;
 
+  const shippedCount = typeof trackResult.packageCount === 'number' && trackResult.packageCount > 0
+    ? trackResult.packageCount
+    : null;
+
   return {
     ok: true as const,
     provider: 'fedex',
@@ -288,6 +296,7 @@ async function fetchFedExTracking(apiKey: string, secretKey: string, box: Expect
       status?.code ||
       'FedEx tracking updated',
     deliveredAt: delivered ? latestEvent?.datetime || trackResult.dateAndTimes?.find(item => item.type === 'ACTUAL_DELIVERY')?.dateTime || new Date().toISOString() : null,
+    shippedCount,
   };
 }
 
@@ -328,6 +337,9 @@ async function fetchShip24Tracking(apiKey: string, box: ExpectedBox) {
     tracking.shipment?.delivery?.courierEstimatedDeliveryDate?.from ||
     null;
 
+  const ship24PackageCount = tracking.shipment?.packageCount ?? tracking.shipment?.numberOfPieces ?? null;
+  const shippedCount = typeof ship24PackageCount === 'number' && ship24PackageCount > 0 ? ship24PackageCount : null;
+
   return {
     ok: true as const,
     provider: 'ship24',
@@ -338,6 +350,7 @@ async function fetchShip24Tracking(apiKey: string, box: ExpectedBox) {
     eta,
     lastEvent: latestEvent?.message || tracking.shipment?.statusMilestone || tracking.shipment?.statusCode || 'Carrier tracking updated',
     deliveredAt: delivered ? latestEvent?.datetime || new Date().toISOString() : null,
+    shippedCount,
   };
 }
 
@@ -353,6 +366,7 @@ async function updateExpectedBoxWithTracking(
     carrier_delivered_at: result.deliveredAt,
     carrier_tracking_events: result.events,
     last_carrier_event: result.lastEvent,
+    ...(result.shippedCount != null ? { carrier_shipped_count: result.shippedCount } : {}),
   };
 
   if (result.delivered) {
@@ -487,6 +501,7 @@ Deno.serve(async req => {
       carrier_delivered_at: delivered ? latestEvent?.datetime || tracker.updated_at || new Date().toISOString() : null,
       carrier_tracking_events: events,
       last_carrier_event: latestEvent?.message || tracker.status_detail || tracker.status || 'Carrier tracking updated',
+      // EasyPost does not reliably expose package count; left as-is (not updated)
     };
 
     if (delivered) {

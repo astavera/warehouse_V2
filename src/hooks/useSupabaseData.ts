@@ -37,6 +37,7 @@ type ExpectedBoxMatch = {
   supplier_id: string;
   po_number: string | null;
   match_condition: 'supplier_only' | 'supplier_po';
+  batch_group_id: string | null;
 };
 
 type ExpectedBoxesQuery = PromiseLike<{
@@ -530,11 +531,11 @@ async function markExpectedBoxesReceived(batchRow: ReceiptBatch, itemRows: Recei
   if (supplierIds.length > 0) {
     const { data: expectedBoxes } = await expectedBoxesDb
       .from('expected_boxes')
-      .select('id, supplier_id, po_number, match_condition')
+      .select('id, supplier_id, po_number, match_condition, batch_group_id')
       .in('supplier_id', supplierIds)
       .in('status', ['in_transit', 'delivered', 'needs_review']);
 
-    const matchedBoxes: Array<{ id: string; item: ReceiptItem }> = [];
+    const matchedBoxes: Array<{ id: string; item: ReceiptItem; batch_group_id: string | null }> = [];
     const expectedBoxRows = (expectedBoxes || []) as ExpectedBoxMatch[];
 
     expectedBoxRows.forEach(box => {
@@ -545,15 +546,23 @@ async function markExpectedBoxesReceived(batchRow: ReceiptBatch, itemRows: Recei
       });
 
       if (match) {
-        matchedBoxes.push({ id: box.id, item: match as ReceiptItem });
+        matchedBoxes.push({ id: box.id, item: match as ReceiptItem, batch_group_id: box.batch_group_id });
       }
     });
 
     if (matchedBoxes.length > 0) {
       const uniqueMatches = Array.from(new Map(matchedBoxes.map(match => [match.id, match])).values());
+      // Track which batch groups have already received the box count so we don't multiply
+      const batchGroupsCounted = new Set<string>();
       for (const match of uniqueMatches) {
         const packageType = (match.item.package_type || '').trim().toLowerCase();
-        const receivedBoxCount = packageType.includes('box') ? Math.max(0, match.item.package_count || 0) : 0;
+        const itemBoxCount = packageType.includes('box') ? Math.max(0, match.item.package_count || 0) : 0;
+        // For batches: only the first tracking in the batch gets the real count; the rest get 0
+        const alreadyCounted = match.batch_group_id !== null && batchGroupsCounted.has(match.batch_group_id);
+        const receivedBoxCount = alreadyCounted ? 0 : itemBoxCount;
+        if (match.batch_group_id !== null && !alreadyCounted) {
+          batchGroupsCounted.add(match.batch_group_id);
+        }
         const { error: updateErr } = await expectedBoxesDb
           .from('expected_boxes')
           .update({

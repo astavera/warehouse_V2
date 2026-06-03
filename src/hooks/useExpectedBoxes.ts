@@ -17,6 +17,7 @@ export type ExpectedBox = {
   carrier_eta: string | null;
   carrier_delivered_at: string | null;
   carrier_tracking_events?: CarrierTrackingEvent[] | null;
+  carrier_shipped_count: number | null;
   warehouse_received_at: string | null;
   warehouse_received_box_count: number;
   last_carrier_event: string | null;
@@ -26,6 +27,7 @@ export type ExpectedBox = {
   received_item_id: string | null;
   carrier_delivered_email_sent: boolean;
   warehouse_received_email_sent: boolean;
+  batch_group_id: string | null;
   created_at: string;
   updated_at: string;
   suppliers?: {
@@ -51,6 +53,7 @@ export type ExpectedBoxInsert = {
   last_carrier_event?: string | null;
   notes?: string | null;
   created_by_employee_id?: string | null;
+  batch_group_id?: string | null;
 };
 
 export type ExpectedBoxAccess = {

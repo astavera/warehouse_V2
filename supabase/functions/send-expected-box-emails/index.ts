@@ -17,6 +17,7 @@ type ExpectedBox = {
   warehouse_received_box_count: number;
   warehouse_received_email_sent: boolean;
   notes: string | null;
+  batch_group_id: string | null;
   suppliers: {
     name: string;
   } | null;
@@ -89,47 +90,88 @@ async function sendEmail({
     return { skipped: true };
   }
 
-  const matchedCount = boxes.length;
-  const receivedBoxCount = boxes.reduce((sum, box) => sum + Math.max(0, box.warehouse_received_box_count || 0), 0);
-  const boxCount = receivedBoxCount || matchedCount;
+  // Group boxes: batch_group_id → boxes; singles get their own group
+  type BoxGroup = { batchGroupId: string | null; supplierName: string; carrier: string; boxes: ExpectedBox[] };
+  const batchMap = new Map<string, BoxGroup>();
+  const groups: BoxGroup[] = [];
+  for (const box of boxes) {
+    if (box.batch_group_id) {
+      if (!batchMap.has(box.batch_group_id)) {
+        const group: BoxGroup = { batchGroupId: box.batch_group_id, supplierName: box.suppliers?.name || 'Unknown supplier', carrier: box.carrier, boxes: [] };
+        batchMap.set(box.batch_group_id, group);
+        groups.push(group);
+      }
+      batchMap.get(box.batch_group_id)!.boxes.push(box);
+    } else {
+      groups.push({ batchGroupId: null, supplierName: box.suppliers?.name || 'Unknown supplier', carrier: box.carrier, boxes: [box] });
+    }
+  }
+
+  // Total boxes = sum of warehouse_received_box_count (batch logic already ensures no double-counting)
+  const totalBoxCount = boxes.reduce((sum, box) => sum + Math.max(0, box.warehouse_received_box_count || 0), 0);
+  const boxCount = totalBoxCount || boxes.length;
   const supplierNames = [...new Set(boxes.map(box => box.suppliers?.name || 'Unknown supplier'))];
   const supplierSummary = supplierNames.length === 1 ? supplierNames[0] : `${supplierNames.length} suppliers`;
   const subject = `Warehouse received: ${boxCount} box${boxCount === 1 ? '' : 'es'} from ${supplierSummary}`;
-  const rows = boxes
-    .map(box => {
-      const supplierName = box.suppliers?.name || 'Unknown supplier';
-      const receivedAt = formatDate(box.warehouse_received_at);
-      return `
-        <tr>
-          <td style="padding: 8px; border: 1px solid #e5e7eb;">${escapeHtml(supplierName)}</td>
-          <td style="padding: 8px; border: 1px solid #e5e7eb;">${escapeHtml(box.carrier)}</td>
-          <td style="padding: 8px; border: 1px solid #e5e7eb;">${escapeHtml(box.tracking_number)}</td>
-          <td style="padding: 8px; border: 1px solid #e5e7eb;">${box.warehouse_received_box_count || 0}</td>
-          <td style="padding: 8px; border: 1px solid #e5e7eb;">${escapeHtml(box.po_number || 'Not required')}</td>
-          <td style="padding: 8px; border: 1px solid #e5e7eb;">${receivedAt}</td>
-          <td style="padding: 8px; border: 1px solid #e5e7eb;">${escapeHtml(box.notes || '')}</td>
-        </tr>
-      `;
-    })
-    .join('');
+
+  const groupSections = groups.map(group => {
+    const groupBoxCount = group.boxes.reduce((sum, b) => sum + Math.max(0, b.warehouse_received_box_count || 0), 0);
+    const receivedAt = formatDate(group.boxes[0]?.warehouse_received_at);
+    const isBatch = group.boxes.length > 1;
+
+    const trackingRows = group.boxes.map(box => `
+      <tr>
+        <td style="padding: 7px 8px; border: 1px solid #e5e7eb;">${escapeHtml(box.tracking_number)}</td>
+        <td style="padding: 7px 8px; border: 1px solid #e5e7eb;">${escapeHtml(box.po_number || '—')}</td>
+        <td style="padding: 7px 8px; border: 1px solid #e5e7eb;">${escapeHtml(box.notes || '')}</td>
+      </tr>
+    `).join('');
+
+    const header = isBatch
+      ? `<div style="margin: 0 0 6px; font-weight: 700; font-size: 14px; color: #111827;">
+           ${escapeHtml(group.supplierName)} — ${escapeHtml(group.carrier)}
+           <span style="margin-left: 8px; font-weight: 400; font-size: 12px; color: #6b7280;">${groupBoxCount} box${groupBoxCount === 1 ? '' : 'es'} received · ${receivedAt}</span>
+         </div>`
+      : '';
+
+    return `
+      <div style="margin-bottom: 20px;">
+        ${header}
+        <table style="border-collapse: collapse; width: 100%; max-width: 860px;">
+          <thead>
+            <tr>
+              ${!isBatch ? `<th align="left" style="padding: 7px 8px; border: 1px solid #e5e7eb; background: #f9fafb; font-size: 12px;">Supplier</th>` : ''}
+              ${!isBatch ? `<th align="left" style="padding: 7px 8px; border: 1px solid #e5e7eb; background: #f9fafb; font-size: 12px;">Carrier</th>` : ''}
+              <th align="left" style="padding: 7px 8px; border: 1px solid #e5e7eb; background: #f9fafb; font-size: 12px;">Tracking number</th>
+              <th align="left" style="padding: 7px 8px; border: 1px solid #e5e7eb; background: #f9fafb; font-size: 12px;">P.O</th>
+              ${!isBatch ? `<th align="left" style="padding: 7px 8px; border: 1px solid #e5e7eb; background: #f9fafb; font-size: 12px;">Boxes received</th>` : ''}
+              ${!isBatch ? `<th align="left" style="padding: 7px 8px; border: 1px solid #e5e7eb; background: #f9fafb; font-size: 12px;">WH received</th>` : ''}
+              <th align="left" style="padding: 7px 8px; border: 1px solid #e5e7eb; background: #f9fafb; font-size: 12px;">Notes</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${isBatch ? trackingRows : group.boxes.map(box => `
+              <tr>
+                <td style="padding: 7px 8px; border: 1px solid #e5e7eb;">${escapeHtml(box.suppliers?.name || 'Unknown supplier')}</td>
+                <td style="padding: 7px 8px; border: 1px solid #e5e7eb;">${escapeHtml(box.carrier)}</td>
+                <td style="padding: 7px 8px; border: 1px solid #e5e7eb;">${escapeHtml(box.tracking_number)}</td>
+                <td style="padding: 7px 8px; border: 1px solid #e5e7eb;">${escapeHtml(box.po_number || '—')}</td>
+                <td style="padding: 7px 8px; border: 1px solid #e5e7eb;">${box.warehouse_received_box_count || 0}</td>
+                <td style="padding: 7px 8px; border: 1px solid #e5e7eb;">${formatDate(box.warehouse_received_at)}</td>
+                <td style="padding: 7px 8px; border: 1px solid #e5e7eb;">${escapeHtml(box.notes || '')}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }).join('');
+
   const html = `
     <div style="font-family: Arial, sans-serif; color: #111827; line-height: 1.5;">
-      <h2 style="margin: 0 0 12px;">${boxCount} box${boxCount === 1 ? '' : 'es'} received in warehouse</h2>
-      <p style="margin: 0 0 16px;">Receiving matched ${matchedCount} expected tracking record${matchedCount === 1 ? '' : 's'}.</p>
-      <table style="border-collapse: collapse; width: 100%; max-width: 920px;">
-        <thead>
-          <tr>
-            <th align="left" style="padding: 8px; border: 1px solid #e5e7eb; background: #f9fafb;">Supplier</th>
-            <th align="left" style="padding: 8px; border: 1px solid #e5e7eb; background: #f9fafb;">Carrier</th>
-            <th align="left" style="padding: 8px; border: 1px solid #e5e7eb; background: #f9fafb;">Tracking</th>
-            <th align="left" style="padding: 8px; border: 1px solid #e5e7eb; background: #f9fafb;">Boxes received</th>
-            <th align="left" style="padding: 8px; border: 1px solid #e5e7eb; background: #f9fafb;">P.O</th>
-            <th align="left" style="padding: 8px; border: 1px solid #e5e7eb; background: #f9fafb;">WH received</th>
-            <th align="left" style="padding: 8px; border: 1px solid #e5e7eb; background: #f9fafb;">Notes</th>
-          </tr>
-        </thead>
-        <tbody>${rows}</tbody>
-      </table>
+      <h2 style="margin: 0 0 4px;">${boxCount} box${boxCount === 1 ? '' : 'es'} received in warehouse</h2>
+      <p style="margin: 0 0 20px; color: #6b7280; font-size: 13px;">Receiving matched ${boxes.length} expected tracking record${boxes.length === 1 ? '' : 's'} from ${supplierSummary}.</p>
+      ${groupSections}
     </div>
   `;
 
@@ -203,7 +245,7 @@ Deno.serve(async req => {
 
     let query = supabase
       .from('expected_boxes')
-      .select('id, tracking_number, carrier, po_number, warehouse_received_at, warehouse_received_box_count, warehouse_received_email_sent, notes, suppliers(name)')
+      .select('id, tracking_number, carrier, po_number, warehouse_received_at, warehouse_received_box_count, warehouse_received_email_sent, notes, batch_group_id, suppliers(name)')
       .eq('status', 'received')
       .eq('warehouse_received_email_sent', false);
 
