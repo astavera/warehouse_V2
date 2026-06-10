@@ -27,7 +27,9 @@ begin
 end $$;
 
 update public.employees
-set role = 'admin'
+set
+  role = 'admin',
+  permissions = array['receiving', 'expected_boxes', 'prices', 'audit', 'accounting', 'settings']::text[]
 where passcode = '0315';
 
 grant select (id, name, active, created_at, updated_at, auth_user_id, role, store_number, permissions)

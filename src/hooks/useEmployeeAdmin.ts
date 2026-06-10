@@ -1,6 +1,6 @@
 import type { Tables } from '@/integrations/supabase/types';
 import { invokeProtectedFunction } from '@/lib/protectedFunctions';
-import { createLocalEmployee, shouldUseLocalData, updateLocalEmployee } from '@/lib/localWarehouseData';
+import { createLocalEmployee, deleteLocalEmployee, shouldUseLocalData, updateLocalEmployee } from '@/lib/localWarehouseData';
 import type { AppModule, EmployeeRole } from '@/lib/permissions';
 
 type Employee = Tables<'employees'>;
@@ -56,5 +56,17 @@ export async function createEmployeeAccess(input: {
     permissions: input.permissions,
     role: input.role,
     storeNumber: input.role === 'store' ? input.storeNumber : null,
+  });
+}
+
+export async function deleteInactiveEmployeeAccess(employeeId: string) {
+  if (shouldUseLocalData()) {
+    deleteLocalEmployee(employeeId);
+    return { ok: true };
+  }
+
+  return invokeEmployeeAdmin<{ ok: boolean }>({
+    action: 'delete',
+    employeeId,
   });
 }

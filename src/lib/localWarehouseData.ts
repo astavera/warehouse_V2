@@ -431,6 +431,11 @@ export function updateLocalEmployee(id: string, patch: Partial<Employee>) {
   write(KEYS.employees, rows);
 }
 
+export function deleteLocalEmployee(id: string) {
+  ensureSeeded();
+  write(KEYS.employees, read<Employee[]>(KEYS.employees, []).filter(row => row.id !== id));
+}
+
 function getItemsForBatch(batchId: string) {
   return read<ReceiptItem[]>(KEYS.items, []).filter(item => item.batch_id === batchId);
 }

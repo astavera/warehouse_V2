@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Edit, Loader2, Plus, RotateCcw, Save, Search, Settings as SettingsIcon, UserCog } from 'lucide-react';
+import { Edit, Loader2, Plus, RotateCcw, Save, Search, Settings as SettingsIcon, Trash2, UserCog } from 'lucide-react';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -10,7 +10,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { useEmployees } from '@/hooks/useSupabaseData';
-import { createEmployeeAccess, updateEmployeeAccess } from '@/hooks/useEmployeeAdmin';
+import { createEmployeeAccess, deleteInactiveEmployeeAccess, updateEmployeeAccess } from '@/hooks/useEmployeeAdmin';
 import {
   APP_MODULES,
   EMPLOYEE_ROLES,
@@ -105,9 +105,11 @@ function PermissionToggleGrid({
 
 function EmployeeAccessCard({
   employee,
+  onDeleted,
   onSaved,
 }: {
   employee: Employee;
+  onDeleted: () => void;
   onSaved: () => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -116,6 +118,7 @@ function EmployeeAccessCard({
   const [permissions, setPermissions] = useState<AppModule[]>(cleanModules(employee.permissions, cleanRole(employee.role)));
   const [storeNumber, setStoreNumber] = useState(employee.store_number ? String(employee.store_number) : '');
   const [active, setActive] = useState(employee.active);
+  const [deleting, setDeleting] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const savedRole = cleanRole(employee.role);
@@ -163,6 +166,22 @@ function EmployeeAccessCard({
     }
   };
 
+  const deleteInactive = async () => {
+    if (employee.active) return;
+    const confirmed = window.confirm(`Delete inactive user "${employee.name}"? This cannot be undone.`);
+    if (!confirmed) return;
+    setDeleting(true);
+    try {
+      await deleteInactiveEmployeeAccess(employee.id);
+      toast.success('Inactive user deleted');
+      onDeleted();
+    } catch (err) {
+      toast.error(getErrorMessage(err, 'Failed to delete user'));
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   return (
     <>
       <div className="rounded-lg border bg-white p-4">
@@ -182,6 +201,18 @@ function EmployeeAccessCard({
             <Edit className="h-4 w-4" />
             Edit access
           </Button>
+          {!employee.active && (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => void deleteInactive()}
+              disabled={deleting}
+              className="w-full gap-1.5 border-destructive/30 text-destructive hover:bg-destructive/10 lg:w-auto"
+            >
+              {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+              Delete
+            </Button>
+          )}
         </div>
       </div>
 
@@ -482,7 +513,7 @@ export default function SettingsPage() {
 
         <div className="grid gap-3">
           {filteredEmployees.map(employee => (
-            <EmployeeAccessCard key={employee.id} employee={employee} onSaved={refetch} />
+            <EmployeeAccessCard key={employee.id} employee={employee} onDeleted={refetch} onSaved={refetch} />
           ))}
           {filteredEmployees.length === 0 && (
             <div className="rounded-lg border bg-muted/20 py-12 text-center text-sm text-muted-foreground">

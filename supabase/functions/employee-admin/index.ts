@@ -178,6 +178,33 @@ Deno.serve(async req => {
       return jsonResponse({ ok: true, employee: data });
     }
 
+    if (action === 'delete') {
+      const employeeId = typeof payload.employeeId === 'string' ? payload.employeeId : '';
+      if (!employeeId) return jsonResponse({ error: 'Employee id is required' }, 400);
+      if (employeeId === actor.id) return jsonResponse({ error: 'You cannot delete yourself' }, 400);
+
+      const { data: target, error: targetError } = await admin
+        .from('employees')
+        .select('id, name, active, auth_user_id')
+        .eq('id', employeeId)
+        .maybeSingle();
+      if (targetError) throw targetError;
+      if (!target) return jsonResponse({ error: 'User not found' }, 404);
+      if (target.active) return jsonResponse({ error: 'Only inactive users can be deleted' }, 400);
+
+      if (target.auth_user_id) {
+        const { error: authDeleteError } = await admin.auth.admin.deleteUser(target.auth_user_id);
+        if (authDeleteError) throw authDeleteError;
+      }
+
+      const { error } = await admin
+        .from('employees')
+        .delete()
+        .eq('id', employeeId);
+      if (error) throw error;
+      return jsonResponse({ ok: true });
+    }
+
     return jsonResponse({ error: `Unsupported action: ${action || '(empty)'}` }, 400);
   } catch (error) {
     return jsonResponse({ error: errorMessage(error) }, 500);
