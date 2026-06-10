@@ -28,6 +28,18 @@ function jsonResponse(body: unknown, status = 200) {
   });
 }
 
+function errorMessage(error: unknown) {
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'object' && error) {
+    const record = error as Record<string, unknown>;
+    for (const key of ['message', 'details', 'hint', 'code']) {
+      if (typeof record[key] === 'string' && record[key]) return String(record[key]);
+    }
+    return JSON.stringify(error);
+  }
+  return String(error || 'Unknown employee admin error');
+}
+
 function isAdminEmployee(employee: { name?: string | null; role?: string | null }) {
   return employee.role === 'admin' || (employee.name || '').trim().toLowerCase() === 'sebastian';
 }
@@ -168,6 +180,6 @@ Deno.serve(async req => {
 
     return jsonResponse({ error: `Unsupported action: ${action || '(empty)'}` }, 400);
   } catch (error) {
-    return jsonResponse({ error: error instanceof Error ? error.message : 'Unknown employee admin error' }, 500);
+    return jsonResponse({ error: errorMessage(error) }, 500);
   }
 });
