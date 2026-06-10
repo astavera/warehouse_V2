@@ -70,6 +70,14 @@ type SquareCatalogObject = {
   image_data?: {
     url?: string;
   };
+  custom_attribute_definition_data?: {
+    key?: string;
+    name?: string;
+    type?: string;
+    selection_config?: {
+      allowed_selections?: { uid?: string; name?: string }[];
+    };
+  };
   item_variation_data?: {
     item_id?: string;
     name?: string;
@@ -83,7 +91,10 @@ type SquareCatalogObject = {
 };
 
 type SquareCatalogCustomAttributeValue = {
+  key?: string;
   name?: string;
+  type?: string;
+  custom_attribute_definition_id?: string;
   string_value?: string;
   number_value?: string | number;
   boolean_value?: boolean;
@@ -177,7 +188,27 @@ function findImageUrl(
 
 const UNCATEGORIZED_CATEGORY = 'Uncategorized';
 const UNKNOWN_VENDOR = 'Unknown vendor';
-const VENDOR_ATTRIBUTE_KEYS = ['vendor', 'supplier', 'brand', 'manufacturer', 'maker'];
+const VENDOR_ATTRIBUTE_KEYS = [
+  'vendor',
+  'supplier',
+  'proveedor',
+  'brand',
+  'marca',
+  'manufacturer',
+  'maker',
+  'distributor',
+  'distribuidor',
+  'wholesale',
+  'wholesaler',
+];
+
+type CustomAttributeDefinitionIndex = {
+  namesById: Map<string, string>;
+  namesByKey: Map<string, string>;
+  selectionNamesByDefinitionId: Map<string, Map<string, string>>;
+};
+
+let customAttributeDefinitionIndexCache: Promise<CustomAttributeDefinitionIndex> | null = null;
 
 function mainCategory(categoryName: string | null | undefined) {
   const trimmed = String(categoryName || '').trim();
@@ -227,7 +258,61 @@ function categoryNameFromCategories(categories: { id: string; name: string }[]) 
   return categories.find(category => category.name.trim())?.name.trim() || UNCATEGORIZED_CATEGORY;
 }
 
-function customAttributeText(value: SquareCatalogCustomAttributeValue | undefined) {
+async function getCustomAttributeDefinitionIndex(): Promise<CustomAttributeDefinitionIndex> {
+  if (customAttributeDefinitionIndexCache) return customAttributeDefinitionIndexCache;
+
+  customAttributeDefinitionIndexCache = (async () => {
+    const index: CustomAttributeDefinitionIndex = {
+      namesById: new Map(),
+      namesByKey: new Map(),
+      selectionNamesByDefinitionId: new Map(),
+    };
+
+    try {
+      let cursor: string | null = null;
+      do {
+        const data = await squareFetch('/v2/catalog/search', {
+          method: 'POST',
+          body: {
+            object_types: ['CUSTOM_ATTRIBUTE_DEFINITION'],
+            include_deleted_objects: false,
+            limit: 100,
+            ...(cursor ? { cursor } : {}),
+          },
+        });
+
+        for (const object of data.objects || []) {
+          if (object.type !== 'CUSTOM_ATTRIBUTE_DEFINITION') continue;
+          const definition = object.custom_attribute_definition_data;
+          if (!definition) continue;
+
+          const name = definition.name || definition.key || object.id;
+          index.namesById.set(object.id, name);
+          if (definition.key) index.namesByKey.set(definition.key, name);
+
+          const selections = new Map<string, string>();
+          for (const selection of definition.selection_config?.allowed_selections || []) {
+            if (selection.uid && selection.name) selections.set(selection.uid, selection.name);
+          }
+          if (selections.size > 0) index.selectionNamesByDefinitionId.set(object.id, selections);
+        }
+
+        cursor = data.cursor || null;
+      } while (cursor);
+    } catch {
+      // Keep price checks working even when custom attribute definitions are not visible.
+    }
+
+    return index;
+  })();
+
+  return customAttributeDefinitionIndexCache;
+}
+
+function customAttributeText(
+  value: SquareCatalogCustomAttributeValue | undefined,
+  definitions: CustomAttributeDefinitionIndex
+) {
   if (!value) return null;
   if (typeof value.string_value === 'string' && value.string_value.trim()) {
     return value.string_value.trim();
@@ -237,16 +322,30 @@ function customAttributeText(value: SquareCatalogCustomAttributeValue | undefine
     return value.number_value.trim();
   }
   if (typeof value.boolean_value === 'boolean') return value.boolean_value ? 'Yes' : 'No';
+  if (value.custom_attribute_definition_id && value.selection_uid_values?.length) {
+    const selections = definitions.selectionNamesByDefinitionId.get(value.custom_attribute_definition_id);
+    const names = value.selection_uid_values
+      .map(uid => selections?.get(uid))
+      .filter((name): name is string => Boolean(name?.trim()));
+    if (names.length > 0) return names.join(', ');
+  }
   return null;
 }
 
-function vendorNameFromObjects(...objects: Array<SquareCatalogObject | null | undefined>) {
+function vendorNameFromObjects(
+  definitions: CustomAttributeDefinitionIndex,
+  ...objects: Array<SquareCatalogObject | null | undefined>
+) {
   for (const object of objects) {
     const attributes = object?.custom_attribute_values || {};
     for (const [key, value] of Object.entries(attributes)) {
-      const label = `${key} ${value?.name || ''}`.toLowerCase();
+      const definitionName = value?.custom_attribute_definition_id
+        ? definitions.namesById.get(value.custom_attribute_definition_id)
+        : null;
+      const keyName = value?.key ? definitions.namesByKey.get(value.key) : null;
+      const label = `${key} ${value?.key || ''} ${value?.name || ''} ${definitionName || ''} ${keyName || ''}`.toLowerCase();
       if (!VENDOR_ATTRIBUTE_KEYS.some(candidate => label.includes(candidate))) continue;
-      const vendor = customAttributeText(value);
+      const vendor = customAttributeText(value, definitions);
       if (vendor) return vendor;
     }
   }
@@ -324,6 +423,7 @@ async function lookupByBarcode(barcode: string): Promise<LiveProduct> {
 
   const priceMoney = variationData.price_money || {};
   const amount = typeof priceMoney.amount === 'number' ? priceMoney.amount : null;
+  const customAttributeDefinitions = await getCustomAttributeDefinitionIndex();
 
   return {
     found: true,
@@ -338,7 +438,7 @@ async function lookupByBarcode(barcode: string): Promise<LiveProduct> {
     price: amount != null ? amount / 100 : null,
     currency: priceMoney.currency || 'USD',
     categories,
-    vendorName: vendorNameFromObjects(variation, itemObject),
+    vendorName: vendorNameFromObjects(customAttributeDefinitions, variation, itemObject),
   };
 }
 
@@ -377,6 +477,7 @@ async function listVariationPage(cursor: string | null): Promise<{
     if (related.type !== 'CATEGORY') continue;
     categoryNames.set(related.id, related.category_data?.name || related.id);
   }
+  const customAttributeDefinitions = await getCustomAttributeDefinitionIndex();
 
   for (const item of data.objects || []) {
     if (item.type !== 'ITEM') continue;
@@ -399,7 +500,7 @@ async function listVariationPage(cursor: string | null): Promise<{
       out.push({
         barcode: String(barcode).trim(),
         categories,
-        vendorName: vendorNameFromObjects(v, item),
+        vendorName: vendorNameFromObjects(customAttributeDefinitions, v, item),
         itemId: item.id,
         variationId: v.id,
         name: variations.length > 1 && vd.name ? `${itemName} - ${vd.name}` : itemName,
