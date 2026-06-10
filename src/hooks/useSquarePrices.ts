@@ -77,6 +77,8 @@ export type VendorImportSummary = {
 
 export type CatalogAuditProduct = {
   barcode: string;
+  sku: string | null;
+  upc: string | null;
   itemId: string;
   variationId: string;
   name: string;
@@ -101,6 +103,8 @@ export type CatalogAuditPage = {
 };
 
 type MockProduct = PriceProduct & {
+  sku?: string | null;
+  upc?: string | null;
   itemId: string;
   variationId: string;
   hasInventoryMovement: boolean;
@@ -113,6 +117,8 @@ const MOCK_PRODUCTS: MockProduct[] = [
   {
     found: true,
     barcode: '111111111111',
+    sku: '111111111111',
+    upc: '009111111111',
     itemId: 'MOCK_ITEM_PRICE_CHANGE',
     variationId: 'MOCK_VARIATION_PRICE_CHANGE',
     name: 'Organic Almond Butter 16 oz',
@@ -130,6 +136,8 @@ const MOCK_PRODUCTS: MockProduct[] = [
   {
     found: true,
     barcode: '222222222222',
+    sku: '222222222222',
+    upc: '009222222222',
     itemId: 'MOCK_ITEM_NO_CHANGE',
     variationId: 'MOCK_VARIATION_NO_CHANGE',
     name: 'Sparkling Mineral Water',
@@ -146,7 +154,9 @@ const MOCK_PRODUCTS: MockProduct[] = [
   },
   {
     found: true,
-    barcode: '333333333333',
+    barcode: 'TAG-A',
+    sku: 'TAG-A',
+    upc: '333333333333',
     itemId: 'MOCK_ITEM_DUP_A',
     variationId: 'MOCK_VARIATION_DUP_A',
     name: 'Duplicate Barcode - Shelf Tag A',
@@ -164,7 +174,9 @@ const MOCK_PRODUCTS: MockProduct[] = [
   },
   {
     found: true,
-    barcode: '333333333333',
+    barcode: 'TAG-B',
+    sku: 'TAG-B',
+    upc: '333333333333',
     itemId: 'MOCK_ITEM_DUP_B',
     variationId: 'MOCK_VARIATION_DUP_B',
     name: 'Duplicate Barcode - Shelf Tag B',
@@ -183,6 +195,8 @@ const MOCK_PRODUCTS: MockProduct[] = [
   {
     found: true,
     barcode: '444444444444',
+    sku: null,
+    upc: '444444444444',
     itemId: 'MOCK_ITEM_NO_MOVEMENT',
     variationId: 'MOCK_VARIATION_NO_MOVEMENT',
     name: 'Seasonal Display Item',
@@ -295,6 +309,8 @@ function normalizeMockProduct(product: MockProduct): MockProduct {
 function toAuditProduct(product: MockProduct): CatalogAuditProduct {
   return {
     barcode: product.barcode,
+    sku: product.sku ?? null,
+    upc: product.upc ?? null,
     itemId: product.itemId,
     variationId: product.variationId,
     name: product.name || 'Mock product',

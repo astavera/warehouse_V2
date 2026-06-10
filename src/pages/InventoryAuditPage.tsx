@@ -13,7 +13,11 @@ import {
 } from '@/hooks/useSquarePrices';
 
 type DuplicateGroup = {
-  barcode: string;
+  code: string;
+  kind: 'SKU' | 'UPC/GTIN';
+  severity: 'warning' | 'critical';
+  differentPrices: boolean;
+  crossItem: boolean;
   items: CatalogAuditProduct[];
 };
 
@@ -62,7 +66,10 @@ function ProductLine({ product }: { product: CatalogAuditProduct }) {
           {categoryLabel} · {product.variationId}
         </div>
       </div>
-      <div className="font-mono text-xs text-muted-foreground sm:text-right">{product.barcode}</div>
+      <div className="space-y-0.5 font-mono text-xs text-muted-foreground sm:text-right">
+        <div>SKU: {product.sku || '-'}</div>
+        <div>UPC: {product.upc || '-'}</div>
+      </div>
       <div className="font-medium sm:text-right">
         {formatMoney(product.currentPrice, product.currency)}
       </div>
@@ -72,6 +79,47 @@ function ProductLine({ product }: { product: CatalogAuditProduct }) {
 
 function categoryNames(product: CatalogAuditProduct) {
   return product.categories?.map(category => category.name).join('; ') || 'Uncategorized';
+}
+
+function duplicateSeverity(items: CatalogAuditProduct[]) {
+  const prices = new Set(items.map(item => `${item.currency}:${item.currentPrice ?? 'null'}`));
+  const itemIds = new Set(items.map(item => item.itemId));
+  const differentPrices = prices.size > 1;
+  const crossItem = itemIds.size > 1;
+  return {
+    differentPrices,
+    crossItem,
+    severity: differentPrices || crossItem ? 'critical' : 'warning',
+  } as const;
+}
+
+function duplicateGroupsFor(
+  products: CatalogAuditProduct[],
+  kind: DuplicateGroup['kind'],
+  codeFor: (product: CatalogAuditProduct) => string | null | undefined
+) {
+  const byCode = new Map<string, CatalogAuditProduct[]>();
+
+  for (const product of products) {
+    const code = String(codeFor(product) || '').trim();
+    if (!code) continue;
+    const list = byCode.get(code) || [];
+    list.push(product);
+    byCode.set(code, list);
+  }
+
+  return [...byCode.entries()]
+    .filter(([, items]) => items.length > 1)
+    .map(([code, items]) => ({
+      code,
+      kind,
+      ...duplicateSeverity(items),
+      items,
+    }))
+    .sort((a, b) => {
+      if (a.severity !== b.severity) return a.severity === 'critical' ? -1 : 1;
+      return a.code.localeCompare(b.code);
+    });
 }
 
 function truncateText(value: string, maxLength = 30) {
@@ -222,16 +270,9 @@ export default function InventoryAuditPage() {
   const [svgPreview, setSvgPreview] = useState<SvgExportPreview | null>(null);
 
   const duplicateGroups = useMemo<DuplicateGroup[]>(() => {
-    const byBarcode = new Map<string, CatalogAuditProduct[]>();
-    for (const product of products) {
-      const list = byBarcode.get(product.barcode) || [];
-      list.push(product);
-      byBarcode.set(product.barcode, list);
-    }
-    return [...byBarcode.entries()]
-      .filter(([, items]) => items.length > 1)
-      .map(([barcode, items]) => ({ barcode, items }))
-      .sort((a, b) => a.barcode.localeCompare(b.barcode));
+    const duplicateSkuGroups = duplicateGroupsFor(products, 'SKU', product => product.sku);
+    const duplicateUpcGroups = duplicateGroupsFor(products, 'UPC/GTIN', product => product.upc);
+    return [...duplicateSkuGroups, ...duplicateUpcGroups];
   }, [products]);
 
   const noMovement = useMemo(
@@ -272,17 +313,25 @@ export default function InventoryAuditPage() {
   }, [products]);
 
   const noMovementCategories = categoryMovement.filter(category => category.total > 0 && category.moving === 0);
-  const duplicateItemCount = duplicateGroups.reduce((total, group) => total + group.items.length, 0);
+  const duplicateItemCount = new Set(
+    duplicateGroups.flatMap(group => group.items.map(item => item.variationId))
+  ).size;
+  const criticalDuplicateGroups = duplicateGroups.filter(group => group.severity === 'critical');
   const movingCount = products.filter(product => product.hasInventoryMovement).length;
   const dashboardDisabled = !lastRefreshAt || products.length === 0;
   const movementChartData = [
     { label: 'With movement', value: movingCount, color: '#059669' },
     { label: 'No movement', value: noMovement.length, color: '#0284c7' },
     { label: 'Duplicate items', value: duplicateItemCount, color: '#d97706' },
+    { label: 'Critical duplicates', value: criticalDuplicateGroups.length, color: '#dc2626' },
     { label: 'Categories stopped', value: noMovementCategories.length, color: '#e11d48' },
   ].filter(row => row.value > 0);
   const duplicateChartData = duplicateGroups
-    .map(group => ({ label: group.barcode, value: group.items.length, color: '#d97706' }))
+    .map(group => ({
+      label: `${group.kind} ${group.code}`,
+      value: group.items.length,
+      color: group.severity === 'critical' ? '#dc2626' : '#d97706',
+    }))
     .slice(0, 5);
   const lastRefreshLabel = lastRefreshAt
     ? lastRefreshAt.toLocaleString('en-US', { dateStyle: 'short', timeStyle: 'short' })
@@ -324,19 +373,27 @@ export default function InventoryAuditPage() {
     const rows = [
       [
         'Finding',
-        'Barcode',
+        'Code type',
+        'Code',
+        'SKU',
+        'UPC/GTIN',
         'Product or category',
         'Variation or category ID',
+        'Item ID',
         'Price',
         'Inventory movement',
         'Square categories',
       ],
       ...duplicateGroups.flatMap(group =>
         group.items.map(product => [
-          'Duplicate barcode',
-          product.barcode,
+          `Duplicate ${group.kind}${group.severity === 'critical' ? ' - critical' : ''}`,
+          group.kind,
+          group.code,
+          product.sku || '',
+          product.upc || '',
           product.name,
           product.variationId,
+          product.itemId,
           formatMoney(product.currentPrice, product.currency),
           product.hasInventoryMovement ? 'Yes' : 'No',
           categoryNames(product),
@@ -344,9 +401,13 @@ export default function InventoryAuditPage() {
       ),
       ...noMovement.map(product => [
         'No inventory movement',
-        product.barcode,
+        '',
+        '',
+        product.sku || '',
+        product.upc || '',
         product.name,
         product.variationId,
+        product.itemId,
         formatMoney(product.currentPrice, product.currency),
         'No',
         categoryNames(product),
@@ -354,8 +415,12 @@ export default function InventoryAuditPage() {
       ...noMovementCategories.map(category => [
         'Category without movement',
         '',
+        '',
+        '',
+        '',
         category.name,
         category.id,
+        '',
         '',
         'No',
         category.name,
@@ -475,7 +540,7 @@ export default function InventoryAuditPage() {
         </div>
         <div className="rounded-lg border bg-muted/30 p-4">
           <div className="text-2xl font-bold text-amber-600">{duplicateGroups.length}</div>
-          <div className="text-xs text-muted-foreground">duplicate barcode groups</div>
+          <div className="text-xs text-muted-foreground">duplicate SKU/UPC groups</div>
         </div>
         <div className="rounded-lg border bg-muted/30 p-4">
           <div className="text-2xl font-bold text-sky-700">{noMovement.length}</div>
@@ -534,7 +599,7 @@ export default function InventoryAuditPage() {
           <CardHeader className="pb-3">
             <CardTitle className="flex items-center gap-2 text-base">
               <AlertTriangle className="h-4 w-4 text-amber-600" />
-              Catalog duplicate items
+              Catalog duplicate SKU/UPC
               <Badge variant="secondary">{duplicateItemCount}</Badge>
             </CardTitle>
           </CardHeader>
@@ -543,15 +608,28 @@ export default function InventoryAuditPage() {
               <div className="py-10 text-center text-sm text-muted-foreground">Checking Square...</div>
             ) : duplicateGroups.length === 0 ? (
               <div className="py-10 text-center text-sm text-muted-foreground">
-                {hasRun ? 'No duplicate barcodes found.' : 'No audit run yet.'}
+                {hasRun ? 'No duplicate SKU or UPC/GTIN groups found.' : 'No audit run yet.'}
               </div>
             ) : (
               <div className="space-y-3">
                 {duplicateGroups.map(group => (
-                  <div key={group.barcode} className="overflow-hidden rounded-lg border">
+                  <div key={`${group.kind}-${group.code}`} className="overflow-hidden rounded-lg border">
                     <div className="flex items-center justify-between gap-3 border-b bg-muted/40 px-3 py-2">
-                      <div className="font-mono text-sm font-semibold">{group.barcode}</div>
-                      <Badge variant="outline">{group.items.length} items</Badge>
+                      <div className="min-w-0">
+                        <div className="font-mono text-sm font-semibold">
+                          {group.kind}: {group.code}
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          {group.crossItem ? 'Across multiple Square items' : 'Inside one Square item'}
+                          {group.differentPrices ? ' - different prices' : ' - same price'}
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap justify-end gap-1.5">
+                        <Badge variant={group.severity === 'critical' ? 'destructive' : 'outline'}>
+                          {group.severity}
+                        </Badge>
+                        <Badge variant="outline">{group.items.length} items</Badge>
+                      </div>
                     </div>
                     <div className="divide-y">
                       {group.items.map(product => (

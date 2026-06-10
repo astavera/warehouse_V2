@@ -444,6 +444,8 @@ async function lookupByBarcode(barcode: string): Promise<LiveProduct> {
 
 type Variation = {
   barcode: string;
+  sku: string | null;
+  upc: string | null;
   categories: { id: string; name: string }[];
   vendorName: string;
   itemId: string;
@@ -494,11 +496,15 @@ async function listVariationPage(cursor: string | null): Promise<{
     }));
     for (const v of variations) {
       const vd = v.item_variation_data || {};
-      const barcode = vd.sku || vd.upc || null;
+      const sku = vd.sku != null ? String(vd.sku).trim() : '';
+      const upc = vd.upc != null ? String(vd.upc).trim() : '';
+      const barcode = sku || upc || null;
       if (!barcode) continue;
       const priceMoney = vd.price_money || {};
       out.push({
         barcode: String(barcode).trim(),
+        sku: sku || null,
+        upc: upc || null,
         categories,
         vendorName: vendorNameFromObjects(customAttributeDefinitions, v, item),
         itemId: item.id,
@@ -1160,6 +1166,8 @@ Deno.serve(async req => {
         total: variations.length,
         products: variations.map(v => ({
           barcode: v.barcode,
+          sku: v.sku,
+          upc: v.upc,
           categories: v.categories,
           itemId: v.itemId,
           variationId: v.variationId,
