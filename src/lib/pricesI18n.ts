@@ -49,6 +49,7 @@ export type Dict = {
   store_pending: (s: number) => string;
   store_done: (s: number) => string;
   tag_changed_store: (s: number) => string;
+  tag_changed_all: string;
   toast_tag: (s: number) => string;
   toast_done: string;
   toast_tag_err: string;
@@ -109,6 +110,7 @@ export const PRICE_I18N: Record<PriceLang, Dict> = {
     store_pending: s => `Tienda ${s} pendiente`,
     store_done: s => `Tienda ${s} ✓`,
     tag_changed_store: s => `Tag cambiado — tienda ${s}`,
+    tag_changed_all: 'Tag cambiado - todas las tiendas',
     toast_tag: s => `✓ Tag tienda ${s} marcado`,
     toast_done: '✓ Ambas tiendas listas. Precio nuevo guardado.',
     toast_tag_err: 'Error al marcar el tag',
@@ -166,6 +168,7 @@ export const PRICE_I18N: Record<PriceLang, Dict> = {
     store_pending: s => `Store ${s} pending`,
     store_done: s => `Store ${s} ✓`,
     tag_changed_store: s => `Tag changed — store ${s}`,
+    tag_changed_all: 'Tag changed - all locations',
     toast_tag: s => `✓ Store ${s} tag marked`,
     toast_done: '✓ Both stores done. New price saved.',
     toast_tag_err: 'Error marking the tag',

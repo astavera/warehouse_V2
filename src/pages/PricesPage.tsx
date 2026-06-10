@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { toast } from 'sonner';
-import { Search, RefreshCw, Printer, Loader2, ArrowRight, Languages } from 'lucide-react';
+import { Search, RefreshCw, Printer, Loader2, ArrowRight, Languages, CheckCheck } from 'lucide-react';
 import {
   squarePrices,
   formatMoney,
@@ -27,6 +27,7 @@ function getErrorMessage(error: unknown, fallback: string) {
 function ChangePriceTab({ t, onZoom }: { t: Dict; onZoom: (url: string) => void }) {
   const [code, setCode] = useState('');
   const [loading, setLoading] = useState(false);
+  const [taggingAll, setTaggingAll] = useState(false);
   const [product, setProduct] = useState<PriceProduct | null>(null);
   const [notFound, setNotFound] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -69,6 +70,26 @@ function ChangePriceTab({ t, onZoom }: { t: Dict; onZoom: (url: string) => void 
     }
   };
 
+  const confirmAllTags = async () => {
+    if (!product?.changePending) return;
+    const pendingStores = ([72, 86] as const).filter(store => !product.confirmedStores.includes(store));
+    if (pendingStores.length === 0) return;
+
+    setTaggingAll(true);
+    try {
+      let data: PriceProduct = product;
+      for (const store of pendingStores) {
+        data = await squarePrices.tag(product.barcode, store);
+      }
+      setProduct(data);
+      toast.success(t.toast_done);
+    } catch (err) {
+      toast.error(getErrorMessage(err, t.toast_tag_err));
+    } finally {
+      setTaggingAll(false);
+    }
+  };
+
   return (
     <div className="space-y-4">
       <p className="text-sm text-muted-foreground">{t.scan_hint}</p>
@@ -97,7 +118,16 @@ function ChangePriceTab({ t, onZoom }: { t: Dict; onZoom: (url: string) => void 
         </div>
       )}
 
-      {product && <ProductCard t={t} product={product} onTag={confirmTag} onZoom={onZoom} />}
+      {product && (
+        <ProductCard
+          t={t}
+          product={product}
+          onTag={confirmTag}
+          onTagAll={confirmAllTags}
+          taggingAll={taggingAll}
+          onZoom={onZoom}
+        />
+      )}
     </div>
   );
 }
@@ -124,11 +154,15 @@ function ProductCard({
   t,
   product,
   onTag,
+  onTagAll,
+  taggingAll,
   onZoom,
 }: {
   t: Dict;
   product: PriceProduct;
   onTag: (store: 72 | 86) => void;
+  onTagAll: () => void;
+  taggingAll: boolean;
   onZoom: (url: string) => void;
 }) {
   const changed = product.changePending;
@@ -208,6 +242,17 @@ function ProductCard({
             );
           })}
         </div>
+
+        <Button
+          type="button"
+          variant="outline"
+          disabled={!changed || taggingAll || product.pendingStores.length === 0}
+          onClick={onTagAll}
+          className="w-full gap-1.5 touch-target"
+        >
+          {taggingAll ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCheck className="h-4 w-4" />}
+          {t.tag_changed_all}
+        </Button>
       </CardContent>
     </Card>
   );
