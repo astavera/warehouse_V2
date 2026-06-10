@@ -1,6 +1,5 @@
-import { supabase } from '@/integrations/supabase/client';
 import type { Tables } from '@/integrations/supabase/types';
-import { functionErrorMessage } from '@/lib/functionErrors';
+import { invokeProtectedFunction } from '@/lib/protectedFunctions';
 import { createLocalEmployee, shouldUseLocalData, updateLocalEmployee } from '@/lib/localWarehouseData';
 import type { AppModule, EmployeeRole } from '@/lib/permissions';
 
@@ -15,11 +14,7 @@ type EmployeeAdminPatch = {
 };
 
 async function invokeEmployeeAdmin<T>(body: Record<string, unknown>) {
-  const { data, error } = await supabase.functions.invoke('employee-admin', { body });
-  if (error) {
-    throw new Error(await functionErrorMessage(error, 'Employee admin function failed'));
-  }
-  return data as T;
+  return invokeProtectedFunction<T>('employee-admin', body);
 }
 
 export async function updateEmployeeAccess(employeeId: string, patch: EmployeeAdminPatch) {
