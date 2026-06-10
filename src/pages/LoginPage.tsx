@@ -122,7 +122,7 @@ export default function LoginPage() {
               <div className="mb-8 flex h-36 items-center px-1">
                 <img
                   src="/modern-state-logo-v2.png"
-                  alt="Modern State"
+                  alt="All Zentro Solutions"
                   className="h-[10rem] w-full max-w-[37rem] object-contain mix-blend-multiply"
                 />
               </div>
