@@ -1,4 +1,5 @@
 import { invokeProtectedFunction } from '@/lib/protectedFunctions';
+import { mainPriceCategory, UNCATEGORIZED_PRICE_CATEGORY } from '@/lib/priceCategories';
 
 const MOCK_LOCAL = import.meta.env.VITE_MOCK_LOCAL === 'true';
 const MOCK_STORAGE_KEY = 'mock-square-price-products-v1';
@@ -37,6 +38,8 @@ export type SyncSummary = {
 export type PriceChange = {
   barcode: string;
   name: string | null;
+  categoryName: string | null;
+  primaryCategory: string | null;
   currency: string;
   oldPrice: number | null;
   currentPrice: number | null;
@@ -305,6 +308,8 @@ const mockSquarePrices = {
       .map(product => ({
         barcode: product.barcode,
         name: product.name,
+        categoryName: product.categories[0]?.name || UNCATEGORIZED_PRICE_CATEGORY,
+        primaryCategory: mainPriceCategory(product.categories[0]?.name),
         currency: product.currency,
         oldPrice: product.oldPrice,
         currentPrice: product.currentPrice,

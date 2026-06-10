@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import JsBarcode from 'jsbarcode';
 import { squarePrices, formatMoney, type PriceChange } from '@/hooks/useSquarePrices';
+import { groupPriceItemsByCategory } from '@/lib/priceCategories';
 import { getPriceLang, PRICE_I18N } from '@/lib/pricesI18n';
 
 // Printable sheet ported from square-precios/public/print.html.
@@ -43,6 +44,7 @@ export default function PricesPrintPage() {
   }, [changes]);
 
   const now = new Date();
+  const groupedChanges = useMemo(() => groupPriceItemsByCategory(changes || []), [changes]);
 
   return (
     <div style={{ fontFamily: 'Arial, Helvetica, sans-serif', color: '#111', margin: 24 }}>
@@ -51,7 +53,9 @@ export default function PricesPrintPage() {
         .pp-table { width: 100%; border-collapse: collapse; }
         .pp-table th, .pp-table td { border: 1px solid #999; padding: 6px 8px; text-align: left; vertical-align: middle; }
         .pp-table th { background: #eee; font-size: 12px; text-transform: uppercase; }
+        .cat-row td { background: #dbeafe; color: #1e3a8a; font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0; }
         td.name { font-size: 14px; font-weight: 600; }
+        .subcat { color: #555; font-size: 11px; font-weight: 400; margin-top: 2px; }
         td.price { white-space: nowrap; font-size: 14px; }
         .old { color: #777; text-decoration: line-through; font-size: 12px; }
         .new { font-weight: 700; font-size: 16px; }
@@ -93,26 +97,36 @@ export default function PricesPrintPage() {
             </tr>
           </thead>
           <tbody>
-            {changes.map(c => (
-              <tr key={c.barcode}>
-                <td className="name">
-                  {c.name}
-                  {c.conflict && <div className="dup">{t.duplicate_badge}</div>}
-                </td>
-                <td className="price">
-                  <span className="old">{formatMoney(c.oldPrice, c.currency)}</span>
-                  <br />
-                  <span className="new">{formatMoney(c.currentPrice, c.currency)}</span>
-                </td>
-                <td className="bc">
-                  <svg className="barcode" data-code={String(c.barcode).replace(/"/g, '')} />
-                  <div className="bc-text">{c.barcode}</div>
-                </td>
-                <td className="check">
-                  <span className="pp-box" /> T72&nbsp;&nbsp;
-                  <span className="pp-box" /> T86
-                </td>
-              </tr>
+            {groupedChanges.map(group => (
+              <Fragment key={group.category}>
+                <tr className="cat-row">
+                  <td colSpan={4}>{group.category} ({group.items.length})</td>
+                </tr>
+                {group.items.map(c => (
+                  <tr key={c.barcode}>
+                    <td className="name">
+                      {c.name}
+                      {c.categoryName && c.categoryName !== group.category && (
+                        <div className="subcat">{c.categoryName}</div>
+                      )}
+                      {c.conflict && <div className="dup">{t.duplicate_badge}</div>}
+                    </td>
+                    <td className="price">
+                      <span className="old">{formatMoney(c.oldPrice, c.currency)}</span>
+                      <br />
+                      <span className="new">{formatMoney(c.currentPrice, c.currency)}</span>
+                    </td>
+                    <td className="bc">
+                      <svg className="barcode" data-code={String(c.barcode).replace(/"/g, '')} />
+                      <div className="bc-text">{c.barcode}</div>
+                    </td>
+                    <td className="check">
+                      <span className="pp-box" /> T72&nbsp;&nbsp;
+                      <span className="pp-box" /> T86
+                    </td>
+                  </tr>
+                ))}
+              </Fragment>
             ))}
           </tbody>
         </table>

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -14,6 +14,7 @@ import {
   type PriceChange,
   type SyncSummary,
 } from '@/hooks/useSquarePrices';
+import { groupPriceItemsByCategory } from '@/lib/priceCategories';
 import { usePriceLang, type Dict } from '@/lib/pricesI18n';
 
 function getErrorMessage(error: unknown, fallback: string) {
@@ -319,6 +320,7 @@ function ListTab({ t }: { t: Dict }) {
   const [summary, setSummary] = useState<SyncSummary | null>(null);
   const [changes, setChanges] = useState<PriceChange[]>([]);
   const [loading, setLoading] = useState(true);
+  const groupedChanges = useMemo(() => groupPriceItemsByCategory(changes), [changes]);
 
   const loadChanges = async () => {
     setLoading(true);
@@ -452,32 +454,47 @@ function ListTab({ t }: { t: Dict }) {
       ) : changes.length === 0 ? (
         <p className="py-6 text-center text-sm text-muted-foreground">{t.no_changes}</p>
       ) : (
-        <div className="divide-y rounded-lg border">
-          {changes.map(c => (
-            <div key={c.barcode} className="flex items-center justify-between gap-3 p-3">
-              <div className="min-w-0">
-                <div className="flex min-w-0 items-center gap-2">
-                  <div className="truncate font-medium">{c.name}</div>
-                  {c.conflict && <Badge variant="secondary">{t.duplicate_badge}</Badge>}
+        <>
+          <div className="space-y-3">
+            {groupedChanges.map(group => (
+              <section key={group.category} className="overflow-hidden rounded-lg border">
+                <div className="flex items-center justify-between gap-3 border-b bg-muted/50 px-3 py-2">
+                  <div className="font-semibold">{group.category}</div>
+                  <Badge variant="secondary">{group.items.length}</Badge>
                 </div>
-                <div className="text-xs text-muted-foreground">
-                  {c.barcode} ·{' '}
-                  {c.pendingStores.length
-                    ? t.missing + ': ' + c.pendingStores.map(s => 'T' + s).join(', ')
-                    : t.tags_ready}
+                <div className="divide-y">
+                  {group.items.map(c => (
+                    <div key={c.barcode} className="flex items-center justify-between gap-3 p-3">
+                      <div className="min-w-0">
+                        <div className="flex min-w-0 items-center gap-2">
+                          <div className="truncate font-medium">{c.name}</div>
+                          {c.conflict && <Badge variant="secondary">{t.duplicate_badge}</Badge>}
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          {c.barcode} -{' '}
+                          {c.pendingStores.length
+                            ? t.missing + ': ' + c.pendingStores.map(s => 'T' + s).join(', ')
+                            : t.tags_ready}
+                        </div>
+                        {c.categoryName && c.categoryName !== group.category && (
+                          <div className="text-xs text-muted-foreground">{c.categoryName}</div>
+                        )}
+                      </div>
+                      <div className="text-right">
+                        <div className="text-xs text-muted-foreground line-through">
+                          {formatMoney(c.oldPrice, c.currency)}
+                        </div>
+                        <div className="font-semibold text-amber-600">
+                          {formatMoney(c.currentPrice, c.currency)}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              </div>
-              <div className="text-right">
-                <div className="text-xs text-muted-foreground line-through">
-                  {formatMoney(c.oldPrice, c.currency)}
-                </div>
-                <div className="font-semibold text-amber-600">
-                  {formatMoney(c.currentPrice, c.currency)}
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
+              </section>
+            ))}
+          </div>
+        </>
       )}
     </div>
   );

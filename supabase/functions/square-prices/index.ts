@@ -166,6 +166,56 @@ function findImageUrl(
   return img?.image_data?.url || null;
 }
 
+const UNCATEGORIZED_CATEGORY = 'Uncategorized';
+
+function mainCategory(categoryName: string | null | undefined) {
+  const trimmed = String(categoryName || '').trim();
+  if (!trimmed) return UNCATEGORIZED_CATEGORY;
+  return trimmed.split('/')[0]?.trim() || UNCATEGORIZED_CATEGORY;
+}
+
+function categoriesForItem(
+  itemObject: SquareCatalogObject | null | undefined,
+  relatedObjects: SquareCatalogObject[] = []
+) {
+  if (!itemObject?.item_data) return [];
+
+  const categoryNames = new Map<string, string>();
+  for (const related of relatedObjects) {
+    if (related.type !== 'CATEGORY') continue;
+    categoryNames.set(related.id, related.category_data?.name || related.id);
+  }
+
+  const refs = [
+    ...(itemObject.item_data.categories || []),
+    itemObject.item_data.category_id ? { id: itemObject.item_data.category_id } : null,
+    itemObject.item_data.reporting_category?.id
+      ? {
+          id: itemObject.item_data.reporting_category.id,
+          ordinal: itemObject.item_data.reporting_category.ordinal,
+        }
+      : null,
+  ].filter((category): category is { id?: string; ordinal?: number } => Boolean(category?.id));
+
+  const seen = new Set<string>();
+  return refs
+    .sort((a, b) => (a.ordinal ?? 999_999) - (b.ordinal ?? 999_999))
+    .filter(category => {
+      const id = category.id || '';
+      if (!id || seen.has(id)) return false;
+      seen.add(id);
+      return true;
+    })
+    .map(category => ({
+      id: category.id!,
+      name: categoryNames.get(category.id!) || category.id!,
+    }));
+}
+
+function categoryNameFromCategories(categories: { id: string; name: string }[]) {
+  return categories.find(category => category.name.trim())?.name.trim() || UNCATEGORIZED_CATEGORY;
+}
+
 type LiveProduct = {
   found: boolean;
   barcode: string;
@@ -179,6 +229,7 @@ type LiveProduct = {
   priceCents?: number | null;
   price?: number | null;
   currency?: string;
+  categories?: { id: string; name: string }[];
 };
 
 async function lookupByBarcode(barcode: string): Promise<LiveProduct> {
@@ -213,13 +264,20 @@ async function lookupByBarcode(barcode: string): Promise<LiveProduct> {
   let itemObject = related.find(o => o.type === 'ITEM' && o.id === itemId);
 
   let imageRelated = related;
-  if (!itemObject || !findImageUrl(itemObject, related)) {
+  let categories = categoriesForItem(itemObject, imageRelated);
+  if (
+    !itemObject ||
+    !findImageUrl(itemObject, related) ||
+    categories.length === 0 ||
+    categories.some(category => category.name === category.id)
+  ) {
     try {
       const full = await squareFetch(
         `/v2/catalog/object/${itemId}?include_related_objects=true`
       );
       itemObject = full.object || itemObject;
       imageRelated = full.related_objects || related;
+      categories = categoriesForItem(itemObject, imageRelated);
     } catch {
       // keep what we have
     }
@@ -240,6 +298,7 @@ async function lookupByBarcode(barcode: string): Promise<LiveProduct> {
     priceCents: amount,
     price: amount != null ? amount / 100 : null,
     currency: priceMoney.currency || 'USD',
+    categories,
   };
 }
 
@@ -383,6 +442,8 @@ type ProductRow = {
   variation_id: string | null;
   name: string | null;
   image_url: string | null;
+  category_name: string | null;
+  primary_category: string | null;
   old_price: number | null;
   last_seen_price: number | null;
   currency: string;
@@ -418,6 +479,8 @@ function decorate(row: ProductRow | null) {
     ...row,
     oldPrice: row.old_price != null ? row.old_price / 100 : null,
     currentPrice: row.last_seen_price != null ? row.last_seen_price / 100 : null,
+    categoryName: row.category_name || UNCATEGORIZED_CATEGORY,
+    primaryCategory: row.primary_category || mainCategory(row.category_name),
     changePending,
     pendingStores: changePending
       ? [...(row.tag_72 ? [] : [72]), ...(row.tag_86 ? [] : [86])]
@@ -429,6 +492,8 @@ function decorate(row: ProductRow | null) {
 async function recordLookup(db: Db, live: LiveProduct) {
   const existing = await getProduct(db, live.barcode);
   const now = live.priceCents ?? null;
+  const liveCategoryName = categoryNameFromCategories(live.categories || []);
+  const livePrimaryCategory = mainCategory(liveCategoryName);
 
   if (!existing) {
     const saved = await upsertProduct(db, {
@@ -437,6 +502,8 @@ async function recordLookup(db: Db, live: LiveProduct) {
       variation_id: live.variationId ?? null,
       name: live.name ?? null,
       image_url: live.imageUrl ?? null,
+      category_name: liveCategoryName,
+      primary_category: livePrimaryCategory,
       old_price: now,
       last_seen_price: now,
       currency: live.currency || 'USD',
@@ -456,6 +523,8 @@ async function recordLookup(db: Db, live: LiveProduct) {
     variation_id: live.variationId ?? null,
     name: live.name ?? null,
     image_url: live.imageUrl ?? null,
+    category_name: liveCategoryName,
+    primary_category: livePrimaryCategory,
     old_price: existing.old_price, // held until both stores confirm
     last_seen_price: now,
     currency: live.currency || 'USD',
@@ -481,6 +550,8 @@ async function confirmTag(db: Db, barcode: string, store: 72 | 86) {
     variation_id: existing.variation_id,
     name: existing.name,
     image_url: existing.image_url,
+    category_name: existing.category_name,
+    primary_category: existing.primary_category,
     old_price: existing.old_price,
     last_seen_price: existing.last_seen_price,
     currency: existing.currency,
@@ -538,6 +609,8 @@ async function syncVariations(db: Db, variations: Variation[]) {
     const isConflict = isDuplicate || g.prices.size > 1;
     const now = g.prices.size === 1 ? [...g.prices][0] : v.priceCents;
     const existing = existingMap.get(barcode);
+    const categoryName = categoryNameFromCategories(v.categories);
+    const primaryCategory = mainCategory(categoryName);
 
     if (isConflict) {
       conflictos++;
@@ -552,6 +625,8 @@ async function syncVariations(db: Db, variations: Variation[]) {
         variation_id: v.variationId,
         name: v.name,
         image_url: null,
+        category_name: categoryName,
+        primary_category: primaryCategory,
         old_price: now,
         last_seen_price: now,
         currency: v.currency,
@@ -577,6 +652,8 @@ async function syncVariations(db: Db, variations: Variation[]) {
       variation_id: v.variationId,
       name: v.name,
       image_url: existing.image_url, // sync brings no images
+      category_name: categoryName,
+      primary_category: primaryCategory,
       old_price: existing.old_price,
       last_seen_price: now,
       currency: v.currency,
@@ -619,6 +696,7 @@ async function listChanges(db: Db) {
       .eq('conflict', false)
       .not('last_seen_price', 'is', null)
       .not('old_price', 'is', null)
+      .order('primary_category', { ascending: true, nullsFirst: false })
       .order('name', { ascending: true })
       .range(from, from + pageSize - 1);
     if (error) throw error;
@@ -748,6 +826,8 @@ Deno.serve(async req => {
       const changes = (await listChanges(db)).map(r => ({
         barcode: r!.barcode,
         name: r!.name,
+        categoryName: r!.categoryName,
+        primaryCategory: r!.primaryCategory,
         currency: r!.currency,
         oldPrice: r!.oldPrice,
         currentPrice: r!.currentPrice,
