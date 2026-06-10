@@ -6,7 +6,11 @@ const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
 async function getAccessToken() {
   const { data: sessionData } = await supabase.auth.getSession();
-  if (sessionData.session?.access_token) return sessionData.session.access_token;
+  const session = sessionData.session;
+  const expiresAtMs = session?.expires_at ? session.expires_at * 1000 : 0;
+  const shouldRefresh = !session?.access_token || expiresAtMs <= Date.now() + 60_000;
+
+  if (session?.access_token && !shouldRefresh) return session.access_token;
 
   const { data: refreshedSession } = await supabase.auth.refreshSession();
   if (refreshedSession.session?.access_token) return refreshedSession.session.access_token;

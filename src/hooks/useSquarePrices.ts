@@ -1,5 +1,4 @@
-import { supabase } from '@/integrations/supabase/client';
-import { functionErrorMessage } from '@/lib/functionErrors';
+import { invokeProtectedFunction } from '@/lib/protectedFunctions';
 
 const MOCK_LOCAL = import.meta.env.VITE_MOCK_LOCAL === 'true';
 const MOCK_STORAGE_KEY = 'mock-square-price-products-v1';
@@ -333,14 +332,8 @@ const mockSquarePrices = {
   }),
 };
 
-// Invoke the Edge Function and surface its JSON error body (same handling as
-// invokeKioskAuth in useAuth.tsx).
 async function invokeSquarePrices<T>(body: Record<string, unknown>): Promise<T> {
-  const { data, error } = await supabase.functions.invoke('square-prices', { body });
-  if (error) {
-    throw new Error(await functionErrorMessage(error, 'Square prices function failed'));
-  }
-  return data as T;
+  return invokeProtectedFunction<T>('square-prices', body);
 }
 
 export const squarePrices = {

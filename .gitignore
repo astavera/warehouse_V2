@@ -16,6 +16,7 @@ dist-ssr
 *.zip
 data/*.xlsx
 reports/
+exports/
 supabase/.temp/
 
 # Editor directories and files
