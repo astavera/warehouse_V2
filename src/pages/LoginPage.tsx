@@ -127,7 +127,7 @@ export default function LoginPage() {
                 />
               </div>
               <div className="inline-flex items-center gap-2 rounded-lg border border-border/70 bg-white/75 px-3 py-1.5 text-[11px] font-medium uppercase tracking-[0.24em] text-muted-foreground shadow-sm backdrop-blur-sm">
-                Modern State Warehouse
+                All Zentro Solutions 
               </div>
               <h1 className="mt-5 text-5xl font-semibold tracking-[-0.05em] text-foreground xl:text-6xl">
                 Welcome back.
@@ -156,14 +156,14 @@ export default function LoginPage() {
                 <div className="mx-auto flex h-24 w-full max-w-[19rem] items-center justify-center px-1">
                   <img
                     src="/modern-state-logo-v2.png"
-                    alt="Modern State"
+                    alt="All Zentro Solutions "
                     className="h-[7rem] w-full object-contain mix-blend-multiply"
                   />
                 </div>
               </div>
 
               <div className="mb-6 text-center">
-                <p className="text-[11px] font-medium uppercase tracking-[0.34em] text-muted-foreground">Modern State Warehouse</p>
+                <p className="text-[11px] font-medium uppercase tracking-[0.34em] text-muted-foreground">All Zentro Solutions </p>
                 <div className="mt-3">
                   <p className="text-[0.8rem] uppercase tracking-[0.28em] text-muted-foreground">{formattedDate}</p>
                   <h2 className="mt-2 text-[2.15rem] font-semibold tracking-[-0.06em] text-foreground sm:text-[2.75rem]">
