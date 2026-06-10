@@ -563,7 +563,12 @@ async function syncVariations(db: Db, variations: Variation[]) {
       continue;
     }
 
-    const priceChanged =
+    const livePriceChanged =
+      !isConflict &&
+      now != null &&
+      existing.last_seen_price != null &&
+      now !== existing.last_seen_price;
+    const changePending =
       !isConflict && now != null && existing.old_price != null && now !== existing.old_price;
 
     toUpsert.push({
@@ -575,12 +580,12 @@ async function syncVariations(db: Db, variations: Variation[]) {
       old_price: existing.old_price,
       last_seen_price: now,
       currency: v.currency,
-      tag_72: priceChanged ? false : existing.tag_72,
-      tag_86: priceChanged ? false : existing.tag_86,
+      tag_72: livePriceChanged ? false : existing.tag_72,
+      tag_86: livePriceChanged ? false : existing.tag_86,
       conflict: isConflict,
     });
 
-    if (priceChanged) cambiados++;
+    if (changePending) cambiados++;
     else if (!isConflict) sinCambio++;
   }
 
@@ -604,15 +609,28 @@ async function syncVariations(db: Db, variations: Variation[]) {
 }
 
 async function listChanges(db: Db) {
-  const { data, error } = await db
-    .from(TABLE)
-    .select('*')
-    .eq('conflict', false)
-    .not('last_seen_price', 'is', null)
-    .not('old_price', 'is', null)
-    .order('name', { ascending: true });
-  if (error) throw error;
-  const rows = ((data as ProductRow[]) || []).filter(r => r.last_seen_price !== r.old_price);
+  const pageSize = 1000;
+  const rows: ProductRow[] = [];
+
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await db
+      .from(TABLE)
+      .select('*')
+      .eq('conflict', false)
+      .not('last_seen_price', 'is', null)
+      .not('old_price', 'is', null)
+      .order('name', { ascending: true })
+      .range(from, from + pageSize - 1);
+    if (error) throw error;
+
+    const page = ((data as ProductRow[]) || []).filter(
+      row => row.last_seen_price !== row.old_price
+    );
+    rows.push(...page);
+
+    if (!data || data.length < pageSize) break;
+  }
+
   return rows.map(decorate);
 }
 
