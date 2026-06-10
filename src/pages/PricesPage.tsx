@@ -14,7 +14,7 @@ import {
   type PriceChange,
   type SyncSummary,
 } from '@/hooks/useSquarePrices';
-import { groupPriceItemsByCategory } from '@/lib/priceCategories';
+import { groupPriceItems, UNKNOWN_PRICE_VENDOR, type PriceGroupBy } from '@/lib/priceCategories';
 import { usePriceLang, type Dict } from '@/lib/pricesI18n';
 
 function getErrorMessage(error: unknown, fallback: string) {
@@ -320,7 +320,8 @@ function ListTab({ t }: { t: Dict }) {
   const [summary, setSummary] = useState<SyncSummary | null>(null);
   const [changes, setChanges] = useState<PriceChange[]>([]);
   const [loading, setLoading] = useState(true);
-  const groupedChanges = useMemo(() => groupPriceItemsByCategory(changes), [changes]);
+  const [groupBy, setGroupBy] = useState<PriceGroupBy>('vendor');
+  const groupedChanges = useMemo(() => groupPriceItems(changes, groupBy), [changes, groupBy]);
 
   const loadChanges = async () => {
     setLoading(true);
@@ -440,10 +441,27 @@ function ListTab({ t }: { t: Dict }) {
         </div>
       )}
 
+      <div className="grid grid-cols-2 gap-2">
+        <Button
+          variant={groupBy === 'vendor' ? 'default' : 'outline'}
+          onClick={() => setGroupBy('vendor')}
+          className="touch-target"
+        >
+          Vendor
+        </Button>
+        <Button
+          variant={groupBy === 'category' ? 'default' : 'outline'}
+          onClick={() => setGroupBy('category')}
+          className="touch-target"
+        >
+          Category
+        </Button>
+      </div>
+
       <Button
         variant="outline"
         className="w-full gap-1.5 touch-target"
-        onClick={() => window.open('/prices/print', '_blank')}
+        onClick={() => window.open(`/prices/print?groupBy=${groupBy}`, '_blank')}
         disabled={changes.length === 0}
       >
         <Printer className="h-4 w-4" /> {t.btn_print}
@@ -457,9 +475,9 @@ function ListTab({ t }: { t: Dict }) {
         <>
           <div className="space-y-3">
             {groupedChanges.map(group => (
-              <section key={group.category} className="overflow-hidden rounded-lg border">
+              <section key={group.label} className="overflow-hidden rounded-lg border">
                 <div className="flex items-center justify-between gap-3 border-b bg-muted/50 px-3 py-2">
-                  <div className="font-semibold">{group.category}</div>
+                  <div className="font-semibold">{group.label}</div>
                   <Badge variant="secondary">{group.items.length}</Badge>
                 </div>
                 <div className="divide-y">
@@ -476,8 +494,11 @@ function ListTab({ t }: { t: Dict }) {
                             ? t.missing + ': ' + c.pendingStores.map(s => 'T' + s).join(', ')
                             : t.tags_ready}
                         </div>
-                        {c.categoryName && c.categoryName !== group.category && (
+                        {groupBy === 'vendor' && c.categoryName && (
                           <div className="text-xs text-muted-foreground">{c.categoryName}</div>
+                        )}
+                        {groupBy === 'category' && c.vendorName && c.vendorName !== UNKNOWN_PRICE_VENDOR && (
+                          <div className="text-xs text-muted-foreground">{c.vendorName}</div>
                         )}
                       </div>
                       <div className="text-right">

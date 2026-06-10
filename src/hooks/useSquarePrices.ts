@@ -1,5 +1,5 @@
 import { invokeProtectedFunction } from '@/lib/protectedFunctions';
-import { mainPriceCategory, UNCATEGORIZED_PRICE_CATEGORY } from '@/lib/priceCategories';
+import { mainPriceCategory, UNCATEGORIZED_PRICE_CATEGORY, UNKNOWN_PRICE_VENDOR } from '@/lib/priceCategories';
 
 const MOCK_LOCAL = import.meta.env.VITE_MOCK_LOCAL === 'true';
 const MOCK_STORAGE_KEY = 'mock-square-price-products-v1';
@@ -40,6 +40,7 @@ export type PriceChange = {
   name: string | null;
   categoryName: string | null;
   primaryCategory: string | null;
+  vendorName: string | null;
   currency: string;
   oldPrice: number | null;
   currentPrice: number | null;
@@ -78,6 +79,7 @@ type MockProduct = PriceProduct & {
   variationId: string;
   hasInventoryMovement: boolean;
   categories: CatalogAuditCategory[];
+  vendorName?: string | null;
   auditDuplicate?: boolean;
 };
 
@@ -97,6 +99,7 @@ const MOCK_PRODUCTS: MockProduct[] = [
     confirmedStores: [],
     hasInventoryMovement: true,
     categories: [{ id: 'cat-pantry', name: 'Pantry' }],
+    vendorName: 'Good Earth Foods',
   },
   {
     found: true,
@@ -113,6 +116,7 @@ const MOCK_PRODUCTS: MockProduct[] = [
     confirmedStores: [],
     hasInventoryMovement: true,
     categories: [{ id: 'cat-beverages', name: 'Beverages' }],
+    vendorName: 'Northline Supply',
   },
   {
     found: true,
@@ -130,6 +134,7 @@ const MOCK_PRODUCTS: MockProduct[] = [
     hasInventoryMovement: true,
     auditDuplicate: true,
     categories: [{ id: 'cat-tags', name: 'Shelf Tags' }],
+    vendorName: 'Party Source',
   },
   {
     found: true,
@@ -147,6 +152,7 @@ const MOCK_PRODUCTS: MockProduct[] = [
     hasInventoryMovement: false,
     auditDuplicate: true,
     categories: [{ id: 'cat-tags', name: 'Shelf Tags' }],
+    vendorName: 'Party Source',
   },
   {
     found: true,
@@ -163,6 +169,7 @@ const MOCK_PRODUCTS: MockProduct[] = [
     confirmedStores: [],
     hasInventoryMovement: false,
     categories: [{ id: 'cat-seasonal', name: 'Seasonal' }],
+    vendorName: null,
   },
 ];
 
@@ -310,6 +317,7 @@ const mockSquarePrices = {
         name: product.name,
         categoryName: product.categories[0]?.name || UNCATEGORIZED_PRICE_CATEGORY,
         primaryCategory: mainPriceCategory(product.categories[0]?.name),
+        vendorName: product.vendorName || UNKNOWN_PRICE_VENDOR,
         currency: product.currency,
         oldPrice: product.oldPrice,
         currentPrice: product.currentPrice,

@@ -1,8 +1,11 @@
 export const UNCATEGORIZED_PRICE_CATEGORY = 'Uncategorized';
+export const UNKNOWN_PRICE_VENDOR = 'Unknown vendor';
+export type PriceGroupBy = 'category' | 'vendor';
 
 export type PriceCategoryItem = {
   categoryName?: string | null;
   primaryCategory?: string | null;
+  vendorName?: string | null;
   name?: string | null;
 };
 
@@ -18,22 +21,38 @@ export function priceCategoryLabel(item: PriceCategoryItem) {
   return mainPriceCategory(item.categoryName);
 }
 
-export function groupPriceItemsByCategory<T extends PriceCategoryItem>(items: T[]) {
+export function priceVendorLabel(item: PriceCategoryItem) {
+  return String(item.vendorName || '').trim() || UNKNOWN_PRICE_VENDOR;
+}
+
+export function priceGroupLabel(item: PriceCategoryItem, groupBy: PriceGroupBy) {
+  return groupBy === 'vendor' ? priceVendorLabel(item) : priceCategoryLabel(item);
+}
+
+export function groupPriceItems<T extends PriceCategoryItem>(items: T[], groupBy: PriceGroupBy) {
   const groups = new Map<string, T[]>();
 
   for (const item of items) {
-    const category = priceCategoryLabel(item);
-    groups.set(category, [...(groups.get(category) || []), item]);
+    const group = priceGroupLabel(item, groupBy);
+    groups.set(group, [...(groups.get(group) || []), item]);
   }
 
   return [...groups.entries()]
-    .map(([category, rows]) => ({
-      category,
+    .map(([label, rows]) => ({
+      label,
       items: rows.sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''))),
     }))
     .sort((a, b) => {
-      if (a.category === UNCATEGORIZED_PRICE_CATEGORY) return 1;
-      if (b.category === UNCATEGORIZED_PRICE_CATEGORY) return -1;
-      return a.category.localeCompare(b.category);
+      const fallback = groupBy === 'vendor' ? UNKNOWN_PRICE_VENDOR : UNCATEGORIZED_PRICE_CATEGORY;
+      if (a.label === fallback) return 1;
+      if (b.label === fallback) return -1;
+      return a.label.localeCompare(b.label);
     });
+}
+
+export function groupPriceItemsByCategory<T extends PriceCategoryItem>(items: T[]) {
+  return groupPriceItems(items, 'category').map(group => ({
+    category: group.label,
+    items: group.items,
+  }));
 }

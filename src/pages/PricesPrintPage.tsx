@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import JsBarcode from 'jsbarcode';
 import { squarePrices, formatMoney, type PriceChange } from '@/hooks/useSquarePrices';
-import { groupPriceItemsByCategory } from '@/lib/priceCategories';
+import { groupPriceItems, UNKNOWN_PRICE_VENDOR, type PriceGroupBy } from '@/lib/priceCategories';
 import { getPriceLang, PRICE_I18N } from '@/lib/pricesI18n';
 
 // Printable sheet ported from square-precios/public/print.html.
@@ -15,6 +15,8 @@ export default function PricesPrintPage() {
 
   const urlLang = new URLSearchParams(window.location.search).get('lang');
   const lang = urlLang === 'en' || urlLang === 'es' ? urlLang : getPriceLang();
+  const urlGroupBy = new URLSearchParams(window.location.search).get('groupBy');
+  const groupBy: PriceGroupBy = urlGroupBy === 'category' ? 'category' : 'vendor';
   const t = PRICE_I18N[lang];
 
   useEffect(() => {
@@ -44,7 +46,7 @@ export default function PricesPrintPage() {
   }, [changes]);
 
   const now = new Date();
-  const groupedChanges = useMemo(() => groupPriceItemsByCategory(changes || []), [changes]);
+  const groupedChanges = useMemo(() => groupPriceItems(changes || [], groupBy), [changes, groupBy]);
 
   return (
     <div style={{ fontFamily: 'Arial, Helvetica, sans-serif', color: '#111', margin: 24 }}>
@@ -78,6 +80,8 @@ export default function PricesPrintPage() {
       <div className="toolbar" style={{ margin: '12px 0' }}>
         <button className="pp-btn" onClick={() => window.print()}>{t.print_print}</button>
         <button className="pp-btn" onClick={() => window.location.reload()}>{t.print_reload}</button>
+        <button className="pp-btn" onClick={() => window.location.search = '?groupBy=vendor'}>Vendor</button>
+        <button className="pp-btn" onClick={() => window.location.search = '?groupBy=category'}>Category</button>
       </div>
 
       {error ? (
@@ -98,16 +102,19 @@ export default function PricesPrintPage() {
           </thead>
           <tbody>
             {groupedChanges.map(group => (
-              <Fragment key={group.category}>
+              <Fragment key={group.label}>
                 <tr className="cat-row">
-                  <td colSpan={4}>{group.category} ({group.items.length})</td>
+                  <td colSpan={4}>{group.label} ({group.items.length})</td>
                 </tr>
                 {group.items.map(c => (
                   <tr key={c.barcode}>
                     <td className="name">
                       {c.name}
-                      {c.categoryName && c.categoryName !== group.category && (
+                      {groupBy === 'vendor' && c.categoryName && (
                         <div className="subcat">{c.categoryName}</div>
+                      )}
+                      {groupBy === 'category' && c.vendorName && c.vendorName !== UNKNOWN_PRICE_VENDOR && (
+                        <div className="subcat">{c.vendorName}</div>
                       )}
                       {c.conflict && <div className="dup">{t.duplicate_badge}</div>}
                     </td>

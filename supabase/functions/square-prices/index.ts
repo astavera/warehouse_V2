@@ -55,6 +55,7 @@ type SquareError = Error & { status?: number; squareErrors?: unknown };
 type SquareCatalogObject = {
   id: string;
   type?: string;
+  custom_attribute_values?: Record<string, SquareCatalogCustomAttributeValue>;
   category_data?: {
     name?: string;
   };
@@ -79,6 +80,14 @@ type SquareCatalogObject = {
     sku?: string | number;
     upc?: string | number;
   };
+};
+
+type SquareCatalogCustomAttributeValue = {
+  name?: string;
+  string_value?: string;
+  number_value?: string | number;
+  boolean_value?: boolean;
+  selection_uid_values?: string[];
 };
 
 type SquareCatalogResponse = {
@@ -167,6 +176,8 @@ function findImageUrl(
 }
 
 const UNCATEGORIZED_CATEGORY = 'Uncategorized';
+const UNKNOWN_VENDOR = 'Unknown vendor';
+const VENDOR_ATTRIBUTE_KEYS = ['vendor', 'supplier', 'brand', 'manufacturer', 'maker'];
 
 function mainCategory(categoryName: string | null | undefined) {
   const trimmed = String(categoryName || '').trim();
@@ -216,6 +227,33 @@ function categoryNameFromCategories(categories: { id: string; name: string }[]) 
   return categories.find(category => category.name.trim())?.name.trim() || UNCATEGORIZED_CATEGORY;
 }
 
+function customAttributeText(value: SquareCatalogCustomAttributeValue | undefined) {
+  if (!value) return null;
+  if (typeof value.string_value === 'string' && value.string_value.trim()) {
+    return value.string_value.trim();
+  }
+  if (typeof value.number_value === 'number') return String(value.number_value);
+  if (typeof value.number_value === 'string' && value.number_value.trim()) {
+    return value.number_value.trim();
+  }
+  if (typeof value.boolean_value === 'boolean') return value.boolean_value ? 'Yes' : 'No';
+  return null;
+}
+
+function vendorNameFromObjects(...objects: Array<SquareCatalogObject | null | undefined>) {
+  for (const object of objects) {
+    const attributes = object?.custom_attribute_values || {};
+    for (const [key, value] of Object.entries(attributes)) {
+      const label = `${key} ${value?.name || ''}`.toLowerCase();
+      if (!VENDOR_ATTRIBUTE_KEYS.some(candidate => label.includes(candidate))) continue;
+      const vendor = customAttributeText(value);
+      if (vendor) return vendor;
+    }
+  }
+
+  return UNKNOWN_VENDOR;
+}
+
 type LiveProduct = {
   found: boolean;
   barcode: string;
@@ -230,6 +268,7 @@ type LiveProduct = {
   price?: number | null;
   currency?: string;
   categories?: { id: string; name: string }[];
+  vendorName?: string;
 };
 
 async function lookupByBarcode(barcode: string): Promise<LiveProduct> {
@@ -299,12 +338,14 @@ async function lookupByBarcode(barcode: string): Promise<LiveProduct> {
     price: amount != null ? amount / 100 : null,
     currency: priceMoney.currency || 'USD',
     categories,
+    vendorName: vendorNameFromObjects(variation, itemObject),
   };
 }
 
 type Variation = {
   barcode: string;
   categories: { id: string; name: string }[];
+  vendorName: string;
   itemId: string;
   variationId: string;
   name: string;
@@ -358,6 +399,7 @@ async function listVariationPage(cursor: string | null): Promise<{
       out.push({
         barcode: String(barcode).trim(),
         categories,
+        vendorName: vendorNameFromObjects(v, item),
         itemId: item.id,
         variationId: v.id,
         name: variations.length > 1 && vd.name ? `${itemName} - ${vd.name}` : itemName,
@@ -444,6 +486,7 @@ type ProductRow = {
   image_url: string | null;
   category_name: string | null;
   primary_category: string | null;
+  vendor_name: string | null;
   old_price: number | null;
   last_seen_price: number | null;
   currency: string;
@@ -481,6 +524,7 @@ function decorate(row: ProductRow | null) {
     currentPrice: row.last_seen_price != null ? row.last_seen_price / 100 : null,
     categoryName: row.category_name || UNCATEGORIZED_CATEGORY,
     primaryCategory: row.primary_category || mainCategory(row.category_name),
+    vendorName: row.vendor_name || UNKNOWN_VENDOR,
     changePending,
     pendingStores: changePending
       ? [...(row.tag_72 ? [] : [72]), ...(row.tag_86 ? [] : [86])]
@@ -494,6 +538,7 @@ async function recordLookup(db: Db, live: LiveProduct) {
   const now = live.priceCents ?? null;
   const liveCategoryName = categoryNameFromCategories(live.categories || []);
   const livePrimaryCategory = mainCategory(liveCategoryName);
+  const liveVendorName = live.vendorName || UNKNOWN_VENDOR;
 
   if (!existing) {
     const saved = await upsertProduct(db, {
@@ -504,6 +549,7 @@ async function recordLookup(db: Db, live: LiveProduct) {
       image_url: live.imageUrl ?? null,
       category_name: liveCategoryName,
       primary_category: livePrimaryCategory,
+      vendor_name: liveVendorName,
       old_price: now,
       last_seen_price: now,
       currency: live.currency || 'USD',
@@ -525,6 +571,7 @@ async function recordLookup(db: Db, live: LiveProduct) {
     image_url: live.imageUrl ?? null,
     category_name: liveCategoryName,
     primary_category: livePrimaryCategory,
+    vendor_name: liveVendorName,
     old_price: existing.old_price, // held until both stores confirm
     last_seen_price: now,
     currency: live.currency || 'USD',
@@ -552,6 +599,7 @@ async function confirmTag(db: Db, barcode: string, store: 72 | 86) {
     image_url: existing.image_url,
     category_name: existing.category_name,
     primary_category: existing.primary_category,
+    vendor_name: existing.vendor_name,
     old_price: existing.old_price,
     last_seen_price: existing.last_seen_price,
     currency: existing.currency,
@@ -611,6 +659,7 @@ async function syncVariations(db: Db, variations: Variation[]) {
     const existing = existingMap.get(barcode);
     const categoryName = categoryNameFromCategories(v.categories);
     const primaryCategory = mainCategory(categoryName);
+    const vendorName = v.vendorName || UNKNOWN_VENDOR;
 
     if (isConflict) {
       conflictos++;
@@ -627,6 +676,7 @@ async function syncVariations(db: Db, variations: Variation[]) {
         image_url: null,
         category_name: categoryName,
         primary_category: primaryCategory,
+        vendor_name: vendorName,
         old_price: now,
         last_seen_price: now,
         currency: v.currency,
@@ -654,6 +704,7 @@ async function syncVariations(db: Db, variations: Variation[]) {
       image_url: existing.image_url, // sync brings no images
       category_name: categoryName,
       primary_category: primaryCategory,
+      vendor_name: vendorName,
       old_price: existing.old_price,
       last_seen_price: now,
       currency: v.currency,
@@ -828,6 +879,7 @@ Deno.serve(async req => {
         name: r!.name,
         categoryName: r!.categoryName,
         primaryCategory: r!.primaryCategory,
+        vendorName: r!.vendorName,
         currency: r!.currency,
         oldPrice: r!.oldPrice,
         currentPrice: r!.currentPrice,
