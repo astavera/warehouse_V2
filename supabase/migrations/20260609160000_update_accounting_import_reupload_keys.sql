@@ -1,0 +1,29 @@
+alter table public.accounting_invoices
+  drop constraint if exists accounting_invoices_source_file_sha256_source_sheet_source_row_key,
+  drop constraint if exists accounting_invoices_source_file_name_source_sheet_source_row_key,
+  add constraint accounting_invoices_source_file_name_source_sheet_source_row_key
+    unique (source_file_name, source_sheet, source_row);
+
+alter table public.accounting_invoice_payments
+  drop constraint if exists accounting_invoice_payments_source_file_sha256_source_sheet_source_row_key,
+  drop constraint if exists accounting_invoice_payments_source_file_name_source_sheet_source_row_key,
+  add constraint accounting_invoice_payments_source_file_name_source_sheet_source_row_key
+    unique (source_file_name, source_sheet, source_row);
+
+alter table public.accounting_credit_card_payments
+  drop constraint if exists accounting_credit_card_payments_source_file_sha256_source_sheet_source_row_key,
+  drop constraint if exists accounting_credit_card_payments_source_file_name_source_sheet_source_row_key,
+  add constraint accounting_credit_card_payments_source_file_name_source_sheet_source_row_key
+    unique (source_file_name, source_sheet, source_row);
+
+alter table public.accounting_personal_bills
+  drop constraint if exists accounting_personal_bills_source_file_sha256_source_sheet_source_row_key,
+  drop constraint if exists accounting_personal_bills_source_file_name_source_sheet_source_row_key,
+  add constraint accounting_personal_bills_source_file_name_source_sheet_source_row_key
+    unique (source_file_name, source_sheet, source_row);
+
+alter table public.accounting_truck_violations
+  drop constraint if exists accounting_truck_violations_source_file_sha256_source_sheet_source_row_key,
+  drop constraint if exists accounting_truck_violations_source_file_name_source_sheet_source_row_key,
+  add constraint accounting_truck_violations_source_file_name_source_sheet_source_row_key
+    unique (source_file_name, source_sheet, source_row);

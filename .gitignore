@@ -12,7 +12,10 @@ dist
 dist-ssr
 .env
 *.local
+.env*.local*
 *.zip
+data/*.xlsx
+reports/
 supabase/.temp/
 
 # Editor directories and files
@@ -25,3 +28,4 @@ supabase/.temp/
 *.njsproj
 *.sln
 *.sw?
+.vercel

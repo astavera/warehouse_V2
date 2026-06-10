@@ -53,7 +53,7 @@ type ExpectedBoxesQuery = PromiseLike<{
 const expectedBoxesDb = supabase as unknown as {
   from: (table: string) => ExpectedBoxesQuery;
 };
-const EMPLOYEE_SELECT = 'id, name, active, created_at, updated_at, auth_user_id';
+const EMPLOYEE_SELECT = 'id, name, active, created_at, updated_at, auth_user_id, role, store_number, permissions';
 
 export function useSuppliers() {
   const [data, setData] = useState<Supplier[]>([]);

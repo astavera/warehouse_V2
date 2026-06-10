@@ -51,7 +51,9 @@ const KEYS = {
   batches: 'warehouse_mock_batches',
   items: 'warehouse_mock_receipt_items',
   queue: 'warehouse_offline_queue',
+  schema: 'warehouse_mock_schema_version',
 };
+const LOCAL_SCHEMA_VERSION = 'expected-boxes-permission-v1';
 
 function nowIso() {
   return new Date().toISOString();
@@ -142,13 +144,89 @@ function defaultEmployees(): Employee[] {
   return [
     {
       id: MOCK_USER_ID,
-      name: 'Test User',
+      name: 'Sebastian',
       passcode: '0315',
       active: true,
       created_at: timestamp,
       updated_at: timestamp,
+      auth_user_id: null,
+      permissions: ['receiving', 'expected_boxes', 'prices', 'audit', 'accounting', 'settings'],
+      role: 'admin',
+      store_number: null,
+    },
+    {
+      id: '00000000-0000-0000-0000-000000000102',
+      name: 'Warehouse Staff',
+      passcode: '1111',
+      active: true,
+      created_at: timestamp,
+      updated_at: timestamp,
+      auth_user_id: null,
+      permissions: ['receiving'],
+      role: 'warehouse',
+      store_number: null,
+    },
+    {
+      id: '00000000-0000-0000-0000-000000000103',
+      name: 'Accounting',
+      passcode: '2222',
+      active: true,
+      created_at: timestamp,
+      updated_at: timestamp,
+      auth_user_id: null,
+      permissions: ['receiving', 'expected_boxes', 'prices', 'audit', 'accounting'],
+      role: 'accounting',
+      store_number: null,
+    },
+    {
+      id: '00000000-0000-0000-0000-000000000172',
+      name: 'Store 72',
+      passcode: '7272',
+      active: true,
+      created_at: timestamp,
+      updated_at: timestamp,
+      auth_user_id: null,
+      permissions: ['prices'],
+      role: 'store',
+      store_number: 72,
     },
   ];
+}
+
+function normalizeEmployee(row: Employee): Employee {
+  const fallback = defaultEmployees().find(employee => employee.id === row.id);
+  const isOriginalMockUser = row.id === MOCK_USER_ID;
+  return {
+    ...row,
+    name: isOriginalMockUser && row.name === 'Test User' ? 'Sebastian' : row.name,
+    auth_user_id: row.auth_user_id ?? null,
+    permissions: row.permissions ?? fallback?.permissions ?? null,
+    role: row.role || fallback?.role || (isOriginalMockUser ? 'admin' : 'warehouse'),
+    store_number: row.store_number ?? fallback?.store_number ?? null,
+  };
+}
+
+function migrateLocalEmployees() {
+  if (typeof localStorage === 'undefined') return;
+  if (localStorage.getItem(KEYS.schema) === LOCAL_SCHEMA_VERSION) return;
+
+  const rows = read<Employee[]>(KEYS.employees, []).map(row => {
+    if (
+      (row.role === 'admin' || row.role === 'accounting' || row.id === MOCK_USER_ID) &&
+      row.permissions &&
+      !row.permissions.includes('expected_boxes')
+    ) {
+      return {
+        ...row,
+        permissions: [...row.permissions, 'expected_boxes'],
+        updated_at: nowIso(),
+      };
+    }
+    return row;
+  });
+
+  write(KEYS.employees, rows);
+  localStorage.setItem(KEYS.schema, LOCAL_SCHEMA_VERSION);
 }
 
 function ensureSeeded() {
@@ -156,6 +234,7 @@ function ensureSeeded() {
   if (!localStorage.getItem(KEYS.suppliers)) write(KEYS.suppliers, defaultSuppliers());
   if (!localStorage.getItem(KEYS.carriers)) write(KEYS.carriers, defaultCarriers());
   if (!localStorage.getItem(KEYS.employees)) write(KEYS.employees, defaultEmployees());
+  migrateLocalEmployees();
   if (!localStorage.getItem(KEYS.batches)) write(KEYS.batches, []);
   if (!localStorage.getItem(KEYS.items)) write(KEYS.items, []);
   if (!localStorage.getItem(KEYS.queue)) write(KEYS.queue, []);
@@ -308,7 +387,16 @@ export function deleteLocalCarrier(id: string) {
 
 export function listLocalEmployees() {
   ensureSeeded();
-  return sortByName(read<Employee[]>(KEYS.employees, []));
+  const existing = read<Employee[]>(KEYS.employees, []).map(normalizeEmployee);
+  const merged = [...existing];
+  for (const employee of defaultEmployees()) {
+    if (!merged.some(row => row.id === employee.id || row.passcode === employee.passcode)) {
+      merged.push(employee);
+    }
+  }
+  const normalized = merged.map(normalizeEmployee);
+  write(KEYS.employees, normalized);
+  return sortByName(normalized);
 }
 
 export function cacheRemoteEmployees(rows: Employee[]) {
@@ -326,6 +414,10 @@ export function createLocalEmployee(payload: TablesInsert<'employees'>) {
     active: payload.active ?? true,
     created_at: payload.created_at || timestamp,
     updated_at: payload.updated_at || timestamp,
+    auth_user_id: payload.auth_user_id ?? null,
+    permissions: payload.permissions ?? null,
+    role: payload.role || 'warehouse',
+    store_number: payload.store_number ?? null,
   };
   write(KEYS.employees, [...read<Employee[]>(KEYS.employees, []), row]);
   return row;

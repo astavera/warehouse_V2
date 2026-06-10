@@ -127,10 +127,10 @@ export default function LoginPage() {
                 />
               </div>
               <div className="inline-flex items-center gap-2 rounded-lg border border-border/70 bg-white/75 px-3 py-1.5 text-[11px] font-medium uppercase tracking-[0.24em] text-muted-foreground shadow-sm backdrop-blur-sm">
-                Modern State Warehouse
+                Modern State
               </div>
               <h1 className="mt-5 text-5xl font-semibold tracking-[-0.05em] text-foreground xl:text-6xl">
-                Welcome back.
+                All Zentro Solutions
               </h1>
               <p className="mt-5 max-w-lg text-base leading-7 text-muted-foreground xl:text-lg xl:leading-8">
                 Use this app to receive incoming boxes and pallets before processing. Questions about the app? Contact Sebastian.
@@ -163,7 +163,8 @@ export default function LoginPage() {
               </div>
 
               <div className="mb-6 text-center">
-                <p className="text-[11px] font-medium uppercase tracking-[0.34em] text-muted-foreground">Modern State Warehouse</p>
+                <p className="text-lg font-semibold tracking-tight text-foreground">All Zentro Solutions</p>
+                <p className="mt-1 text-[11px] font-medium uppercase tracking-[0.34em] text-muted-foreground">Modern State</p>
                 <div className="mt-3">
                   <p className="text-[0.8rem] uppercase tracking-[0.28em] text-muted-foreground">{formattedDate}</p>
                   <h2 className="mt-2 text-[2.15rem] font-semibold tracking-[-0.06em] text-foreground sm:text-[2.75rem]">
@@ -174,7 +175,7 @@ export default function LoginPage() {
                   {isAdminMode
                     ? 'Admin verification required'
                     : isSignup
-                    ? 'Create a new Modern State employee passcode'
+                    ? 'Create a new employee passcode'
                     : 'Enter your 4-digit passcode'}
                 </p>
               </div>

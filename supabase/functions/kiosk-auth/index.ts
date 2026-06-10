@@ -6,6 +6,9 @@ type Employee = {
   passcode: string;
   active: boolean;
   auth_user_id: string | null;
+  permissions: string[] | null;
+  role: string;
+  store_number: number | null;
 };
 
 const corsHeaders = {
@@ -117,7 +120,7 @@ Deno.serve(async req => {
     if (action === 'sign-in') {
       const { data, error } = await admin
         .from('employees')
-        .select('id, name, passcode, active, auth_user_id')
+        .select('id, name, passcode, active, auth_user_id, role, store_number, permissions')
         .eq('passcode', passcode)
         .eq('active', true)
         .maybeSingle();
@@ -156,8 +159,8 @@ Deno.serve(async req => {
 
       const { data, error } = await admin
         .from('employees')
-        .insert({ name, passcode, active: true })
-        .select('id, name, passcode, active, auth_user_id')
+        .insert({ name, passcode, active: true, role: 'warehouse', store_number: null, permissions: null })
+        .select('id, name, passcode, active, auth_user_id, role, store_number, permissions')
         .single();
       if (error) throw error;
       employee = data as Employee;
