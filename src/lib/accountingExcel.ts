@@ -75,6 +75,7 @@ export type AccountingTemplateInvoicePayment = {
   reference_number: string | null;
   rowNumber: number;
   status: string;
+  store_name: string | null;
   vendor_name: string;
 };
 
@@ -158,6 +159,7 @@ const SHEET_HEADERS: Record<string, string[]> = {
   ],
   'Paid Invoices': [
     'Vendor Name',
+    'Store',
     'Invoice Number(s)',
     'Payment Date',
     'Amount Paid',
@@ -179,7 +181,7 @@ const TEMPLATE_SAMPLE_ROWS: Record<string, unknown[][]> = {
   Vendors: [['Example Vendor', '123 Main St', 'Accounts Receivable', '555-0101', 'ar@example.com', 'ACCT-123', 'Check', 'Optional notes']],
   'Credit Cards': [['TD Business 7627', 'Both Stores', 'TD', '7627', 'Yes']],
   'Pending Invoices': [['Example Vendor', 'Warehouse', 'INV-1001', 'PO-1001', '', '', '2026-07-15', '2026-06-30', 1250.5, 50, 'Damaged item credit', 'Freight', 'Pay before due date', 'pending']],
-  'Paid Invoices': [['Example Vendor', 'INV-1001\nINV-1002', '2026-07-01', 1800, 'Credit Card', 'TD Business 7627', 'ACCT-123', '', 'CONF-123', 'Freight', 'One combined payment row', 'Paid']],
+  'Paid Invoices': [['Example Vendor', 'Warehouse', 'INV-1001\nINV-1002', '2026-07-01', 1800, 'Credit Card', 'TD Business 7627', 'ACCT-123', '', 'CONF-123', 'Freight', 'One combined payment row', 'Paid']],
   'Credit Card Payments': [['TD Business 7627', '2026-07-05', 1800, 'CONF-123', 'Paid', 'Statement payment']],
   'Personal Bills': [['Directv', 'Example Vendor', 'Sebastian', 'Credit Card', '2026-07-06', 50.44, 'Paid', 'Optional notes']],
   Truck: [['925661674-9', '2026-07-07', 'Double parking', 115, 'CPY052894306', 'eCheck 1648', 115, '2026-07-15', 'Optional notes']],
@@ -296,7 +298,7 @@ export async function createAccountingTemplateBuffer() {
   [
     ['1. Fill catalogs first', 'Add Vendors and Credit Cards once. The importer will match names automatically.'],
     ['2. Pending Invoices', 'Use one row per open invoice. Credit Amount and Credit Reason are optional.'],
-    ['3. Paid Invoices', 'Use one row per payment. Invoice Number(s) can contain multiple invoice numbers separated by new lines.'],
+    ['3. Paid Invoices', 'Use one row per payment. Store is optional. Invoice Number(s) can contain multiple invoice numbers separated by new lines.'],
     ['4. Dates and money', 'Use YYYY-MM-DD for dates and plain numbers for amounts. Example: 1250.50'],
     ['5. Import', 'Upload this file from Accounting > Imports. Rows are matched by file name, sheet, and row number.'],
   ].forEach(row => instructions.addRow(row));
@@ -445,6 +447,7 @@ export async function parseAccountingTemplateFile(file: File): Promise<Accountin
           reference_number: rowValue(row, headerMap, 'Reference / Confirmation'),
           rowNumber,
           status: rowValue(row, headerMap, 'Status') || 'Paid',
+          store_name: rowValue(row, headerMap, 'Store'),
           vendor_name: vendorName,
         });
       }

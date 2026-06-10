@@ -116,6 +116,7 @@ type PaymentFormState = {
   reference_number: string;
   save_account_number: boolean;
   status: string;
+  store_id: string;
   vendor_id: string;
 };
 
@@ -134,6 +135,7 @@ const EMPTY_PAYMENT_FORM: PaymentFormState = {
   reference_number: '',
   save_account_number: true,
   status: 'Paid',
+  store_id: 'none',
   vendor_id: 'none',
 };
 
@@ -221,7 +223,7 @@ function CombinedPaymentDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_300px]">
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_260px_220px]">
           <div className="space-y-1.5">
             <Label>Vendor</Label>
             <Select value={form.vendor_id} onValueChange={selectVendor}>
@@ -230,6 +232,18 @@ function CombinedPaymentDialog({
                 <SelectItem value="none">No vendor</SelectItem>
                 {catalogs?.vendors.map(vendor => (
                   <SelectItem key={vendor.id} value={vendor.id}>{vendor.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label>Store</Label>
+            <Select value={form.store_id} onValueChange={value => onChange({ store_id: value })}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">No store</SelectItem>
+                {catalogs?.stores.map(store => (
+                  <SelectItem key={store.id} value={store.id}>{store.name}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -460,6 +474,7 @@ export function AccountingPaidInvoicesPage() {
   } | null>(null);
   const rows = useSearch(data, search, row => [
     row.accounting_vendors?.name,
+    row.accounting_stores?.name,
     row.invoice_number,
     row.accounting_payment_methods?.name,
     row.accounting_accounts?.name,
@@ -507,6 +522,7 @@ export function AccountingPaidInvoicesPage() {
         payment_method_id: form.payment_method_id === 'none' ? null : form.payment_method_id,
         reference_number: form.reference_number || null,
         status: 'Paid',
+        store_id: form.store_id === 'none' ? null : form.store_id,
         vendor_id: vendorId,
       });
       const selectedVendor = catalogs?.vendors.find(vendor => vendor.id === vendorId);
@@ -552,6 +568,7 @@ export function AccountingPaidInvoicesPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Vendor</TableHead>
+                  <TableHead>Store</TableHead>
                   <TableHead>Invoice</TableHead>
                   <TableHead>Payment date</TableHead>
                   <TableHead>Method</TableHead>
@@ -568,6 +585,7 @@ export function AccountingPaidInvoicesPage() {
                   return (
                     <TableRow key={row.id}>
                       <TableCell className="font-medium">{row.accounting_vendors?.name || '-'}</TableCell>
+                      <TableCell>{row.accounting_stores?.name || '-'}</TableCell>
                       <TableCell className="max-w-[220px] whitespace-normal">{compactMultiLine(row.invoice_number) || '-'}</TableCell>
                       <TableCell>{row.payment_date || '-'}</TableCell>
                       <TableCell>{row.accounting_payment_methods?.name || row.status || '-'}</TableCell>

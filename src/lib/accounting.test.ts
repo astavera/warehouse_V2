@@ -21,10 +21,13 @@ import {
 } from '@/lib/accounting';
 import {
   clearLocalAccountingData,
+  importLocalAccountingTemplate,
   listLocalAccountingImportBatches,
+  listLocalAccountingInvoicePayments,
   listLocalAccountingInvoices,
   listLocalAccountingTruckViolations,
 } from '@/lib/localAccountingData';
+import type { AccountingTemplateImport } from '@/lib/accountingExcel';
 
 function invoice(patch: Partial<AccountingInvoice>): AccountingInvoice {
   return {
@@ -106,6 +109,44 @@ describe('accounting mock local data', () => {
     expect(listLocalAccountingInvoices().length).toBeGreaterThan(0);
     expect(listLocalAccountingImportBatches()[0].source_file_name).toBe('_Modern State 2026 (1).xlsx');
     expect(listLocalAccountingTruckViolations().some(row => row.is_possible_duplicate)).toBe(true);
+  });
+
+  it('stores the paid invoice Store column from template imports', () => {
+    const payload: AccountingTemplateImport = {
+      accounts: [],
+      creditCardPayments: [],
+      fileName: 'paid-store-test.xlsx',
+      fileSha256: 'paid-store-test-sha',
+      invoices: [],
+      payments: [
+        {
+          account_name: null,
+          account_number: 'ACCT-123',
+          amount_paid: '100.00',
+          category_name: 'Freight',
+          check_number: '1001',
+          invoice_number: 'INV-STORE-1',
+          notes: null,
+          payment_date: '2026-06-10',
+          payment_method_name: 'Check',
+          reference_number: null,
+          rowNumber: 2,
+          status: 'Paid',
+          store_name: 'Warehouse',
+          vendor_name: 'Store Test Vendor',
+        },
+      ],
+      personalBills: [],
+      sheetsProcessed: [{ name: 'Paid Invoices', rowsProcessed: 1 }],
+      truckViolations: [],
+      vendors: [],
+      warnings: [],
+    };
+
+    importLocalAccountingTemplate(payload);
+    const payment = listLocalAccountingInvoicePayments().find(row => row.invoice_number === 'INV-STORE-1');
+
+    expect(payment?.accounting_stores?.name).toBe('Warehouse');
   });
 });
 

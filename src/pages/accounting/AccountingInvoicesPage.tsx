@@ -1426,6 +1426,7 @@ export default function AccountingInvoicesPage() {
         },
         reference_number: payForm.reference_number || null,
         status: 'Paid',
+        store_id: payingInvoice.store_id,
         vendor_id: payingInvoice.vendor_id,
       });
       await updateInvoice.mutateAsync({

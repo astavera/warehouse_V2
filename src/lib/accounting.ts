@@ -124,6 +124,7 @@ export type AccountingInvoicePayment = {
   id: string;
   invoice_id: string | null;
   vendor_id: string | null;
+  store_id: string | null;
   invoice_number?: string | null;
   payment_date: string | null;
   payment_method_id: string | null;
@@ -144,6 +145,7 @@ export type AccountingInvoicePayment = {
   created_at: string;
   updated_at: string;
   accounting_vendors?: Pick<AccountingVendor, 'id' | 'name' | 'normalized_name'> | null;
+  accounting_stores?: Pick<AccountingStore, 'id' | 'name' | 'normalized_name'> | null;
   accounting_accounts?: Pick<AccountingAccount, 'id' | 'name' | 'normalized_name'> | null;
   accounting_payment_methods?: Pick<AccountingPaymentMethod, 'id' | 'name' | 'normalized_name'> | null;
   accounting_invoices?: Pick<AccountingInvoice, 'id' | 'invoice_number' | 'status'> | null;

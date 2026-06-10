@@ -115,6 +115,7 @@ export type AccountingInvoicePaymentInput = Partial<
     | 'raw_payload'
     | 'reference_number'
     | 'status'
+    | 'store_id'
     | 'vendor_id'
   >
 > & {
@@ -269,7 +270,7 @@ export function useAccountingInvoicePayments() {
       if (shouldUseLocalData()) return listLocalAccountingInvoicePayments();
       return queryRows<AccountingInvoicePayment>(
         'accounting_invoice_payments',
-        '*, accounting_vendors(id,name,normalized_name), accounting_accounts(id,name,normalized_name), accounting_payment_methods(id,name,normalized_name), accounting_invoices(id,invoice_number,status)',
+        '*, accounting_vendors(id,name,normalized_name), accounting_stores(id,name,normalized_name), accounting_accounts(id,name,normalized_name), accounting_payment_methods(id,name,normalized_name), accounting_invoices(id,invoice_number,status)',
         { column: 'payment_date', ascending: false }
       );
     },
@@ -374,7 +375,7 @@ export function useAccountingDashboard() {
           ? Promise.resolve(listLocalAccountingInvoicePayments())
           : queryRows<AccountingInvoicePayment>(
               'accounting_invoice_payments',
-              '*, accounting_vendors(id,name,normalized_name), accounting_accounts(id,name,normalized_name), accounting_payment_methods(id,name,normalized_name), accounting_invoices(id,invoice_number,status)',
+              '*, accounting_vendors(id,name,normalized_name), accounting_stores(id,name,normalized_name), accounting_accounts(id,name,normalized_name), accounting_payment_methods(id,name,normalized_name), accounting_invoices(id,invoice_number,status)',
               { column: 'payment_date', ascending: false }
             ),
         shouldUseLocalData()
@@ -475,6 +476,7 @@ export function useAccountingPaymentMutations() {
         reference_number: input.reference_number,
         amount_paid: input.amount_paid,
         ...(input.raw_payload || {}),
+        store_id: input.store_id,
       };
       const payload = {
         ...(input.id ? { id: input.id } : {}),
@@ -490,6 +492,7 @@ export function useAccountingPaymentMutations() {
         payment_method_id: input.payment_method_id || null,
         reference_number: input.reference_number || null,
         status: input.status || 'Paid',
+        store_id: input.store_id || null,
         vendor_id: input.vendor_id || null,
         source_file_name: 'manual',
         source_file_sha256: `manual-${manualNonce}`,
@@ -748,6 +751,7 @@ export function useAccountingImportMutations() {
         [
           ...payload.accounts.map(row => catalogRow(row.store_name)),
           ...payload.invoices.map(row => catalogRow(row.store_name)),
+          ...payload.payments.map(row => catalogRow(row.store_name)),
         ].filter(Boolean) as Array<{ name: string; normalized_name: string }>
       );
       const stores = await upsertCatalogRows<AccountingStore>('accounting_stores', storeRows);
@@ -891,6 +895,7 @@ export function useAccountingImportMutations() {
           reference_number: row.reference_number,
           amount_paid: row.amount_paid,
           status: row.status || 'Paid',
+          store_id: storeId(row.store_name),
           category_id: categoryId(row.category_name),
           notes: row.notes,
           source_file_name: payload.fileName,

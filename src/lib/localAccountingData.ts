@@ -286,6 +286,7 @@ function defaultPayments(): AccountingInvoicePayment[] {
       id: 'mock-payment-1',
       invoice_id: 'mock-invoice-3',
       vendor_id: 'mock-vendor-uline',
+      store_id: 'mock-store-both',
       invoice_number: '201165333',
       payment_date: '2026-01-10',
       payment_method_id: 'mock-payment-credit-card',
@@ -496,12 +497,14 @@ function withInvoiceRelations(invoices: AccountingInvoice[]) {
 
 function withPaymentRelations(payments: AccountingInvoicePayment[]) {
   const vendors = listLocalAccountingVendors();
+  const stores = listLocalAccountingStores();
   const accounts = listLocalAccountingAccounts();
   const methods = listLocalAccountingPaymentMethods();
   const invoices = listLocalAccountingInvoices();
   return payments.map(payment => ({
     ...payment,
     accounting_vendors: vendors.find(row => row.id === payment.vendor_id) || null,
+    accounting_stores: stores.find(row => row.id === payment.store_id) || null,
     accounting_accounts: accounts.find(row => row.id === payment.account_id) || null,
     accounting_payment_methods: methods.find(row => row.id === payment.payment_method_id) || null,
     accounting_invoices: invoices.find(row => row.id === payment.invoice_id) || null,
@@ -707,6 +710,7 @@ export function createLocalAccountingInvoicePayment(input: Partial<AccountingInv
     id: input.id || createId('accounting-payment'),
     invoice_id: input.invoice_id ?? null,
     vendor_id: input.vendor_id ?? null,
+    store_id: input.store_id ?? null,
     invoice_number: input.invoice_number ?? null,
     payment_date: input.payment_date ?? null,
     payment_method_id: input.payment_method_id ?? null,
@@ -940,6 +944,7 @@ export function importLocalAccountingTemplate(payload: AccountingTemplateImport)
   });
   payload.payments.forEach(payment => {
     ensureVendor(payment.vendor_name);
+    ensureStore(payment.store_name);
     ensurePaymentMethod(payment.payment_method_name);
     ensureAccount(payment.account_name, { account_type: normalized(payment.payment_method_name).includes('credit') ? 'credit_card' : 'account' });
     ensureCategory(payment.category_name);
@@ -999,6 +1004,7 @@ export function importLocalAccountingTemplate(payload: AccountingTemplateImport)
       id: createId('accounting-payment'),
       invoice_id: null,
       vendor_id: ensureVendor(row.vendor_name),
+      store_id: ensureStore(row.store_name),
       invoice_number: row.invoice_number,
       payment_date: row.payment_date,
       payment_method_id: ensurePaymentMethod(row.payment_method_name),
