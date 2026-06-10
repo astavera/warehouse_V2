@@ -69,6 +69,11 @@ Deno.serve(async req => {
     }
 
     const authorization = req.headers.get('authorization') || '';
+    const accessToken = authorization.replace(/^Bearer\s+/i, '').trim();
+    if (!accessToken) {
+      return jsonResponse({ error: 'Your secure session expired. Please sign out and sign in again.' }, 401);
+    }
+
     const userClient = createClient(supabaseUrl, anonKey, {
       global: { headers: { authorization } },
       auth: { persistSession: false, autoRefreshToken: false },
@@ -77,8 +82,10 @@ Deno.serve(async req => {
       auth: { persistSession: false, autoRefreshToken: false },
     });
 
-    const { data: authData, error: authError } = await userClient.auth.getUser();
-    if (authError || !authData.user) return jsonResponse({ error: 'Not authenticated' }, 401);
+    const { data: authData, error: authError } = await userClient.auth.getUser(accessToken);
+    if (authError || !authData.user) {
+      return jsonResponse({ error: 'Your secure session expired. Please sign out and sign in again.' }, 401);
+    }
 
     const { data: actor, error: actorError } = await admin
       .from('employees')
