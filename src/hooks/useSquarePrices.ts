@@ -3,6 +3,7 @@ import { mainPriceCategory, UNCATEGORIZED_PRICE_CATEGORY, UNKNOWN_PRICE_VENDOR }
 
 const MOCK_LOCAL = import.meta.env.VITE_MOCK_LOCAL === 'true';
 const MOCK_STORAGE_KEY = 'mock-square-price-products-v1';
+const MOCK_VENDOR_MAPPING_KEY = 'mock-square-price-vendor-mappings-v1';
 
 // Shapes returned by the `square-prices` Edge Function.
 export type PriceProduct = {
@@ -47,6 +48,31 @@ export type PriceChange = {
   pendingStores: number[];
   confirmedStores: number[];
   conflict?: boolean;
+};
+
+export type VendorMappingInput = {
+  barcode: string;
+  vendorName: string;
+};
+
+export type VendorMappingStatus = {
+  ok: boolean;
+  mappingCount: number;
+  mappedProducts: number;
+  unknownProducts: number;
+  changedProducts: number;
+  changedUnknownProducts: number;
+  lastImportAt: string | null;
+};
+
+export type VendorImportSummary = {
+  ok: boolean;
+  imported: number;
+  updatedProducts: number;
+  skipped?: number;
+  conflicts?: number;
+  error?: string;
+  status?: VendorMappingStatus;
 };
 
 export type CatalogAuditProduct = {
@@ -206,6 +232,45 @@ function writeMockProducts(products: MockProduct[]) {
   }
 }
 
+function readMockVendorMappings() {
+  if (typeof window === 'undefined') return new Map<string, string>();
+  try {
+    const raw = window.localStorage.getItem(MOCK_VENDOR_MAPPING_KEY);
+    const rows = raw ? (JSON.parse(raw) as VendorMappingInput[]) : [];
+    return new Map(rows.map(row => [row.barcode, row.vendorName]));
+  } catch {
+    return new Map<string, string>();
+  }
+}
+
+function writeMockVendorMappings(mappings: Map<string, string>) {
+  if (typeof window === 'undefined') return;
+  try {
+    const rows = [...mappings.entries()].map(([barcode, vendorName]) => ({ barcode, vendorName }));
+    window.localStorage.setItem(MOCK_VENDOR_MAPPING_KEY, JSON.stringify(rows));
+  } catch {
+    /* ignore */
+  }
+}
+
+function mockVendorStatus(): VendorMappingStatus {
+  const products = readMockProducts().map(normalizeMockProduct);
+  const mappings = readMockVendorMappings();
+  const isUnknownVendor = (vendorName: string | null | undefined) =>
+    !vendorName || vendorName === UNKNOWN_PRICE_VENDOR;
+  const priceProducts = products.filter(product => !product.auditDuplicate);
+  const changes = priceProducts.filter(product => product.changePending);
+  return {
+    ok: true,
+    mappingCount: mappings.size,
+    mappedProducts: priceProducts.filter(product => !isUnknownVendor(product.vendorName)).length,
+    unknownProducts: priceProducts.filter(product => isUnknownVendor(product.vendorName)).length,
+    changedProducts: changes.length,
+    changedUnknownProducts: changes.filter(product => isUnknownVendor(product.vendorName)).length,
+    lastImportAt: mappings.size > 0 ? new Date().toISOString() : null,
+  };
+}
+
 function normalizeMockProduct(product: MockProduct): MockProduct {
   const defaultProduct = MOCK_PRODUCTS.find(row => row.variationId === product.variationId);
   const changePending =
@@ -327,6 +392,49 @@ const mockSquarePrices = {
       }));
     return { ok: true, count: changes.length, changes };
   },
+  importVendorMappings: async (
+    rows: VendorMappingInput[],
+    source = 'square_catalog'
+  ): Promise<VendorImportSummary> => {
+    void source;
+    const mappings = readMockVendorMappings();
+    const products = readMockProducts();
+    let skipped = 0;
+    let conflicts = 0;
+
+    for (const row of rows) {
+      const barcode = row.barcode.trim();
+      const vendorName = row.vendorName.trim();
+      if (!barcode || !vendorName) {
+        skipped += 1;
+        continue;
+      }
+      const previous = mappings.get(barcode);
+      if (previous && previous.toLowerCase() !== vendorName.toLowerCase()) conflicts += 1;
+      mappings.set(barcode, vendorName);
+    }
+
+    let updatedProducts = 0;
+    const nextProducts = products.map(product => {
+      const vendorName = mappings.get(product.barcode);
+      if (!vendorName) return product;
+      updatedProducts += 1;
+      return { ...product, vendorName };
+    });
+
+    writeMockVendorMappings(mappings);
+    writeMockProducts(nextProducts);
+
+    return {
+      ok: true,
+      imported: mappings.size,
+      updatedProducts,
+      skipped,
+      conflicts,
+      status: mockVendorStatus(),
+    };
+  },
+  vendorMappingStatus: async (): Promise<VendorMappingStatus> => mockVendorStatus(),
   audit: async (): Promise<CatalogAuditPage> => {
     const products = readMockProducts().map(normalizeMockProduct);
     return {
@@ -362,6 +470,16 @@ export const squarePrices = {
   changes: () =>
     MOCK_LOCAL ? mockSquarePrices.changes() : invokeSquarePrices<{ ok: boolean; count: number; changes: PriceChange[] }>({
         action: 'changes',
+      }),
+  importVendorMappings: (rows: VendorMappingInput[], source?: string) =>
+    MOCK_LOCAL ? mockSquarePrices.importVendorMappings(rows, source) : invokeSquarePrices<VendorImportSummary>({
+        action: 'vendor-map-import',
+        rows,
+        source,
+      }),
+  vendorMappingStatus: () =>
+    MOCK_LOCAL ? mockSquarePrices.vendorMappingStatus() : invokeSquarePrices<VendorMappingStatus>({
+        action: 'vendor-map-status',
       }),
   audit: (cursor?: string | null) =>
     MOCK_LOCAL ? mockSquarePrices.audit() : invokeSquarePrices<CatalogAuditPage>({

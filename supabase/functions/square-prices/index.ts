@@ -578,6 +578,7 @@ async function listInventoryMovementIds(catalogObjectIds: string[]) {
 //  Data layer (ported from db.js) backed by Postgres via supabase-js
 // ---------------------------------------------------------------------
 const TABLE = 'square_price_products';
+const VENDOR_MAPPING_TABLE = 'square_price_vendor_mappings';
 
 type ProductRow = {
   barcode: string;
@@ -599,6 +600,95 @@ type ProductRow = {
 
 type Db = ReturnType<typeof createClient>;
 
+type VendorMappingRow = {
+  barcode: string;
+  vendor_name: string;
+};
+
+type VendorMappingInput = {
+  barcode: string;
+  vendorName: string;
+};
+
+type VendorMappingStatusRow = {
+  mapping_count: number;
+  mapped_products: number;
+  unknown_products: number;
+  changed_products: number;
+  changed_unknown_products: number;
+  last_import_at: string | null;
+};
+
+function cleanText(value: unknown) {
+  return String(value ?? '').trim();
+}
+
+function isKnownVendorName(value: string | null | undefined) {
+  const cleaned = cleanText(value);
+  return Boolean(cleaned) && cleaned.toLowerCase() !== UNKNOWN_VENDOR.toLowerCase();
+}
+
+function bestVendorName(squareVendor: string | null | undefined, mappedVendor: string | null | undefined) {
+  const cleanedSquareVendor = cleanText(squareVendor);
+  if (isKnownVendorName(cleanedSquareVendor)) return cleanedSquareVendor;
+
+  const cleanedMappedVendor = cleanText(mappedVendor);
+  return cleanedMappedVendor || UNKNOWN_VENDOR;
+}
+
+function bearerToken(req: Request) {
+  const header = req.headers.get('authorization') || '';
+  const match = header.match(/^Bearer\s+(.+)$/i);
+  return (match?.[1] || '').trim();
+}
+
+async function requireSettingsAccess(db: Db, req: Request) {
+  const token = bearerToken(req);
+  if (!token) {
+    const err = new Error('Not authenticated') as SquareError;
+    err.status = 401;
+    throw err;
+  }
+
+  const { data: userData, error: userError } = await db.auth.getUser(token);
+  if (userError || !userData?.user) {
+    const err = new Error('Not authenticated') as SquareError;
+    err.status = 401;
+    throw err;
+  }
+
+  const user = userData.user;
+  const employeeId = typeof user.user_metadata?.employee_id === 'string' ? user.user_metadata.employee_id : null;
+  let employee: { role?: string | null; permissions?: string[] | null } | null = null;
+
+  if (employeeId) {
+    const { data, error } = await db
+      .from('employees')
+      .select('role, permissions')
+      .eq('id', employeeId)
+      .maybeSingle();
+    if (error) throw error;
+    employee = data as typeof employee;
+  }
+
+  if (!employee) {
+    const { data, error } = await db
+      .from('employees')
+      .select('role, permissions')
+      .eq('auth_user_id', user.id)
+      .maybeSingle();
+    if (error) throw error;
+    employee = data as typeof employee;
+  }
+
+  const permissions = Array.isArray(employee?.permissions) ? employee.permissions : [];
+  if (employee?.role === 'admin' || permissions.includes('settings')) return;
+
+  const err = new Error('Settings access required') as SquareError;
+  err.status = 403;
+  throw err;
+}
+
 async function getProduct(db: Db, barcode: string): Promise<ProductRow | null> {
   const { data, error } = await db.from(TABLE).select('*').eq('barcode', barcode).maybeSingle();
   if (error) throw error;
@@ -610,6 +700,101 @@ async function upsertProduct(db: Db, row: Partial<ProductRow> & { barcode: strin
   const { data, error } = await db.from(TABLE).upsert(payload, { onConflict: 'barcode' }).select('*').single();
   if (error) throw error;
   return data as ProductRow;
+}
+
+async function getVendorMapping(db: Db, barcode: string) {
+  const { data, error } = await db
+    .from(VENDOR_MAPPING_TABLE)
+    .select('vendor_name')
+    .eq('barcode', barcode)
+    .maybeSingle();
+  if (error) throw error;
+  return ((data as Pick<VendorMappingRow, 'vendor_name'> | null)?.vendor_name || null);
+}
+
+async function getVendorMappings(db: Db, barcodes: string[]) {
+  const out = new Map<string, string>();
+  const unique = [...new Set(barcodes.map(cleanText).filter(Boolean))];
+
+  for (let i = 0; i < unique.length; i += 500) {
+    const chunk = unique.slice(i, i + 500);
+    const { data, error } = await db
+      .from(VENDOR_MAPPING_TABLE)
+      .select('barcode,vendor_name')
+      .in('barcode', chunk);
+    if (error) throw error;
+    for (const row of (data as VendorMappingRow[]) || []) {
+      if (row.barcode && row.vendor_name) out.set(row.barcode, row.vendor_name);
+    }
+  }
+
+  return out;
+}
+
+async function importVendorMappings(db: Db, rawRows: unknown, source: string) {
+  if (!Array.isArray(rawRows)) {
+    return { ok: false, error: 'rows debe ser una lista' };
+  }
+
+  const normalized = new Map<string, string>();
+  let skipped = 0;
+  let conflicts = 0;
+
+  for (const raw of rawRows) {
+    const row = raw as Partial<VendorMappingInput>;
+    const barcode = cleanText(row?.barcode);
+    const vendorName = cleanText(row?.vendorName);
+    if (!barcode || !vendorName) {
+      skipped += 1;
+      continue;
+    }
+
+    const previous = normalized.get(barcode);
+    if (previous && previous.toLowerCase() !== vendorName.toLowerCase()) conflicts += 1;
+    normalized.set(barcode, vendorName);
+  }
+
+  const rows = [...normalized.entries()].map(([barcode, vendor_name]) => ({ barcode, vendor_name }));
+  if (rows.length === 0) {
+    return { ok: true, imported: 0, updatedProducts: 0, skipped, conflicts };
+  }
+
+  let imported = 0;
+  let updatedProducts = 0;
+  for (let i = 0; i < rows.length; i += 5000) {
+    const chunk = rows.slice(i, i + 5000);
+    const { data, error } = await db.rpc('apply_square_price_vendor_mappings', {
+      p_mappings: chunk,
+      p_source: source || 'square_catalog',
+    });
+    if (error) throw error;
+    const result = Array.isArray(data) ? data[0] : data;
+    imported += Number(result?.imported_count || chunk.length);
+    updatedProducts += Number(result?.updated_product_count || 0);
+  }
+
+  return {
+    ok: true,
+    imported,
+    updatedProducts,
+    skipped,
+    conflicts,
+  };
+}
+
+async function vendorMappingStatus(db: Db) {
+  const { data, error } = await db.rpc('square_price_vendor_mapping_status');
+  if (error) throw error;
+  const row = (Array.isArray(data) ? data[0] : data) as VendorMappingStatusRow | null;
+  return {
+    ok: true,
+    mappingCount: Number(row?.mapping_count || 0),
+    mappedProducts: Number(row?.mapped_products || 0),
+    unknownProducts: Number(row?.unknown_products || 0),
+    changedProducts: Number(row?.changed_products || 0),
+    changedUnknownProducts: Number(row?.changed_unknown_products || 0),
+    lastImportAt: row?.last_import_at || null,
+  };
 }
 
 function decorate(row: ProductRow | null) {
@@ -639,7 +824,8 @@ async function recordLookup(db: Db, live: LiveProduct) {
   const now = live.priceCents ?? null;
   const liveCategoryName = categoryNameFromCategories(live.categories || []);
   const livePrimaryCategory = mainCategory(liveCategoryName);
-  const liveVendorName = live.vendorName || UNKNOWN_VENDOR;
+  const mappedVendorName = await getVendorMapping(db, live.barcode);
+  const liveVendorName = bestVendorName(live.vendorName, mappedVendorName);
 
   if (!existing) {
     const saved = await upsertProduct(db, {
@@ -749,6 +935,7 @@ async function syncVariations(db: Db, variations: Variation[]) {
     if (error) throw error;
     for (const row of (data as ProductRow[]) || []) existingMap.set(row.barcode, row);
   }
+  const vendorMappings = await getVendorMappings(db, barcodes);
 
   const toUpsert: (Partial<ProductRow> & { barcode: string })[] = [];
 
@@ -760,7 +947,7 @@ async function syncVariations(db: Db, variations: Variation[]) {
     const existing = existingMap.get(barcode);
     const categoryName = categoryNameFromCategories(v.categories);
     const primaryCategory = mainCategory(categoryName);
-    const vendorName = v.vendorName || UNKNOWN_VENDOR;
+    const vendorName = bestVendorName(v.vendorName, vendorMappings.get(barcode));
 
     if (isConflict) {
       conflictos++;
@@ -897,6 +1084,11 @@ Deno.serve(async req => {
       return jsonResponse({ error: 'SQUARE_ACCESS_TOKEN no esta configurado en el servidor.' }, 500);
     }
 
+    if (action === 'vendor-map-status') {
+      await requireSettingsAccess(db, req);
+      return jsonResponse(await vendorMappingStatus(db));
+    }
+
     if (action === 'lookup') {
       const barcode = String(payload.barcode ?? '').trim();
       const live = await lookupByBarcode(barcode);
@@ -936,6 +1128,14 @@ Deno.serve(async req => {
         pendingStores: record!.pendingStores,
         confirmedStores: record!.confirmedStores,
       });
+    }
+
+    if (action === 'vendor-map-import') {
+      await requireSettingsAccess(db, req);
+      const source = String(payload.source || 'square_catalog').slice(0, 120);
+      const result = await importVendorMappings(db, payload.rows, source);
+      if (!result.ok) return jsonResponse(result, 400);
+      return jsonResponse({ ...result, status: await vendorMappingStatus(db) });
     }
 
     if (action === 'sync') {

@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Edit, Loader2, Plus, RotateCcw, Save, Search, Settings as SettingsIcon, Trash2, UserCog } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Database, Edit, Loader2, Plus, RefreshCw, RotateCcw, Save, Search, Settings as SettingsIcon, Trash2, Upload, UserCog } from 'lucide-react';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
+import { squarePrices, type VendorMappingStatus } from '@/hooks/useSquarePrices';
 import { useEmployees } from '@/hooks/useSupabaseData';
 import { createEmployeeAccess, deleteInactiveEmployeeAccess, updateEmployeeAccess } from '@/hooks/useEmployeeAdmin';
 import {
@@ -20,6 +21,7 @@ import {
   type EmployeeRole,
   roleLabel,
 } from '@/lib/permissions';
+import { parseSquareVendorCatalogFile, type ParsedVendorCatalogFile } from '@/lib/squareVendorCatalogImport';
 import type { Tables } from '@/integrations/supabase/types';
 
 type Employee = Tables<'employees'>;
@@ -100,6 +102,131 @@ function PermissionToggleGrid({
         );
       })}
     </div>
+  );
+}
+
+function formatStatusDate(value: string | null | undefined) {
+  if (!value) return '-';
+  return new Intl.DateTimeFormat('en-US', {
+    dateStyle: 'short',
+    timeStyle: 'short',
+  }).format(new Date(value));
+}
+
+function VendorMappingSettings() {
+  const fileRef = useRef<HTMLInputElement | null>(null);
+  const [status, setStatus] = useState<VendorMappingStatus | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [importing, setImporting] = useState(false);
+  const [lastImport, setLastImport] = useState<
+    (ParsedVendorCatalogFile & { imported: number; updatedProducts: number }) | null
+  >(null);
+
+  const refreshStatus = async () => {
+    setLoading(true);
+    try {
+      setStatus(await squarePrices.vendorMappingStatus());
+    } catch (err) {
+      toast.error(getErrorMessage(err, 'Failed to load vendor mapping status'));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void refreshStatus();
+  }, []);
+
+  const importCatalog = async (file: File) => {
+    setImporting(true);
+    try {
+      const parsed = await parseSquareVendorCatalogFile(file);
+      if (parsed.rows.length === 0) {
+        toast.error('No Vendor Name rows found in that file.');
+        return;
+      }
+
+      const result = await squarePrices.importVendorMappings(parsed.rows, file.name);
+      if (!result.ok) throw new Error(result.error || 'Failed to import catalog vendors');
+
+      setLastImport({
+        ...parsed,
+        imported: result.imported,
+        updatedProducts: result.updatedProducts,
+      });
+      if (result.status) setStatus(result.status);
+      else await refreshStatus();
+      toast.success(`Imported ${result.imported} vendor mappings`);
+    } catch (err) {
+      toast.error(getErrorMessage(err, 'Failed to import catalog vendors'));
+    } finally {
+      setImporting(false);
+      if (fileRef.current) fileRef.current.value = '';
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Database className="h-5 w-5" />
+          Square vendor mapping
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="rounded-lg border bg-muted/30 p-3">
+            <div className="text-xl font-bold">{status?.mappingCount ?? '-'}</div>
+            <div className="text-xs text-muted-foreground">catalog mappings</div>
+          </div>
+          <div className="rounded-lg border bg-muted/30 p-3">
+            <div className="text-xl font-bold">{status?.unknownProducts ?? '-'}</div>
+            <div className="text-xs text-muted-foreground">products without vendor</div>
+          </div>
+          <div className="rounded-lg border bg-muted/30 p-3">
+            <div className="text-xl font-bold text-amber-600">{status?.changedUnknownProducts ?? '-'}</div>
+            <div className="text-xs text-muted-foreground">price changes without vendor</div>
+          </div>
+          <div className="rounded-lg border bg-muted/30 p-3">
+            <div className="text-sm font-semibold">{formatStatusDate(status?.lastImportAt)}</div>
+            <div className="text-xs text-muted-foreground">last import</div>
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="text-sm text-muted-foreground">
+            Use Square catalog export columns: Vendor Name plus SKU, GTIN, UPC, or Barcode.
+          </div>
+          <div className="flex gap-2">
+            <Button type="button" variant="outline" onClick={() => void refreshStatus()} disabled={loading} className="gap-1.5">
+              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+              Refresh
+            </Button>
+            <Button type="button" onClick={() => fileRef.current?.click()} disabled={importing} className="gap-1.5">
+              {importing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+              Import catalog
+            </Button>
+          </div>
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            className="hidden"
+            onChange={event => {
+              const file = event.target.files?.[0];
+              if (file) void importCatalog(file);
+            }}
+          />
+        </div>
+
+        {lastImport && (
+          <div className="rounded-lg border bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+            {lastImport.imported} mappings imported, {lastImport.updatedProducts} price rows updated.
+            {lastImport.conflictRows > 0 ? ` ${lastImport.conflictRows} barcode conflicts overwritten.` : ''}
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -478,6 +605,8 @@ export default function SettingsPage() {
           </div>
         </CardContent>
       </Card>
+
+      <VendorMappingSettings />
 
       <section className="space-y-4">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
