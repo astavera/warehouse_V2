@@ -55,6 +55,7 @@ type SquareError = Error & { status?: number; squareErrors?: unknown };
 type SquareCatalogObject = {
   id: string;
   type?: string;
+  is_deleted?: boolean;
   custom_attribute_values?: Record<string, SquareCatalogCustomAttributeValue>;
   category_data?: {
     name?: string;
@@ -169,11 +170,16 @@ async function searchVariationByAttribute(attribute_name: string, value: string)
     method: 'POST',
     body: {
       object_types: ['ITEM_VARIATION'],
+      include_deleted_objects: false,
       include_related_objects: true,
       query: { exact_query: { attribute_name, attribute_value: value } },
       limit: 1,
     },
   });
+}
+
+function isDeletedCatalogObject(object: SquareCatalogObject | null | undefined) {
+  return object?.is_deleted === true;
 }
 
 function findImageUrl(
@@ -390,7 +396,7 @@ async function lookupByBarcode(barcode: string): Promise<LiveProduct> {
     return { found: false, barcode: code, reason: 'Producto no encontrado en Square' };
   }
 
-  const variation = result.objects?.[0];
+  const variation = result.objects?.find(o => !isDeletedCatalogObject(o));
   if (!variation) {
     return { found: false, barcode: code, reason: 'Producto no encontrado en Square' };
   }
@@ -399,7 +405,7 @@ async function lookupByBarcode(barcode: string): Promise<LiveProduct> {
   const itemId = variationData.item_id;
 
   const related = result.related_objects || [];
-  let itemObject = related.find(o => o.type === 'ITEM' && o.id === itemId);
+  let itemObject = related.find(o => o.type === 'ITEM' && o.id === itemId && !isDeletedCatalogObject(o));
 
   let imageRelated = related;
   let categories = categoriesForItem(itemObject, imageRelated);
@@ -413,7 +419,7 @@ async function lookupByBarcode(barcode: string): Promise<LiveProduct> {
       const full = await squareFetch(
         `/v2/catalog/object/${itemId}?include_related_objects=true`
       );
-      itemObject = full.object || itemObject;
+      itemObject = isDeletedCatalogObject(full.object) ? itemObject : full.object || itemObject;
       imageRelated = full.related_objects || related;
       categories = categoriesForItem(itemObject, imageRelated);
     } catch {
@@ -483,6 +489,7 @@ async function listVariationPage(cursor: string | null): Promise<{
 
   for (const item of data.objects || []) {
     if (item.type !== 'ITEM') continue;
+    if (isDeletedCatalogObject(item)) continue;
     const itemName = item.item_data?.name || 'Sin nombre';
     const variations = item.item_data?.variations || [];
     const categoryIds = [
@@ -495,6 +502,7 @@ async function listVariationPage(cursor: string | null): Promise<{
       name: categoryNames.get(id) || id,
     }));
     for (const v of variations) {
+      if (isDeletedCatalogObject(v)) continue;
       const vd = v.item_variation_data || {};
       const sku = vd.sku != null ? String(vd.sku).trim() : '';
       const upc = vd.upc != null ? String(vd.upc).trim() : '';
