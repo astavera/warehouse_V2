@@ -12,6 +12,7 @@ import {
   formatMoney,
   type PriceProduct,
   type PriceChange,
+  type PriceDuplicate,
   type PriceCatalogMissing,
   type SyncSummary,
 } from '@/hooks/useSquarePrices';
@@ -365,10 +366,12 @@ function ListTab({ t }: { t: Dict }) {
   const [syncing, setSyncing] = useState(false);
   const [summary, setSummary] = useState<SyncSummary | null>(null);
   const [changes, setChanges] = useState<PriceChange[]>([]);
+  const [duplicates, setDuplicates] = useState<PriceDuplicate[]>([]);
   const [catalogMissing, setCatalogMissing] = useState<PriceCatalogMissing[]>([]);
   const [loading, setLoading] = useState(true);
   const [groupBy, setGroupBy] = useState<PriceGroupBy>('vendor');
   const groupedChanges = useMemo(() => groupPriceItems(changes, groupBy), [changes, groupBy]);
+  const groupedDuplicates = useMemo(() => groupPriceItems(duplicates, groupBy), [duplicates, groupBy]);
   const groupedCatalogMissing = useMemo(
     () => groupPriceItems(catalogMissing, groupBy),
     [catalogMissing, groupBy]
@@ -377,16 +380,18 @@ function ListTab({ t }: { t: Dict }) {
   const loadLists = async () => {
     setLoading(true);
     try {
-      const [changesData, missingData] = await Promise.all([
+      const [changesData, duplicatesData, missingData] = await Promise.all([
         squarePrices.changes(),
+        squarePrices.duplicates(),
         squarePrices.catalogMissing(),
       ]);
       setChanges(changesData.changes);
+      setDuplicates(duplicatesData.duplicates);
       setCatalogMissing(missingData.missing);
-      return { changes: changesData.changes, missing: missingData.missing };
+      return { changes: changesData.changes, duplicates: duplicatesData.duplicates, missing: missingData.missing };
     } catch (err) {
       toast.error(getErrorMessage(err, t.list_err));
-      return { changes: [], missing: [] };
+      return { changes: [], duplicates: [], missing: [] };
     } finally {
       setLoading(false);
     }
@@ -442,6 +447,7 @@ function ListTab({ t }: { t: Dict }) {
       setSummary({
         ...aggregate,
         cambiados: finalLists.changes.length,
+        conflictos: finalLists.duplicates.length,
         missing: finalLists.missing.length,
         complete: true,
         hasMore: false,
@@ -455,6 +461,7 @@ function ListTab({ t }: { t: Dict }) {
             ? {
                 ...prev,
                 cambiados: partialLists.changes.length,
+                conflictos: partialLists.duplicates.length,
                 missing: partialLists.missing.length,
                 complete: false,
                 hasMore: true,
@@ -482,7 +489,7 @@ function ListTab({ t }: { t: Dict }) {
 
       {summary && (
         <div className="space-y-2">
-          <div className="grid grid-cols-2 gap-2 text-center sm:grid-cols-4">
+          <div className="grid grid-cols-2 gap-2 text-center sm:grid-cols-5">
             <div className="rounded-lg border bg-muted/40 p-3">
               <div className="text-xl font-bold">{summary.unicos ?? summary.total}</div>
               <div className="text-xs text-muted-foreground">{t.col_products}</div>
@@ -498,6 +505,10 @@ function ListTab({ t }: { t: Dict }) {
             <div className="rounded-lg border bg-muted/40 p-3">
               <div className="text-xl font-bold text-slate-700">{summary.missing || 0}</div>
               <div className="text-xs text-muted-foreground">{t.col_missing_catalog}</div>
+            </div>
+            <div className="rounded-lg border bg-muted/40 p-3">
+              <div className="text-xl font-bold text-amber-700">{duplicates.length}</div>
+              <div className="text-xs text-muted-foreground">{t.col_duplicates}</div>
             </div>
           </div>
           {summary.hasMore ? (
@@ -528,7 +539,7 @@ function ListTab({ t }: { t: Dict }) {
         </Button>
       </div>
 
-      <div className="grid gap-2 sm:grid-cols-2">
+      <div className="grid gap-2 sm:grid-cols-3">
         <Button
           variant="outline"
           className="w-full gap-1.5 touch-target"
@@ -544,6 +555,14 @@ function ListTab({ t }: { t: Dict }) {
           disabled={catalogMissing.length === 0}
         >
           <Printer className="h-4 w-4" /> {t.btn_print_missing}
+        </Button>
+        <Button
+          variant="outline"
+          className="w-full gap-1.5 touch-target"
+          onClick={() => window.open(`/prices/print?kind=duplicates&groupBy=${groupBy}`, '_blank')}
+          disabled={duplicates.length === 0}
+        >
+          <Printer className="h-4 w-4" /> {t.btn_print_duplicates}
         </Button>
       </div>
 
@@ -596,6 +615,56 @@ function ListTab({ t }: { t: Dict }) {
             ))}
           </div>
         </>
+      )}
+
+      {!loading && (
+        <div className="space-y-3 pt-4">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h2 className="text-base font-semibold">{t.duplicates_title}</h2>
+              <p className="text-xs text-muted-foreground">{t.duplicates_hint}</p>
+            </div>
+            <Badge variant="secondary">{duplicates.length}</Badge>
+          </div>
+
+          {duplicates.length === 0 ? (
+            <p className="py-4 text-center text-sm text-muted-foreground">{t.no_duplicates}</p>
+          ) : (
+            <div className="space-y-3">
+              {groupedDuplicates.map(group => (
+                <section key={group.label} className="overflow-hidden rounded-lg border">
+                  <div className="flex items-center justify-between gap-3 border-b bg-muted/50 px-3 py-2">
+                    <div className="font-semibold">{group.label}</div>
+                    <Badge variant="secondary">{group.items.length}</Badge>
+                  </div>
+                  <div className="divide-y">
+                    {group.items.map(item => (
+                      <div key={item.barcode} className="flex items-center justify-between gap-3 p-3">
+                        <div className="min-w-0">
+                          <div className="flex min-w-0 items-center gap-2">
+                            <div className="truncate font-medium">{item.name}</div>
+                            <Badge variant="secondary">{t.duplicate_badge}</Badge>
+                          </div>
+                          <div className="text-xs text-muted-foreground">{item.barcode}</div>
+                          {groupBy === 'vendor' && item.categoryName && (
+                            <div className="text-xs text-muted-foreground">{item.categoryName}</div>
+                          )}
+                          {groupBy === 'category' && item.vendorName && item.vendorName !== UNKNOWN_PRICE_VENDOR && (
+                            <div className="text-xs text-muted-foreground">{item.vendorName}</div>
+                          )}
+                        </div>
+                        <div className="text-right">
+                          <div className="text-xs text-muted-foreground">{t.h_price}</div>
+                          <div className="font-semibold">{formatMoney(item.currentPrice, item.currency)}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              ))}
+            </div>
+          )}
+        </div>
       )}
 
       {!loading && (

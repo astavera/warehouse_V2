@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import JsBarcode from 'jsbarcode';
-import { squarePrices, formatMoney, type PriceCatalogMissing, type PriceChange } from '@/hooks/useSquarePrices';
+import { squarePrices, formatMoney, type PriceCatalogMissing, type PriceChange, type PriceDuplicate } from '@/hooks/useSquarePrices';
 import { groupPriceItems, UNKNOWN_PRICE_VENDOR, type PriceGroupBy } from '@/lib/priceCategories';
 import { getPriceLang, PRICE_I18N } from '@/lib/pricesI18n';
 
@@ -10,7 +10,7 @@ import { getPriceLang, PRICE_I18N } from '@/lib/pricesI18n';
 // Language follows the toggle picked in PricesPage (shared via localStorage),
 // or can be forced with ?lang=en|es.
 export default function PricesPrintPage() {
-  const [items, setItems] = useState<Array<PriceChange | PriceCatalogMissing> | null>(null);
+  const [items, setItems] = useState<Array<PriceChange | PriceCatalogMissing | PriceDuplicate> | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const urlLang = new URLSearchParams(window.location.search).get('lang');
@@ -19,11 +19,13 @@ export default function PricesPrintPage() {
   const groupBy: PriceGroupBy = urlGroupBy === 'category' ? 'category' : 'vendor';
   const kind = new URLSearchParams(window.location.search).get('kind');
   const isMissingCatalog = kind === 'missing';
+  const isDuplicates = kind === 'duplicates';
+  const showsTagColumn = !isMissingCatalog && !isDuplicates;
   const t = PRICE_I18N[lang];
-  const title = isMissingCatalog ? t.print_missing_title : t.print_title;
-  const emptyText = isMissingCatalog ? t.print_missing_empty : t.print_empty;
+  const title = isDuplicates ? t.print_duplicates_title : isMissingCatalog ? t.print_missing_title : t.print_title;
+  const emptyText = isDuplicates ? t.print_duplicates_empty : isMissingCatalog ? t.print_missing_empty : t.print_empty;
   const groupedItems = useMemo(() => groupPriceItems(items || [], groupBy), [items, groupBy]);
-  const groupQueryPrefix = isMissingCatalog ? 'kind=missing&' : '';
+  const groupQueryPrefix = isDuplicates ? 'kind=duplicates&' : isMissingCatalog ? 'kind=missing&' : '';
 
   useEffect(() => {
     document.documentElement.lang = lang;
@@ -31,12 +33,16 @@ export default function PricesPrintPage() {
   }, [lang, title]);
 
   useEffect(() => {
-    const request = isMissingCatalog ? squarePrices.catalogMissing() : squarePrices.changes();
+    const request = isDuplicates
+      ? squarePrices.duplicates()
+      : isMissingCatalog
+      ? squarePrices.catalogMissing()
+      : squarePrices.changes();
     request
-      .then(data => setItems('missing' in data ? data.missing : data.changes))
+      .then(data => setItems('duplicates' in data ? data.duplicates : 'missing' in data ? data.missing : data.changes))
       .catch(err => setError(err instanceof Error ? err.message : t.print_load_err));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isMissingCatalog]);
+  }, [isDuplicates, isMissingCatalog]);
 
   // Render barcodes once rows are in the DOM.
   useEffect(() => {
@@ -102,14 +108,14 @@ export default function PricesPrintPage() {
               <th>{t.h_product}</th>
               <th>{isMissingCatalog ? t.h_last_price : t.h_price}</th>
               <th>{t.h_barcode}</th>
-              {!isMissingCatalog && <th>{t.h_tag}</th>}
+              {showsTagColumn && <th>{t.h_tag}</th>}
             </tr>
           </thead>
           <tbody>
             {groupedItems.map(group => (
               <Fragment key={group.label}>
                 <tr className="cat-row">
-                  <td colSpan={isMissingCatalog ? 3 : 4}>{group.label} ({group.items.length})</td>
+                  <td colSpan={showsTagColumn ? 4 : 3}>{group.label} ({group.items.length})</td>
                 </tr>
                 {group.items.map(c => (
                   <tr key={c.barcode}>
@@ -124,7 +130,7 @@ export default function PricesPrintPage() {
                       {'conflict' in c && c.conflict && <div className="dup">{t.duplicate_badge}</div>}
                     </td>
                     <td className="price">
-                      {isMissingCatalog ? (
+                      {isMissingCatalog || isDuplicates ? (
                         <span className="new">{formatMoney(c.currentPrice, c.currency)}</span>
                       ) : (
                         <>
@@ -138,7 +144,7 @@ export default function PricesPrintPage() {
                       <svg className="barcode" data-code={String(c.barcode).replace(/"/g, '')} />
                       <div className="bc-text">{c.barcode}</div>
                     </td>
-                    {!isMissingCatalog && (
+                    {showsTagColumn && (
                       <td className="check">
                         <span className="pp-box" /> T72&nbsp;&nbsp;
                         <span className="pp-box" /> T86

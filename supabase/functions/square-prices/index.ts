@@ -1178,6 +1178,28 @@ async function listCatalogMissing(db: Db) {
   return rows.map(decorate);
 }
 
+async function listDuplicates(db: Db) {
+  const pageSize = 1000;
+  const rows: ProductRow[] = [];
+
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await db
+      .from(TABLE)
+      .select('*')
+      .eq('conflict', true)
+      .eq('catalog_missing', false)
+      .order('vendor_name', { ascending: true, nullsFirst: false })
+      .order('name', { ascending: true })
+      .range(from, from + pageSize - 1);
+    if (error) throw error;
+
+    rows.push(...((data as ProductRow[]) || []));
+    if (!data || data.length < pageSize) break;
+  }
+
+  return rows.map(decorate);
+}
+
 // ---------------------------------------------------------------------
 //  HTTP dispatch
 // ---------------------------------------------------------------------
@@ -1338,6 +1360,23 @@ Deno.serve(async req => {
         catalogMissingSince: r!.catalogMissingSince,
       }));
       return jsonResponse({ ok: true, count: missing.length, missing });
+    }
+
+    if (action === 'duplicates') {
+      const duplicates = (await listDuplicates(db)).map(r => ({
+        barcode: r!.barcode,
+        name: r!.name,
+        categoryName: r!.categoryName,
+        primaryCategory: r!.primaryCategory,
+        vendorName: r!.vendorName,
+        currency: r!.currency,
+        oldPrice: r!.oldPrice,
+        currentPrice: r!.currentPrice,
+        pendingStores: r!.pendingStores,
+        confirmedStores: r!.confirmedStores,
+        conflict: r!.conflict,
+      }));
+      return jsonResponse({ ok: true, count: duplicates.length, duplicates });
     }
 
     return jsonResponse({ error: `Accion no soportada: ${action || '(vacia)'}` }, 400);

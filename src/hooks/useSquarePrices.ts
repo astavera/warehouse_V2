@@ -52,6 +52,10 @@ export type PriceChange = {
   conflict?: boolean;
 };
 
+export type PriceDuplicate = PriceChange & {
+  conflict: true;
+};
+
 export type PriceCatalogMissing = {
   barcode: string;
   name: string | null;
@@ -439,6 +443,33 @@ const mockSquarePrices = {
       }));
     return { ok: true, count: changes.length, changes };
   },
+  duplicates: async (): Promise<{ ok: boolean; count: number; duplicates: PriceDuplicate[] }> => {
+    const products = readMockProducts().map(normalizeMockProduct);
+    const duplicateBarcodes = new Set(
+      products
+        .map(product => product.barcode)
+        .filter((barcode, index, all) => all.indexOf(barcode) !== index)
+    );
+    const duplicates = products
+      .filter((product, index, all) =>
+        (product.auditDuplicate || duplicateBarcodes.has(product.barcode)) &&
+        all.findIndex(row => row.barcode === product.barcode) === index
+      )
+      .map(product => ({
+        barcode: product.barcode,
+        name: product.name,
+        categoryName: product.categories[0]?.name || UNCATEGORIZED_PRICE_CATEGORY,
+        primaryCategory: mainPriceCategory(product.categories[0]?.name),
+        vendorName: product.vendorName || UNKNOWN_PRICE_VENDOR,
+        currency: product.currency,
+        oldPrice: product.oldPrice,
+        currentPrice: product.currentPrice,
+        pendingStores: [],
+        confirmedStores: [],
+        conflict: true as const,
+      }));
+    return { ok: true, count: duplicates.length, duplicates };
+  },
   catalogMissing: async (): Promise<{ ok: boolean; count: number; missing: PriceCatalogMissing[] }> => ({
     ok: true,
     count: MOCK_CATALOG_MISSING_PRODUCTS.length,
@@ -523,6 +554,10 @@ export const squarePrices = {
   changes: () =>
     MOCK_LOCAL ? mockSquarePrices.changes() : invokeSquarePrices<{ ok: boolean; count: number; changes: PriceChange[] }>({
         action: 'changes',
+      }),
+  duplicates: () =>
+    MOCK_LOCAL ? mockSquarePrices.duplicates() : invokeSquarePrices<{ ok: boolean; count: number; duplicates: PriceDuplicate[] }>({
+        action: 'duplicates',
       }),
   catalogMissing: () =>
     MOCK_LOCAL ? mockSquarePrices.catalogMissing() : invokeSquarePrices<{ ok: boolean; count: number; missing: PriceCatalogMissing[] }>({
