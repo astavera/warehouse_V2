@@ -497,6 +497,7 @@ type Variation = {
 };
 
 const SYNC_PAGE_LIMIT = 1000;
+const CHANGE_VERIFICATION_STALE_MS = 5000;
 
 async function listVariationPage(cursor: string | null): Promise<{
   variations: Variation[];
@@ -647,6 +648,7 @@ type ProductRow = {
   catalog_missing: boolean;
   catalog_missing_since?: string | null;
   last_square_sync_run?: string | null;
+  last_square_change_verified_at?: string | null;
   updated_at?: string;
 };
 
@@ -882,6 +884,7 @@ function decorate(row: ProductRow | null) {
 async function recordLookup(db: Db, live: LiveProduct) {
   const existing = await getProduct(db, live.barcode);
   const now = live.priceCents ?? null;
+  const checkedAt = new Date().toISOString();
   const liveCategoryName = categoryNameFromCategories(live.categories || []);
   const livePrimaryCategory = mainCategory(liveCategoryName);
   const mappedVendorName = await getVendorMapping(db, live.barcode);
@@ -905,7 +908,8 @@ async function recordLookup(db: Db, live: LiveProduct) {
       conflict: false,
       catalog_missing: false,
       catalog_missing_since: null,
-      last_square_sync_run: new Date().toISOString(),
+      last_square_sync_run: checkedAt,
+      last_square_change_verified_at: checkedAt,
     });
     return decorate(saved);
   }
@@ -930,7 +934,8 @@ async function recordLookup(db: Db, live: LiveProduct) {
     conflict: existing.catalog_missing ? false : existing.conflict,
     catalog_missing: false,
     catalog_missing_since: null,
-    last_square_sync_run: existing.last_square_sync_run || new Date().toISOString(),
+    last_square_sync_run: existing.last_square_sync_run || checkedAt,
+    last_square_change_verified_at: checkedAt,
   });
 
   return decorate(saved);
@@ -962,6 +967,7 @@ async function confirmTag(db: Db, barcode: string, store: 72 | 86) {
     catalog_missing: existing.catalog_missing,
     catalog_missing_since: existing.catalog_missing_since,
     last_square_sync_run: existing.last_square_sync_run,
+    last_square_change_verified_at: existing.last_square_change_verified_at,
   };
 
   // Both stores confirmed -> promote new price to old and reset flags.
@@ -1041,6 +1047,7 @@ async function syncVariations(db: Db, variations: Variation[], syncRunStartedAt:
         catalog_missing: false,
         catalog_missing_since: null,
         last_square_sync_run: syncRunStartedAt,
+        last_square_change_verified_at: null,
       });
       conflictos++;
       duplicadosOmitidos++;
@@ -1066,6 +1073,7 @@ async function syncVariations(db: Db, variations: Variation[], syncRunStartedAt:
         catalog_missing: false,
         catalog_missing_since: null,
         last_square_sync_run: syncRunStartedAt,
+        last_square_change_verified_at: null,
       });
       if (!isConflict) nuevos++;
       continue;
@@ -1097,6 +1105,7 @@ async function syncVariations(db: Db, variations: Variation[], syncRunStartedAt:
       catalog_missing: false,
       catalog_missing_since: null,
       last_square_sync_run: syncRunStartedAt,
+      last_square_change_verified_at: null,
     });
 
     if (changePending) cambiados++;
@@ -1163,6 +1172,7 @@ async function markProductMissing(db: Db, row: ProductRow) {
       tag_72: false,
       tag_86: false,
       updated_at: now,
+      last_square_change_verified_at: now,
     })
     .eq('barcode', row.barcode)
     .select('*')
@@ -1180,6 +1190,13 @@ function isPendingPriceChange(row: ProductRow | null | undefined) {
     row!.old_price != null &&
     row!.last_seen_price !== row!.old_price
   );
+}
+
+function needsSquareChangeVerification(row: ProductRow) {
+  const verifiedAt = Date.parse(row.last_square_change_verified_at || '');
+  const updatedAt = Date.parse(row.updated_at || '');
+  if (!Number.isFinite(verifiedAt)) return true;
+  return Number.isFinite(updatedAt) && verifiedAt + CHANGE_VERIFICATION_STALE_MS < updatedAt;
 }
 
 async function mapWithConcurrency<T, R>(
@@ -1242,8 +1259,19 @@ async function listChanges(db: Db, verifyAgainstSquare = false) {
 
   if (!verifyAgainstSquare || rows.length === 0) return rows.map(decorate);
 
-  const refreshed = await mapWithConcurrency(rows, 4, row => refreshChangeCandidate(db, row));
-  return refreshed.filter((row): row is ProductRow => isPendingPriceChange(row)).map(decorate);
+  const rowsToVerify = rows.filter(needsSquareChangeVerification);
+  if (rowsToVerify.length === 0) return rows.map(decorate);
+
+  const refreshed = await mapWithConcurrency(rowsToVerify, 4, row =>
+    refreshChangeCandidate(db, row)
+  );
+  const refreshedByBarcode = new Map<string, ProductRow | null>();
+  rowsToVerify.forEach((row, index) => refreshedByBarcode.set(row.barcode, refreshed[index]));
+
+  return rows
+    .map(row => (refreshedByBarcode.has(row.barcode) ? refreshedByBarcode.get(row.barcode)! : row))
+    .filter((row): row is ProductRow => isPendingPriceChange(row))
+    .map(decorate);
 }
 
 async function listCatalogMissing(db: Db) {
