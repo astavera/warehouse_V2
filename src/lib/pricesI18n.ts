@@ -57,8 +57,13 @@ export type Dict = {
   col_changed: string;
   col_unchanged: string;
   col_new: string;
+  col_missing_catalog: string;
   conflicts: (n: number) => string;
   no_changes: string;
+  missing_catalog_title: string;
+  missing_catalog_hint: string;
+  no_missing_catalog: string;
+  btn_print_missing: string;
   sync_err: string;
   sync_partial: (pages: number) => string;
   sync_done: string;
@@ -72,9 +77,12 @@ export type Dict = {
   print_print: string;
   print_reload: string;
   print_empty: string;
+  print_missing_title: string;
+  print_missing_empty: string;
   print_load_err: string;
   h_product: string;
   h_price: string;
+  h_last_price: string;
   h_barcode: string;
   h_tag: string;
   locale: string;
@@ -118,8 +126,13 @@ export const PRICE_I18N: Record<PriceLang, Dict> = {
     col_changed: 'cambiaron',
     col_unchanged: 'sin cambio',
     col_new: 'nuevos',
+    col_missing_catalog: 'fuera de Square',
     conflicts: n => `${n} barcodes duplicados con precios distintos, marcados como duplicados.`,
     no_changes: 'Sin cambios de precio pendientes.',
+    missing_catalog_title: 'No estan en Square',
+    missing_catalog_hint: 'Productos guardados en la app que no aparecieron en la ultima sincronizacion completa de Square.',
+    no_missing_catalog: 'No hay productos fuera del catalogo de Square.',
+    btn_print_missing: 'Imprimir no estan en Square',
     sync_err: 'Error al sincronizar',
     sync_partial: pages => `Procesando catalogo completo: ${pages} tandas revisadas.`,
     sync_done: 'Sincronizacion completa.',
@@ -132,9 +145,12 @@ export const PRICE_I18N: Record<PriceLang, Dict> = {
     print_print: '🖨️ Imprimir',
     print_reload: '↻ Actualizar',
     print_empty: 'No hay cambios de precio pendientes. Sincroniza en la app primero.',
+    print_missing_title: 'Productos que no estan en Square',
+    print_missing_empty: 'No hay productos fuera del catalogo de Square.',
     print_load_err: 'Error al cargar',
     h_product: 'Producto',
     h_price: 'Precio',
+    h_last_price: 'Ultimo precio',
     h_barcode: 'Barcode',
     h_tag: 'Tag cambiado',
     locale: 'es-US',
@@ -176,8 +192,13 @@ export const PRICE_I18N: Record<PriceLang, Dict> = {
     col_changed: 'changed',
     col_unchanged: 'unchanged',
     col_new: 'new',
+    col_missing_catalog: 'not in Square',
     conflicts: n => `${n} duplicate barcodes with different prices, marked as duplicates.`,
     no_changes: 'No pending price changes.',
+    missing_catalog_title: 'Not in Square',
+    missing_catalog_hint: 'Products stored in the app that did not appear in the last complete Square sync.',
+    no_missing_catalog: 'No products are missing from the Square catalog.',
+    btn_print_missing: 'Print not in Square',
     sync_err: 'Error syncing',
     sync_partial: pages => `Processing full catalog: ${pages} batches checked.`,
     sync_done: 'Sync complete.',
@@ -190,9 +211,12 @@ export const PRICE_I18N: Record<PriceLang, Dict> = {
     print_print: '🖨️ Print',
     print_reload: '↻ Refresh',
     print_empty: 'No pending price changes. Sync in the app first.',
+    print_missing_title: 'Products not in Square',
+    print_missing_empty: 'No products are missing from the Square catalog.',
     print_load_err: 'Error loading',
     h_product: 'Product',
     h_price: 'Price',
+    h_last_price: 'Last price',
     h_barcode: 'Barcode',
     h_tag: 'Tag changed',
     locale: 'en-US',

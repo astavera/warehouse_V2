@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import JsBarcode from 'jsbarcode';
-import { squarePrices, formatMoney, type PriceChange } from '@/hooks/useSquarePrices';
+import { squarePrices, formatMoney, type PriceCatalogMissing, type PriceChange } from '@/hooks/useSquarePrices';
 import { groupPriceItems, UNKNOWN_PRICE_VENDOR, type PriceGroupBy } from '@/lib/priceCategories';
 import { getPriceLang, PRICE_I18N } from '@/lib/pricesI18n';
 
@@ -10,31 +10,37 @@ import { getPriceLang, PRICE_I18N } from '@/lib/pricesI18n';
 // Language follows the toggle picked in PricesPage (shared via localStorage),
 // or can be forced with ?lang=en|es.
 export default function PricesPrintPage() {
-  const [changes, setChanges] = useState<PriceChange[] | null>(null);
+  const [items, setItems] = useState<Array<PriceChange | PriceCatalogMissing> | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const urlLang = new URLSearchParams(window.location.search).get('lang');
   const lang = urlLang === 'en' || urlLang === 'es' ? urlLang : getPriceLang();
   const urlGroupBy = new URLSearchParams(window.location.search).get('groupBy');
   const groupBy: PriceGroupBy = urlGroupBy === 'category' ? 'category' : 'vendor';
+  const kind = new URLSearchParams(window.location.search).get('kind');
+  const isMissingCatalog = kind === 'missing';
   const t = PRICE_I18N[lang];
+  const title = isMissingCatalog ? t.print_missing_title : t.print_title;
+  const emptyText = isMissingCatalog ? t.print_missing_empty : t.print_empty;
+  const groupedItems = useMemo(() => groupPriceItems(items || [], groupBy), [items, groupBy]);
+  const groupQueryPrefix = isMissingCatalog ? 'kind=missing&' : '';
 
   useEffect(() => {
     document.documentElement.lang = lang;
-    document.title = t.print_title;
-  }, [lang, t.print_title]);
+    document.title = title;
+  }, [lang, title]);
 
   useEffect(() => {
-    squarePrices
-      .changes()
-      .then(data => setChanges(data.changes))
+    const request = isMissingCatalog ? squarePrices.catalogMissing() : squarePrices.changes();
+    request
+      .then(data => setItems('missing' in data ? data.missing : data.changes))
       .catch(err => setError(err instanceof Error ? err.message : t.print_load_err));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [isMissingCatalog]);
 
   // Render barcodes once rows are in the DOM.
   useEffect(() => {
-    if (!changes) return;
+    if (!items) return;
     document.querySelectorAll<SVGElement>('svg.barcode').forEach(el => {
       const code = el.getAttribute('data-code') || '';
       try {
@@ -43,10 +49,9 @@ export default function PricesPrintPage() {
         el.outerHTML = `<span class="bc-text">${code}</span>`;
       }
     });
-  }, [changes]);
+  }, [items]);
 
   const now = new Date();
-  const groupedChanges = useMemo(() => groupPriceItems(changes || [], groupBy), [changes, groupBy]);
 
   return (
     <div style={{ fontFamily: 'Arial, Helvetica, sans-serif', color: '#111', margin: 24 }}>
@@ -71,40 +76,40 @@ export default function PricesPrintPage() {
       `}</style>
 
       <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8 }}>
-        <h1 style={{ fontSize: 18, margin: 0 }}>{t.print_title}</h1>
+        <h1 style={{ fontSize: 18, margin: 0 }}>{title}</h1>
         <div style={{ fontSize: 12, color: '#555' }}>
-          {now.toLocaleString(t.locale)} · {changes?.length ?? 0} {t.col_products}
+          {now.toLocaleString(t.locale)} · {items?.length ?? 0} {t.col_products}
         </div>
       </header>
 
       <div className="toolbar" style={{ margin: '12px 0' }}>
         <button className="pp-btn" onClick={() => window.print()}>{t.print_print}</button>
         <button className="pp-btn" onClick={() => window.location.reload()}>{t.print_reload}</button>
-        <button className="pp-btn" onClick={() => window.location.search = '?groupBy=vendor'}>Vendor</button>
-        <button className="pp-btn" onClick={() => window.location.search = '?groupBy=category'}>Category</button>
+        <button className="pp-btn" onClick={() => window.location.search = `?${groupQueryPrefix}groupBy=vendor`}>Vendor</button>
+        <button className="pp-btn" onClick={() => window.location.search = `?${groupQueryPrefix}groupBy=category`}>Category</button>
       </div>
 
       {error ? (
         <p style={{ color: '#b91c1c' }}>{error}</p>
-      ) : !changes ? (
+      ) : !items ? (
         <p>{t.loading}</p>
-      ) : changes.length === 0 ? (
-        <p style={{ marginTop: 30, color: '#666' }}>{t.print_empty}</p>
+      ) : items.length === 0 ? (
+        <p style={{ marginTop: 30, color: '#666' }}>{emptyText}</p>
       ) : (
         <table className="pp-table">
           <thead>
             <tr>
               <th>{t.h_product}</th>
-              <th>{t.h_price}</th>
+              <th>{isMissingCatalog ? t.h_last_price : t.h_price}</th>
               <th>{t.h_barcode}</th>
-              <th>{t.h_tag}</th>
+              {!isMissingCatalog && <th>{t.h_tag}</th>}
             </tr>
           </thead>
           <tbody>
-            {groupedChanges.map(group => (
+            {groupedItems.map(group => (
               <Fragment key={group.label}>
                 <tr className="cat-row">
-                  <td colSpan={4}>{group.label} ({group.items.length})</td>
+                  <td colSpan={isMissingCatalog ? 3 : 4}>{group.label} ({group.items.length})</td>
                 </tr>
                 {group.items.map(c => (
                   <tr key={c.barcode}>
@@ -116,21 +121,29 @@ export default function PricesPrintPage() {
                       {groupBy === 'category' && c.vendorName && c.vendorName !== UNKNOWN_PRICE_VENDOR && (
                         <div className="subcat">{c.vendorName}</div>
                       )}
-                      {c.conflict && <div className="dup">{t.duplicate_badge}</div>}
+                      {'conflict' in c && c.conflict && <div className="dup">{t.duplicate_badge}</div>}
                     </td>
                     <td className="price">
-                      <span className="old">{formatMoney(c.oldPrice, c.currency)}</span>
-                      <br />
-                      <span className="new">{formatMoney(c.currentPrice, c.currency)}</span>
+                      {isMissingCatalog ? (
+                        <span className="new">{formatMoney(c.currentPrice, c.currency)}</span>
+                      ) : (
+                        <>
+                          <span className="old">{formatMoney(c.oldPrice, c.currency)}</span>
+                          <br />
+                          <span className="new">{formatMoney(c.currentPrice, c.currency)}</span>
+                        </>
+                      )}
                     </td>
                     <td className="bc">
                       <svg className="barcode" data-code={String(c.barcode).replace(/"/g, '')} />
                       <div className="bc-text">{c.barcode}</div>
                     </td>
-                    <td className="check">
-                      <span className="pp-box" /> T72&nbsp;&nbsp;
-                      <span className="pp-box" /> T86
-                    </td>
+                    {!isMissingCatalog && (
+                      <td className="check">
+                        <span className="pp-box" /> T72&nbsp;&nbsp;
+                        <span className="pp-box" /> T86
+                      </td>
+                    )}
                   </tr>
                 ))}
               </Fragment>

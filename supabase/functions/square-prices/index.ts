@@ -601,6 +601,8 @@ type ProductRow = {
   tag_72: boolean;
   tag_86: boolean;
   conflict: boolean;
+  catalog_missing: boolean;
+  catalog_missing_since?: string | null;
   updated_at?: string;
 };
 
@@ -640,6 +642,19 @@ function bestVendorName(squareVendor: string | null | undefined, mappedVendor: s
 
   const cleanedMappedVendor = cleanText(mappedVendor);
   return cleanedMappedVendor || UNKNOWN_VENDOR;
+}
+
+function validIsoDate(value: unknown) {
+  if (typeof value !== 'string') return null;
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) ? value : null;
+}
+
+function rowWasSeenInSync(row: ProductRow | null | undefined, syncRunStartedAt: string) {
+  if (!row?.updated_at) return false;
+  const updatedAt = Date.parse(row.updated_at);
+  const startedAt = Date.parse(syncRunStartedAt);
+  return Number.isFinite(updatedAt) && Number.isFinite(startedAt) && updatedAt >= startedAt;
 }
 
 function bearerToken(req: Request) {
@@ -817,6 +832,8 @@ function decorate(row: ProductRow | null) {
     categoryName: row.category_name || UNCATEGORIZED_CATEGORY,
     primaryCategory: row.primary_category || mainCategory(row.category_name),
     vendorName: row.vendor_name || UNKNOWN_VENDOR,
+    catalogMissing: Boolean(row.catalog_missing),
+    catalogMissingSince: row.catalog_missing_since || null,
     changePending,
     pendingStores: changePending
       ? [...(row.tag_72 ? [] : [72]), ...(row.tag_86 ? [] : [86])]
@@ -849,6 +866,8 @@ async function recordLookup(db: Db, live: LiveProduct) {
       tag_72: false,
       tag_86: false,
       conflict: false,
+      catalog_missing: false,
+      catalog_missing_since: null,
     });
     return decorate(saved);
   }
@@ -870,7 +889,9 @@ async function recordLookup(db: Db, live: LiveProduct) {
     currency: live.currency || 'USD',
     tag_72: priceChanged ? false : existing.tag_72,
     tag_86: priceChanged ? false : existing.tag_86,
-    conflict: existing.conflict,
+    conflict: existing.catalog_missing ? false : existing.conflict,
+    catalog_missing: false,
+    catalog_missing_since: null,
   });
 
   return decorate(saved);
@@ -899,6 +920,8 @@ async function confirmTag(db: Db, barcode: string, store: 72 | 86) {
     tag_72: store === 72 ? true : existing.tag_72,
     tag_86: store === 86 ? true : existing.tag_86,
     conflict: existing.conflict,
+    catalog_missing: existing.catalog_missing,
+    catalog_missing_since: existing.catalog_missing_since,
   };
 
   // Both stores confirmed -> promote new price to old and reset flags.
@@ -912,7 +935,7 @@ async function confirmTag(db: Db, barcode: string, store: 72 | 86) {
   return decorate(saved);
 }
 
-async function syncVariations(db: Db, variations: Variation[]) {
+async function syncVariations(db: Db, variations: Variation[], syncRunStartedAt: string) {
   // 1) Group by barcode.
   const groups = new Map<string, { rep: Variation; variations: Variation[]; prices: Set<number> }>();
   for (const v of variations) {
@@ -947,15 +970,37 @@ async function syncVariations(db: Db, variations: Variation[]) {
 
   for (const [barcode, g] of groups) {
     const v = g.rep;
-    const isDuplicate = g.variations.length > 1;
-    const isConflict = isDuplicate || g.prices.size > 1;
-    const now = g.prices.size === 1 ? [...g.prices][0] : v.priceCents;
     const existing = existingMap.get(barcode);
+    const isDuplicate = g.variations.length > 1;
+    const seenEarlierInRun =
+      Boolean(existing && existing.variation_id) &&
+      existing?.variation_id !== v.variationId &&
+      rowWasSeenInSync(existing, syncRunStartedAt);
+    const isConflict = isDuplicate || g.prices.size > 1 || seenEarlierInRun;
+    const now = g.prices.size === 1 ? [...g.prices][0] : v.priceCents;
     const categoryName = categoryNameFromCategories(v.categories);
     const primaryCategory = mainCategory(categoryName);
     const vendorName = bestVendorName(v.vendorName, vendorMappings.get(barcode));
 
     if (isConflict) {
+      toUpsert.push({
+        barcode,
+        item_id: existing?.item_id || v.itemId,
+        variation_id: existing?.variation_id || v.variationId,
+        name: existing?.name || v.name,
+        image_url: existing?.image_url || null,
+        category_name: existing?.category_name || categoryName,
+        primary_category: existing?.primary_category || primaryCategory,
+        vendor_name: existing?.vendor_name || vendorName,
+        old_price: existing?.old_price ?? now,
+        last_seen_price: existing?.last_seen_price ?? now,
+        currency: existing?.currency || v.currency,
+        tag_72: false,
+        tag_86: false,
+        conflict: true,
+        catalog_missing: false,
+        catalog_missing_since: null,
+      });
       conflictos++;
       duplicadosOmitidos++;
       continue;
@@ -977,6 +1022,8 @@ async function syncVariations(db: Db, variations: Variation[]) {
         tag_72: false,
         tag_86: false,
         conflict: isConflict,
+        catalog_missing: false,
+        catalog_missing_since: null,
       });
       if (!isConflict) nuevos++;
       continue;
@@ -1005,6 +1052,8 @@ async function syncVariations(db: Db, variations: Variation[]) {
       tag_72: livePriceChanged ? false : existing.tag_72,
       tag_86: livePriceChanged ? false : existing.tag_86,
       conflict: isConflict,
+      catalog_missing: false,
+      catalog_missing_since: null,
     });
 
     if (changePending) cambiados++;
@@ -1030,6 +1079,25 @@ async function syncVariations(db: Db, variations: Variation[]) {
   };
 }
 
+async function markProductsMissingFromSync(db: Db, syncRunStartedAt: string) {
+  const now = new Date().toISOString();
+  const { count, error } = await db
+    .from(TABLE)
+    .update({
+      catalog_missing: true,
+      catalog_missing_since: now,
+      conflict: false,
+      tag_72: false,
+      tag_86: false,
+      updated_at: now,
+    })
+    .lt('updated_at', syncRunStartedAt)
+    .eq('catalog_missing', false)
+    .select('barcode', { count: 'exact', head: true });
+  if (error) throw error;
+  return count || 0;
+}
+
 async function listChanges(db: Db) {
   const pageSize = 1000;
   const rows: ProductRow[] = [];
@@ -1039,6 +1107,7 @@ async function listChanges(db: Db) {
       .from(TABLE)
       .select('*')
       .eq('conflict', false)
+      .eq('catalog_missing', false)
       .not('last_seen_price', 'is', null)
       .not('old_price', 'is', null)
       .order('primary_category', { ascending: true, nullsFirst: false })
@@ -1051,6 +1120,27 @@ async function listChanges(db: Db) {
     );
     rows.push(...page);
 
+    if (!data || data.length < pageSize) break;
+  }
+
+  return rows.map(decorate);
+}
+
+async function listCatalogMissing(db: Db) {
+  const pageSize = 1000;
+  const rows: ProductRow[] = [];
+
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await db
+      .from(TABLE)
+      .select('*')
+      .eq('catalog_missing', true)
+      .order('vendor_name', { ascending: true, nullsFirst: false })
+      .order('name', { ascending: true })
+      .range(from, from + pageSize - 1);
+    if (error) throw error;
+
+    rows.push(...((data as ProductRow[]) || []));
     if (!data || data.length < pageSize) break;
   }
 
@@ -1146,11 +1236,15 @@ Deno.serve(async req => {
 
     if (action === 'sync') {
       const cursor = typeof payload.cursor === 'string' && payload.cursor ? payload.cursor : null;
+      const syncRunStartedAt = validIsoDate(payload.syncRunStartedAt) || new Date().toISOString();
       const { variations, nextCursor } = await listVariationPage(cursor);
-      const summary = await syncVariations(db, variations);
+      const summary = await syncVariations(db, variations, syncRunStartedAt);
+      const missing = nextCursor ? 0 : await markProductsMissingFromSync(db, syncRunStartedAt);
       return jsonResponse({
         ok: true,
         ...summary,
+        missing,
+        syncRunStartedAt,
         cursor: nextCursor,
         hasMore: Boolean(nextCursor),
         complete: !nextCursor,
@@ -1197,6 +1291,22 @@ Deno.serve(async req => {
         conflict: r!.conflict,
       }));
       return jsonResponse({ ok: true, count: changes.length, changes });
+    }
+
+    if (action === 'catalog-missing') {
+      const missing = (await listCatalogMissing(db)).map(r => ({
+        barcode: r!.barcode,
+        name: r!.name,
+        categoryName: r!.categoryName,
+        primaryCategory: r!.primaryCategory,
+        vendorName: r!.vendorName,
+        currency: r!.currency,
+        oldPrice: r!.oldPrice,
+        currentPrice: r!.currentPrice,
+        catalogMissing: r!.catalogMissing,
+        catalogMissingSince: r!.catalogMissingSince,
+      }));
+      return jsonResponse({ ok: true, count: missing.length, missing });
     }
 
     return jsonResponse({ error: `Accion no soportada: ${action || '(vacia)'}` }, 400);

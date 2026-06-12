@@ -30,6 +30,8 @@ export type SyncSummary = {
   cambiados: number;
   sinCambio: number;
   conflictos: number;
+  missing?: number;
+  syncRunStartedAt?: string | null;
   cursor?: string | null;
   hasMore?: boolean;
   complete?: boolean;
@@ -48,6 +50,19 @@ export type PriceChange = {
   pendingStores: number[];
   confirmedStores: number[];
   conflict?: boolean;
+};
+
+export type PriceCatalogMissing = {
+  barcode: string;
+  name: string | null;
+  categoryName: string | null;
+  primaryCategory: string | null;
+  vendorName: string | null;
+  currency: string;
+  oldPrice: number | null;
+  currentPrice: number | null;
+  catalogMissing: boolean;
+  catalogMissingSince: string | null;
 };
 
 export type VendorMappingInput = {
@@ -210,6 +225,21 @@ const MOCK_PRODUCTS: MockProduct[] = [
     hasInventoryMovement: false,
     categories: [{ id: 'cat-seasonal', name: 'Seasonal' }],
     vendorName: null,
+  },
+];
+
+const MOCK_CATALOG_MISSING_PRODUCTS: PriceCatalogMissing[] = [
+  {
+    barcode: '999999999999',
+    name: 'Discontinued Mock Product',
+    categoryName: 'Seasonal',
+    primaryCategory: 'Seasonal',
+    vendorName: 'Archived Vendor',
+    currency: 'USD',
+    oldPrice: 3.99,
+    currentPrice: 3.99,
+    catalogMissing: true,
+    catalogMissingSince: new Date().toISOString(),
   },
 ];
 
@@ -378,6 +408,7 @@ const mockSquarePrices = {
       cambiados: priceProducts.filter(product => product.changePending).length,
       sinCambio: priceProducts.filter(product => !product.changePending).length,
       conflictos: duplicateBarcodes.size,
+      missing: MOCK_CATALOG_MISSING_PRODUCTS.length,
       complete: true,
       hasMore: false,
       cursor: null,
@@ -408,6 +439,11 @@ const mockSquarePrices = {
       }));
     return { ok: true, count: changes.length, changes };
   },
+  catalogMissing: async (): Promise<{ ok: boolean; count: number; missing: PriceCatalogMissing[] }> => ({
+    ok: true,
+    count: MOCK_CATALOG_MISSING_PRODUCTS.length,
+    missing: MOCK_CATALOG_MISSING_PRODUCTS,
+  }),
   importVendorMappings: async (
     rows: VendorMappingInput[],
     source = 'square_catalog'
@@ -478,14 +514,19 @@ export const squarePrices = {
     MOCK_LOCAL ? mockSquarePrices.lookup(barcode) : invokeSquarePrices<PriceProduct>({ action: 'lookup', barcode }),
   tag: (barcode: string, store: 72 | 86) =>
     MOCK_LOCAL ? mockSquarePrices.tag(barcode, store) : invokeSquarePrices<PriceProduct & { ok: boolean }>({ action: 'tag', barcode, store }),
-  sync: (cursor?: string | null) =>
+  sync: (cursor?: string | null, syncRunStartedAt?: string | null) =>
     MOCK_LOCAL ? mockSquarePrices.sync() : invokeSquarePrices<SyncSummary>({
         action: 'sync',
         ...(cursor ? { cursor } : {}),
+        ...(syncRunStartedAt ? { syncRunStartedAt } : {}),
       }),
   changes: () =>
     MOCK_LOCAL ? mockSquarePrices.changes() : invokeSquarePrices<{ ok: boolean; count: number; changes: PriceChange[] }>({
         action: 'changes',
+      }),
+  catalogMissing: () =>
+    MOCK_LOCAL ? mockSquarePrices.catalogMissing() : invokeSquarePrices<{ ok: boolean; count: number; missing: PriceCatalogMissing[] }>({
+        action: 'catalog-missing',
       }),
   importVendorMappings: (rows: VendorMappingInput[], source?: string) =>
     MOCK_LOCAL ? mockSquarePrices.importVendorMappings(rows, source) : invokeSquarePrices<VendorImportSummary>({
