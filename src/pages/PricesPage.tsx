@@ -380,8 +380,8 @@ function ListTab({ t }: { t: Dict }) {
   const loadLists = async () => {
     setLoading(true);
     try {
-      const [changesData, duplicatesData, missingData] = await Promise.all([
-        squarePrices.changes(),
+      const changesData = await squarePrices.changes();
+      const [duplicatesData, missingData] = await Promise.all([
         squarePrices.duplicates(),
         squarePrices.catalogMissing(),
       ]);

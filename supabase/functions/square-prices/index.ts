@@ -109,7 +109,6 @@ type SquareCatalogResponse = {
   objects?: SquareCatalogObject[];
   related_objects?: SquareCatalogObject[];
   object?: SquareCatalogObject;
-  items?: SquareCatalogObject[];
   cursor?: string;
   errors?: { detail?: string; message?: string }[];
   raw?: string;
@@ -233,7 +232,6 @@ type CustomAttributeDefinitionIndex = {
 };
 
 let customAttributeDefinitionIndexCache: Promise<CustomAttributeDefinitionIndex> | null = null;
-let categoryNameIndexCache: Promise<Map<string, string>> | null = null;
 
 function mainCategory(categoryName: string | null | undefined) {
   const trimmed = String(categoryName || '').trim();
@@ -332,42 +330,6 @@ async function getCustomAttributeDefinitionIndex(): Promise<CustomAttributeDefin
   })();
 
   return customAttributeDefinitionIndexCache;
-}
-
-async function getCategoryNameIndex() {
-  if (categoryNameIndexCache) return categoryNameIndexCache;
-
-  categoryNameIndexCache = (async () => {
-    const names = new Map<string, string>();
-    let cursor: string | null = null;
-
-    try {
-      do {
-        const data = await squareFetch('/v2/catalog/search', {
-          method: 'POST',
-          body: {
-            object_types: ['CATEGORY'],
-            include_deleted_objects: false,
-            limit: 1000,
-            ...(cursor ? { cursor } : {}),
-          },
-        });
-
-        for (const category of data.objects || []) {
-          if (category.type !== 'CATEGORY' || isDeletedCatalogObject(category)) continue;
-          names.set(category.id, category.category_data?.name || category.id);
-        }
-
-        cursor = data.cursor || null;
-      } while (cursor);
-    } catch {
-      // Category names are display-only; keep sync alive if Square omits them.
-    }
-
-    return names;
-  })();
-
-  return categoryNameIndexCache;
 }
 
 function customAttributeText(
@@ -534,7 +496,7 @@ type Variation = {
   currency: string;
 };
 
-const SEARCH_ITEMS_PAGE_LIMIT = 100;
+const SYNC_PAGE_LIMIT = 1000;
 
 async function listVariationPage(cursor: string | null): Promise<{
   variations: Variation[];
@@ -542,19 +504,25 @@ async function listVariationPage(cursor: string | null): Promise<{
 }> {
   const out: Variation[] = [];
 
-  const data = await squareFetch('/v2/catalog/search-catalog-items', {
+  const data = await squareFetch('/v2/catalog/search', {
     method: 'POST',
     body: {
-      archived_state: 'ARCHIVED_STATE_NOT_ARCHIVED',
-      limit: SEARCH_ITEMS_PAGE_LIMIT,
+      object_types: ['ITEM'],
+      include_deleted_objects: false,
+      include_related_objects: true,
+      limit: SYNC_PAGE_LIMIT,
       ...(cursor ? { cursor } : {}),
     },
   });
 
-  const categoryNames = await getCategoryNameIndex();
+  const categoryNames = new Map<string, string>();
+  for (const related of data.related_objects || []) {
+    if (related.type !== 'CATEGORY') continue;
+    categoryNames.set(related.id, related.category_data?.name || related.id);
+  }
   const customAttributeDefinitions = await getCustomAttributeDefinitionIndex();
 
-  for (const item of data.items || []) {
+  for (const item of data.objects || []) {
     if (item.type !== 'ITEM') continue;
     if (!isLiveCatalogObject(item)) continue;
     const itemName = item.item_data?.name || 'Sin nombre';
@@ -1184,7 +1152,70 @@ async function markProductsMissingFromSync(db: Db, syncRunStartedAt: string) {
   return (nullRun.count || 0) + (staleRun.count || 0);
 }
 
-async function listChanges(db: Db) {
+async function markProductMissing(db: Db, row: ProductRow) {
+  const now = new Date().toISOString();
+  const { data, error } = await db
+    .from(TABLE)
+    .update({
+      catalog_missing: true,
+      catalog_missing_since: row.catalog_missing_since || now,
+      conflict: false,
+      tag_72: false,
+      tag_86: false,
+      updated_at: now,
+    })
+    .eq('barcode', row.barcode)
+    .select('*')
+    .single();
+  if (error) throw error;
+  return data as ProductRow;
+}
+
+function isPendingPriceChange(row: ProductRow | null | undefined) {
+  return (
+    Boolean(row) &&
+    row!.conflict === false &&
+    row!.catalog_missing === false &&
+    row!.last_seen_price != null &&
+    row!.old_price != null &&
+    row!.last_seen_price !== row!.old_price
+  );
+}
+
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T) => Promise<R>
+) {
+  const results: R[] = new Array(items.length);
+  let next = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (next < items.length) {
+      const index = next;
+      next += 1;
+      results[index] = await fn(items[index]);
+    }
+  });
+  await Promise.all(workers);
+  return results;
+}
+
+async function refreshChangeCandidate(db: Db, row: ProductRow) {
+  try {
+    const live = await lookupByBarcode(row.barcode);
+    if (!live.found) {
+      await markProductMissing(db, row);
+      return null;
+    }
+
+    const saved = await recordLookup(db, live);
+    return isPendingPriceChange(saved) ? saved : null;
+  } catch {
+    return row;
+  }
+}
+
+async function listChanges(db: Db, verifyAgainstSquare = false) {
   const pageSize = 1000;
   const rows: ProductRow[] = [];
 
@@ -1209,7 +1240,10 @@ async function listChanges(db: Db) {
     if (!data || data.length < pageSize) break;
   }
 
-  return rows.map(decorate);
+  if (!verifyAgainstSquare || rows.length === 0) return rows.map(decorate);
+
+  const refreshed = await mapWithConcurrency(rows, 4, row => refreshChangeCandidate(db, row));
+  return refreshed.filter((row): row is ProductRow => isPendingPriceChange(row)).map(decorate);
 }
 
 async function listCatalogMissing(db: Db) {
@@ -1385,7 +1419,7 @@ Deno.serve(async req => {
     }
 
     if (action === 'changes') {
-      const changes = (await listChanges(db)).map(r => ({
+      const changes = (await listChanges(db, tokenSet)).map(r => ({
         barcode: r!.barcode,
         name: r!.name,
         categoryName: r!.categoryName,
