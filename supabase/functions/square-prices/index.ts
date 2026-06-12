@@ -109,6 +109,7 @@ type SquareCatalogResponse = {
   objects?: SquareCatalogObject[];
   related_objects?: SquareCatalogObject[];
   object?: SquareCatalogObject;
+  items?: SquareCatalogObject[];
   cursor?: string;
   errors?: { detail?: string; message?: string }[];
   raw?: string;
@@ -232,6 +233,7 @@ type CustomAttributeDefinitionIndex = {
 };
 
 let customAttributeDefinitionIndexCache: Promise<CustomAttributeDefinitionIndex> | null = null;
+let categoryNameIndexCache: Promise<Map<string, string>> | null = null;
 
 function mainCategory(categoryName: string | null | undefined) {
   const trimmed = String(categoryName || '').trim();
@@ -332,6 +334,42 @@ async function getCustomAttributeDefinitionIndex(): Promise<CustomAttributeDefin
   return customAttributeDefinitionIndexCache;
 }
 
+async function getCategoryNameIndex() {
+  if (categoryNameIndexCache) return categoryNameIndexCache;
+
+  categoryNameIndexCache = (async () => {
+    const names = new Map<string, string>();
+    let cursor: string | null = null;
+
+    try {
+      do {
+        const data = await squareFetch('/v2/catalog/search', {
+          method: 'POST',
+          body: {
+            object_types: ['CATEGORY'],
+            include_deleted_objects: false,
+            limit: 1000,
+            ...(cursor ? { cursor } : {}),
+          },
+        });
+
+        for (const category of data.objects || []) {
+          if (category.type !== 'CATEGORY' || isDeletedCatalogObject(category)) continue;
+          names.set(category.id, category.category_data?.name || category.id);
+        }
+
+        cursor = data.cursor || null;
+      } while (cursor);
+    } catch {
+      // Category names are display-only; keep sync alive if Square omits them.
+    }
+
+    return names;
+  })();
+
+  return categoryNameIndexCache;
+}
+
 function customAttributeText(
   value: SquareCatalogCustomAttributeValue | undefined,
   definitions: CustomAttributeDefinitionIndex
@@ -423,13 +461,18 @@ async function lookupByBarcode(barcode: string): Promise<LiveProduct> {
 
   const related = result.related_objects || [];
   let itemObject = related.find(o => o.type === 'ITEM' && o.id === itemId && isLiveCatalogObject(o));
+  let imageRelated = related;
 
-  if (!itemObject) {
+  if (itemId) {
     try {
       const full = await squareFetch(
         `/v2/catalog/object/${itemId}?include_related_objects=true`
       );
+      if (!isLiveCatalogObject(full.object)) {
+        return { found: false, barcode: code, reason: 'Producto no encontrado en Square' };
+      }
       itemObject = isLiveCatalogObject(full.object) ? full.object || itemObject : itemObject;
+      imageRelated = full.related_objects || related;
     } catch {
       // keep searching with the data returned by the exact lookup
     }
@@ -439,7 +482,6 @@ async function lookupByBarcode(barcode: string): Promise<LiveProduct> {
     return { found: false, barcode: code, reason: 'Producto no encontrado en Square' };
   }
 
-  let imageRelated = related;
   let categories = categoriesForItem(itemObject, imageRelated);
   if (
     !findImageUrl(itemObject, related) ||
@@ -492,7 +534,7 @@ type Variation = {
   currency: string;
 };
 
-const SYNC_PAGE_LIMIT = 250;
+const SEARCH_ITEMS_PAGE_LIMIT = 100;
 
 async function listVariationPage(cursor: string | null): Promise<{
   variations: Variation[];
@@ -500,25 +542,19 @@ async function listVariationPage(cursor: string | null): Promise<{
 }> {
   const out: Variation[] = [];
 
-  const data = await squareFetch('/v2/catalog/search', {
+  const data = await squareFetch('/v2/catalog/search-catalog-items', {
     method: 'POST',
     body: {
-      object_types: ['ITEM'],
-      include_deleted_objects: false,
-      include_related_objects: true,
-      limit: SYNC_PAGE_LIMIT,
+      archived_state: 'ARCHIVED_STATE_NOT_ARCHIVED',
+      limit: SEARCH_ITEMS_PAGE_LIMIT,
       ...(cursor ? { cursor } : {}),
     },
   });
 
-  const categoryNames = new Map<string, string>();
-  for (const related of data.related_objects || []) {
-    if (related.type !== 'CATEGORY') continue;
-    categoryNames.set(related.id, related.category_data?.name || related.id);
-  }
+  const categoryNames = await getCategoryNameIndex();
   const customAttributeDefinitions = await getCustomAttributeDefinitionIndex();
 
-  for (const item of data.objects || []) {
+  for (const item of data.items || []) {
     if (item.type !== 'ITEM') continue;
     if (!isLiveCatalogObject(item)) continue;
     const itemName = item.item_data?.name || 'Sin nombre';
