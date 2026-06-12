@@ -1238,21 +1238,10 @@ async function listChanges(db: Db, verifyAgainstSquare = false) {
 
   for (let from = 0; ; from += pageSize) {
     const { data, error } = await db
-      .from(TABLE)
-      .select('*')
-      .eq('conflict', false)
-      .eq('catalog_missing', false)
-      .not('last_seen_price', 'is', null)
-      .not('old_price', 'is', null)
-      .order('primary_category', { ascending: true, nullsFirst: false })
-      .order('name', { ascending: true })
-      .range(from, from + pageSize - 1);
+      .rpc('square_price_pending_changes', { p_limit: pageSize, p_offset: from });
     if (error) throw error;
 
-    const page = ((data as ProductRow[]) || []).filter(
-      row => row.last_seen_price !== row.old_price
-    );
-    rows.push(...page);
+    rows.push(...(((data as ProductRow[]) || [])));
 
     if (!data || data.length < pageSize) break;
   }
