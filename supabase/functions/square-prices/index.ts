@@ -603,6 +603,7 @@ type ProductRow = {
   conflict: boolean;
   catalog_missing: boolean;
   catalog_missing_since?: string | null;
+  last_square_sync_run?: string | null;
   updated_at?: string;
 };
 
@@ -648,13 +649,6 @@ function validIsoDate(value: unknown) {
   if (typeof value !== 'string') return null;
   const timestamp = Date.parse(value);
   return Number.isFinite(timestamp) ? value : null;
-}
-
-function rowWasSeenInSync(row: ProductRow | null | undefined, syncRunStartedAt: string) {
-  if (!row?.updated_at) return false;
-  const updatedAt = Date.parse(row.updated_at);
-  const startedAt = Date.parse(syncRunStartedAt);
-  return Number.isFinite(updatedAt) && Number.isFinite(startedAt) && updatedAt >= startedAt;
 }
 
 function bearerToken(req: Request) {
@@ -868,6 +862,7 @@ async function recordLookup(db: Db, live: LiveProduct) {
       conflict: false,
       catalog_missing: false,
       catalog_missing_since: null,
+      last_square_sync_run: new Date().toISOString(),
     });
     return decorate(saved);
   }
@@ -892,6 +887,7 @@ async function recordLookup(db: Db, live: LiveProduct) {
     conflict: existing.catalog_missing ? false : existing.conflict,
     catalog_missing: false,
     catalog_missing_since: null,
+    last_square_sync_run: existing.last_square_sync_run || new Date().toISOString(),
   });
 
   return decorate(saved);
@@ -922,6 +918,7 @@ async function confirmTag(db: Db, barcode: string, store: 72 | 86) {
     conflict: existing.conflict,
     catalog_missing: existing.catalog_missing,
     catalog_missing_since: existing.catalog_missing_since,
+    last_square_sync_run: existing.last_square_sync_run,
   };
 
   // Both stores confirmed -> promote new price to old and reset flags.
@@ -975,7 +972,7 @@ async function syncVariations(db: Db, variations: Variation[], syncRunStartedAt:
     const seenEarlierInRun =
       Boolean(existing && existing.variation_id) &&
       existing?.variation_id !== v.variationId &&
-      rowWasSeenInSync(existing, syncRunStartedAt);
+      existing?.last_square_sync_run === syncRunStartedAt;
     const isConflict = isDuplicate || g.prices.size > 1 || seenEarlierInRun;
     const now = g.prices.size === 1 ? [...g.prices][0] : v.priceCents;
     const categoryName = categoryNameFromCategories(v.categories);
@@ -1000,6 +997,7 @@ async function syncVariations(db: Db, variations: Variation[], syncRunStartedAt:
         conflict: true,
         catalog_missing: false,
         catalog_missing_since: null,
+        last_square_sync_run: syncRunStartedAt,
       });
       conflictos++;
       duplicadosOmitidos++;
@@ -1024,6 +1022,7 @@ async function syncVariations(db: Db, variations: Variation[], syncRunStartedAt:
         conflict: isConflict,
         catalog_missing: false,
         catalog_missing_since: null,
+        last_square_sync_run: syncRunStartedAt,
       });
       if (!isConflict) nuevos++;
       continue;
@@ -1054,6 +1053,7 @@ async function syncVariations(db: Db, variations: Variation[], syncRunStartedAt:
       conflict: isConflict,
       catalog_missing: false,
       catalog_missing_since: null,
+      last_square_sync_run: syncRunStartedAt,
     });
 
     if (changePending) cambiados++;
@@ -1081,21 +1081,32 @@ async function syncVariations(db: Db, variations: Variation[], syncRunStartedAt:
 
 async function markProductsMissingFromSync(db: Db, syncRunStartedAt: string) {
   const now = new Date().toISOString();
-  const { count, error } = await db
+  const payload = {
+    catalog_missing: true,
+    catalog_missing_since: now,
+    conflict: false,
+    tag_72: false,
+    tag_86: false,
+    updated_at: now,
+  };
+
+  const nullRun = await db
     .from(TABLE)
-    .update({
-      catalog_missing: true,
-      catalog_missing_since: now,
-      conflict: false,
-      tag_72: false,
-      tag_86: false,
-      updated_at: now,
-    })
-    .lt('updated_at', syncRunStartedAt)
+    .update(payload)
+    .is('last_square_sync_run', null)
     .eq('catalog_missing', false)
     .select('barcode', { count: 'exact', head: true });
-  if (error) throw error;
-  return count || 0;
+  if (nullRun.error) throw nullRun.error;
+
+  const staleRun = await db
+    .from(TABLE)
+    .update(payload)
+    .lt('last_square_sync_run', syncRunStartedAt)
+    .eq('catalog_missing', false)
+    .select('barcode', { count: 'exact', head: true });
+  if (staleRun.error) throw staleRun.error;
+
+  return (nullRun.count || 0) + (staleRun.count || 0);
 }
 
 async function listChanges(db: Db) {
