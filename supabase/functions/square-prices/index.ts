@@ -66,6 +66,7 @@ type SquareCatalogObject = {
     category_id?: string;
     categories?: { id?: string; ordinal?: number }[];
     image_ids?: string[];
+    is_archived?: boolean;
     name?: string;
     reporting_category?: { id?: string; ordinal?: number };
     variations?: SquareCatalogObject[];
@@ -190,8 +191,12 @@ function isPresentInAnyLocation(object: SquareCatalogObject | null | undefined) 
   return Array.isArray(object.present_at_location_ids) && object.present_at_location_ids.length > 0;
 }
 
+function isArchivedCatalogItem(object: SquareCatalogObject | null | undefined) {
+  return object?.type === 'ITEM' && object.item_data?.is_archived === true;
+}
+
 function isLiveCatalogObject(object: SquareCatalogObject | null | undefined) {
-  return !isDeletedCatalogObject(object) && isPresentInAnyLocation(object);
+  return !isDeletedCatalogObject(object) && !isArchivedCatalogItem(object) && isPresentInAnyLocation(object);
 }
 
 function findImageUrl(
@@ -419,10 +424,24 @@ async function lookupByBarcode(barcode: string): Promise<LiveProduct> {
   const related = result.related_objects || [];
   let itemObject = related.find(o => o.type === 'ITEM' && o.id === itemId && isLiveCatalogObject(o));
 
+  if (!itemObject) {
+    try {
+      const full = await squareFetch(
+        `/v2/catalog/object/${itemId}?include_related_objects=true`
+      );
+      itemObject = isLiveCatalogObject(full.object) ? full.object || itemObject : itemObject;
+    } catch {
+      // keep searching with the data returned by the exact lookup
+    }
+  }
+
+  if (!itemObject) {
+    return { found: false, barcode: code, reason: 'Producto no encontrado en Square' };
+  }
+
   let imageRelated = related;
   let categories = categoriesForItem(itemObject, imageRelated);
   if (
-    !itemObject ||
     !findImageUrl(itemObject, related) ||
     categories.length === 0 ||
     categories.some(category => category.name === category.id)
