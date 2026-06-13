@@ -244,30 +244,7 @@ export default function LoginPage() {
                   ))}
                 </div>
 
-                {isSignup || isAdminMode ? (
-                  <Button
-                    type="submit"
-                    disabled={loading || (isSignup && !name.trim()) || passcode.length !== 4}
-                    className="h-12 w-full rounded-xl bg-foreground text-base font-semibold text-background shadow-[0_18px_40px_rgba(15,23,42,0.16)] transition-transform duration-200 active:scale-[0.99] hover:bg-foreground/92"
-                  >
-                    {loading ? 'Please wait...' : isAdminMode ? 'Verify admin' : 'Register employee'}
-                  </Button>
-                ) : (
-                  <div className="h-12" aria-hidden="true" />
-                )}
               </form>
-
-              <button
-                className="mt-4 w-full text-center text-sm text-muted-foreground transition-colors hover:text-foreground"
-                onClick={() => {
-                  setMode(mode === 'register' ? 'login' : 'admin');
-                  setPasscode('');
-                  setName('');
-                  setVerifiedAdminPasscode('');
-                }}
-              >
-                {mode === 'register' ? 'Back to employee login' : 'Admin registration'}
-              </button>
             </CardContent>
           </Card>
         </div>
