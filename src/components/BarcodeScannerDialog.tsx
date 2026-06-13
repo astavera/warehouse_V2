@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { IScannerControls } from '@zxing/browser';
 import { Camera, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -43,14 +43,22 @@ export function BarcodeScannerDialog({
 }: BarcodeScannerDialogProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const controlsRef = useRef<IScannerControls | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
   const handledRef = useRef(false);
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const stopScanner = useCallback(() => {
+    controlsRef.current?.stop();
+    controlsRef.current = null;
+    streamRef.current?.getTracks().forEach(track => track.stop());
+    streamRef.current = null;
+    if (videoRef.current) videoRef.current.srcObject = null;
+  }, []);
+
   useEffect(() => {
     if (!open) {
-      controlsRef.current?.stop();
-      controlsRef.current = null;
+      stopScanner();
       handledRef.current = false;
       setStarting(false);
       setError(null);
@@ -59,29 +67,46 @@ export function BarcodeScannerDialog({
 
     let cancelled = false;
     const startScanner = async () => {
+      await new Promise<void>(resolve => window.requestAnimationFrame(() => resolve()));
       const video = videoRef.current;
       if (!video) return;
 
       setStarting(true);
       setError(null);
       try {
+        if (!navigator.mediaDevices?.getUserMedia) throw new Error('Camera API unavailable');
+
         const { BrowserMultiFormatReader } = await import('@zxing/browser');
         const reader = new BrowserMultiFormatReader();
-        const controls = await reader.decodeFromConstraints(
-          {
-            audio: false,
-            video: {
-              facingMode: { ideal: 'environment' },
-              width: { ideal: 1280 },
-              height: { ideal: 720 },
-            },
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: false,
+          video: {
+            facingMode: { ideal: 'environment' },
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
           },
+        });
+
+        if (cancelled) {
+          stream.getTracks().forEach(track => track.stop());
+          return;
+        }
+
+        streamRef.current = stream;
+        video.srcObject = stream;
+        video.muted = true;
+        video.playsInline = true;
+        video.setAttribute('playsinline', 'true');
+        await video.play().catch(() => undefined);
+
+        const controls = await reader.decodeFromStream(
+          stream,
           video,
           result => {
             const text = result?.getText().trim();
             if (!text || handledRef.current) return;
             handledRef.current = true;
-            controlsRef.current?.stop();
+            stopScanner();
             onDetected(text);
             onOpenChange(false);
           }
@@ -93,6 +118,7 @@ export function BarcodeScannerDialog({
         }
         controlsRef.current = controls;
       } catch (err) {
+        stopScanner();
         if (!cancelled) setError(scannerErrorMessage(err, labels));
       } finally {
         if (!cancelled) setStarting(false);
@@ -103,10 +129,9 @@ export function BarcodeScannerDialog({
 
     return () => {
       cancelled = true;
-      controlsRef.current?.stop();
-      controlsRef.current = null;
+      stopScanner();
     };
-  }, [labels, onDetected, onOpenChange, open]);
+  }, [labels, onDetected, onOpenChange, open, stopScanner]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -123,6 +148,7 @@ export function BarcodeScannerDialog({
           <video
             ref={videoRef}
             className="aspect-[4/3] w-full object-cover"
+            autoPlay
             muted
             playsInline
           />
