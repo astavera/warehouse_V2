@@ -21,6 +21,7 @@ export const ACCOUNTING_PERMISSIONS: AccountingPermission[] = [
   'accounting.catalogs',
 ];
 const STORE_ROLE_ALIASES = new Set(['store', 'staff', 'store_staff', 'staff_store', 'store-staff', 'staff-store']);
+const PRICE_STAFF_MODULES = new Set<AppModule>(['receiving', 'prices']);
 
 type PermissionUser = {
   id?: string | null;
@@ -50,6 +51,22 @@ export function getEmployeeRole(user: PermissionUser | null | undefined): Employ
   return normalizeEmployeeRole(user?.role);
 }
 
+export function isPriceStaffUser(user: PermissionUser | null | undefined) {
+  if (!user || isSebastianAdmin(user)) return false;
+
+  const role = normalizeEmployeeRole(user.role);
+  if (role === 'store') return true;
+  if (role !== 'warehouse') return false;
+
+  const modules = user.permissions?.filter((module): module is AppModule =>
+    APP_MODULES.includes(module as AppModule)
+  );
+  return Boolean(
+    modules?.includes('prices') &&
+    modules.every(module => PRICE_STAFF_MODULES.has(module))
+  );
+}
+
 export function defaultModulesForRole(role: EmployeeRole): AppModule[] {
   if (role === 'admin') return ['receiving', 'expected_boxes', 'prices', 'audit', 'accounting', 'settings'];
   if (role === 'accounting') return ['receiving', 'expected_boxes', 'prices', 'audit', 'accounting'];
@@ -65,7 +82,7 @@ export function defaultAccountingPermissionsForRole(role: EmployeeRole): Account
 export function getEffectiveModules(user: PermissionUser | null | undefined): AppModule[] {
   const role = getEmployeeRole(user);
   if (role === 'admin') return defaultModulesForRole(role);
-  if (role === 'store') return defaultModulesForRole(role);
+  if (isPriceStaffUser(user)) return defaultModulesForRole('store');
 
   const custom = user?.permissions?.filter((module): module is AppModule =>
     APP_MODULES.includes(module as AppModule)
@@ -112,7 +129,7 @@ export function canAccessAccountingPermission(
 }
 
 export function getDefaultLandingPath(user: PermissionUser | null | undefined) {
-  if (getEmployeeRole(user) === 'store' && canAccessModule(user, 'prices')) return '/prices';
+  if (isPriceStaffUser(user) && canAccessModule(user, 'prices')) return '/prices';
   if (getEmployeeRole(user) === 'accounting' && canAccessModule(user, 'accounting')) return '/accounting';
   if (canAccessModule(user, 'receiving')) return '/';
   if (canAccessModule(user, 'expected_boxes')) return '/expected-boxes';

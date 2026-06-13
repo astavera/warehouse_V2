@@ -16,6 +16,7 @@ import {
   APP_MODULES,
   EMPLOYEE_ROLES,
   defaultModulesForRole,
+  isSebastianAdmin,
   moduleLabel,
   normalizeEmployeeRole,
   type AppModule,
@@ -296,14 +297,18 @@ function EmployeeAccessCard({
     }
   };
 
-  const deleteInactive = async () => {
-    if (employee.active) return;
-    const confirmed = window.confirm(`Delete inactive user "${employee.name}"? This cannot be undone.`);
+  const deleteUser = async () => {
+    if (isSebastianAdmin(employee)) {
+      toast.error('Sebastian admin user cannot be deleted');
+      return;
+    }
+
+    const confirmed = window.confirm(`Delete user "${employee.name}"? This cannot be undone.`);
     if (!confirmed) return;
     setDeleting(true);
     try {
       await deleteInactiveEmployeeAccess(employee.id);
-      toast.success('Inactive user deleted');
+      toast.success('User deleted');
       onDeleted();
     } catch (err) {
       toast.error(getErrorMessage(err, 'Failed to delete user'));
@@ -331,18 +336,16 @@ function EmployeeAccessCard({
             <Edit className="h-4 w-4" />
             Edit access
           </Button>
-          {!employee.active && (
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => void deleteInactive()}
-              disabled={deleting}
-              className="w-full gap-1.5 border-destructive/30 text-destructive hover:bg-destructive/10 lg:w-auto"
-            >
-              {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-              Delete
-            </Button>
-          )}
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => void deleteUser()}
+            disabled={deleting || isSebastianAdmin(employee)}
+            className="w-full gap-1.5 border-destructive/30 text-destructive hover:bg-destructive/10 lg:w-auto"
+          >
+            {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+            Delete
+          </Button>
         </div>
       </div>
 

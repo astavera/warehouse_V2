@@ -200,7 +200,7 @@ Deno.serve(async req => {
         .maybeSingle();
       if (targetError) throw targetError;
       if (!target) return jsonResponse({ error: 'User not found' }, 404);
-      if (target.active) return jsonResponse({ error: 'Only inactive users can be deleted' }, 400);
+      if (isSebastianAdmin(target)) return jsonResponse({ error: 'Sebastian admin user cannot be deleted' }, 400);
 
       if (target.auth_user_id) {
         const { error: authDeleteError } = await admin.auth.admin.deleteUser(target.auth_user_id);
