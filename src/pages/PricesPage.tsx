@@ -6,7 +6,8 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { toast } from 'sonner';
-import { Search, RefreshCw, Printer, Loader2, ArrowRight, Languages, CheckCheck } from 'lucide-react';
+import { Search, RefreshCw, Printer, Loader2, ArrowRight, Languages, CheckCheck, Camera } from 'lucide-react';
+import { BarcodeScannerDialog } from '@/components/BarcodeScannerDialog';
 import {
   squarePrices,
   formatMoney,
@@ -18,6 +19,8 @@ import {
 } from '@/hooks/useSquarePrices';
 import { groupPriceItems, UNKNOWN_PRICE_VENDOR, type PriceGroupBy } from '@/lib/priceCategories';
 import { usePriceLang, type Dict } from '@/lib/pricesI18n';
+import { useAuth } from '@/hooks/useAuth';
+import { canAccessPricePermission } from '@/lib/permissions';
 
 function getErrorMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
@@ -30,14 +33,26 @@ function ChangePriceTab({ t, onZoom }: { t: Dict; onZoom: (url: string) => void 
   const [code, setCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [taggingAll, setTaggingAll] = useState(false);
+  const [scannerOpen, setScannerOpen] = useState(false);
   const [product, setProduct] = useState<PriceProduct | null>(null);
   const [notFound, setNotFound] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const scannerLabels = useMemo(
+    () => ({
+      title: t.scanner_title,
+      hint: t.scanner_hint,
+      close: t.scanner_close,
+      permissionError: t.scanner_permission_err,
+      notFoundError: t.scanner_not_found_err,
+      startError: t.scanner_start_err,
+    }),
+    [t]
+  );
 
-  const search = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const c = code.trim();
+  const runSearch = async (rawCode: string) => {
+    const c = rawCode.trim();
     if (!c) return;
+    setCode(c);
     setLoading(true);
     setNotFound(null);
     try {
@@ -55,6 +70,11 @@ function ChangePriceTab({ t, onZoom }: { t: Dict; onZoom: (url: string) => void 
       setLoading(false);
       inputRef.current?.select();
     }
+  };
+
+  const search = (e: React.FormEvent) => {
+    e.preventDefault();
+    void runSearch(code);
   };
 
   const confirmTag = async (store: 72 | 86) => {
@@ -95,7 +115,7 @@ function ChangePriceTab({ t, onZoom }: { t: Dict; onZoom: (url: string) => void 
   return (
     <div className="space-y-4">
       <p className="text-sm text-muted-foreground">{t.scan_hint}</p>
-      <form onSubmit={search} className="flex gap-2" autoComplete="off">
+      <form onSubmit={search} className="grid grid-cols-[1fr_auto_auto] gap-2" autoComplete="off">
         <Input
           ref={inputRef}
           value={code}
@@ -106,6 +126,16 @@ function ChangePriceTab({ t, onZoom }: { t: Dict; onZoom: (url: string) => void 
           spellCheck={false}
           autoFocus
         />
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => setScannerOpen(true)}
+          className="touch-target"
+          title={t.btn_camera}
+          aria-label={t.btn_camera}
+        >
+          <Camera className="h-4 w-4" />
+        </Button>
         <Button type="submit" disabled={loading} className="gap-1.5 touch-target">
           {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
           {t.btn_search}
@@ -130,6 +160,13 @@ function ChangePriceTab({ t, onZoom }: { t: Dict; onZoom: (url: string) => void 
           onZoom={onZoom}
         />
       )}
+
+      <BarcodeScannerDialog
+        open={scannerOpen}
+        onOpenChange={setScannerOpen}
+        onDetected={barcode => void runSearch(barcode)}
+        labels={scannerLabels}
+      />
     </div>
   );
 }
@@ -266,13 +303,25 @@ function ProductCard({
 function BigPhotoTab({ t, onZoom }: { t: Dict; onZoom: (url: string) => void }) {
   const [code, setCode] = useState('');
   const [loading, setLoading] = useState(false);
+  const [scannerOpen, setScannerOpen] = useState(false);
   const [product, setProduct] = useState<PriceProduct | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const scannerLabels = useMemo(
+    () => ({
+      title: t.scanner_title,
+      hint: t.scanner_hint,
+      close: t.scanner_close,
+      permissionError: t.scanner_permission_err,
+      notFoundError: t.scanner_not_found_err,
+      startError: t.scanner_start_err,
+    }),
+    [t]
+  );
 
-  const search = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const c = code.trim();
+  const runSearch = async (rawCode: string) => {
+    const c = rawCode.trim();
     if (!c) return;
+    setCode(c);
     setLoading(true);
     setError(null);
     try {
@@ -291,10 +340,15 @@ function BigPhotoTab({ t, onZoom }: { t: Dict; onZoom: (url: string) => void }) 
     }
   };
 
+  const search = (e: React.FormEvent) => {
+    e.preventDefault();
+    void runSearch(code);
+  };
+
   return (
     <div className="space-y-4">
       <p className="text-sm text-muted-foreground">{t.photo_hint}</p>
-      <form onSubmit={search} className="flex gap-2" autoComplete="off">
+      <form onSubmit={search} className="grid grid-cols-[1fr_auto_auto] gap-2" autoComplete="off">
         <Input
           value={code}
           onChange={e => setCode(e.target.value)}
@@ -302,6 +356,16 @@ function BigPhotoTab({ t, onZoom }: { t: Dict; onZoom: (url: string) => void }) 
           autoComplete="off"
           spellCheck={false}
         />
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => setScannerOpen(true)}
+          className="touch-target"
+          title={t.btn_camera}
+          aria-label={t.btn_camera}
+        >
+          <Camera className="h-4 w-4" />
+        </Button>
         <Button type="submit" disabled={loading} className="gap-1.5 touch-target">
           {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
           {t.btn_view}
@@ -336,6 +400,13 @@ function BigPhotoTab({ t, onZoom }: { t: Dict; onZoom: (url: string) => void }) 
           </CardContent>
         </Card>
       )}
+
+      <BarcodeScannerDialog
+        open={scannerOpen}
+        onOpenChange={setScannerOpen}
+        onDetected={barcode => void runSearch(barcode)}
+        labels={scannerLabels}
+      />
     </div>
   );
 }
@@ -721,8 +792,10 @@ function ListTab({ t }: { t: Dict }) {
 //  Page
 // ---------------------------------------------------------------------
 export default function PricesPage() {
+  const { user } = useAuth();
   const { lang, t, toggle } = usePriceLang();
   const [zoomUrl, setZoomUrl] = useState<string | null>(null);
+  const canManagePrices = canAccessPricePermission(user, 'prices.manage');
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
@@ -741,10 +814,10 @@ export default function PricesPage() {
       </div>
 
       <Tabs defaultValue="scan">
-        <TabsList className="grid w-full grid-cols-3">
+        <TabsList className={`grid w-full ${canManagePrices ? 'grid-cols-3' : 'grid-cols-2'}`}>
           <TabsTrigger value="scan">{t.tab_scan}</TabsTrigger>
           <TabsTrigger value="photo">{t.tab_photo}</TabsTrigger>
-          <TabsTrigger value="list">{t.tab_list}</TabsTrigger>
+          {canManagePrices && <TabsTrigger value="list">{t.tab_list}</TabsTrigger>}
         </TabsList>
         <TabsContent value="scan" className="mt-4">
           <ChangePriceTab t={t} onZoom={setZoomUrl} />
@@ -752,9 +825,11 @@ export default function PricesPage() {
         <TabsContent value="photo" className="mt-4">
           <BigPhotoTab t={t} onZoom={setZoomUrl} />
         </TabsContent>
-        <TabsContent value="list" className="mt-4">
-          <ListTab t={t} />
-        </TabsContent>
+        {canManagePrices && (
+          <TabsContent value="list" className="mt-4">
+            <ListTab t={t} />
+          </TabsContent>
+        )}
       </Tabs>
 
       <Dialog open={!!zoomUrl} onOpenChange={open => !open && setZoomUrl(null)}>

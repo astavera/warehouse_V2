@@ -26,6 +26,9 @@ const corsHeaders: Record<string, string> = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
+const SEBASTIAN_ADMIN_AUTH_USER_ID = 'e7bb5b60-b264-49b2-8358-81d0f3c37b09';
+const SEBASTIAN_ADMIN_EMPLOYEE_ID = '77f47458-3aa1-4fdb-a08a-8e7924671ec1';
+const PRICE_ADMIN_ACTIONS = new Set(['sync', 'changes', 'catalog-missing', 'duplicates']);
 
 // Reflect whatever headers the browser asks for in the preflight, so an extra
 // header added by a newer supabase-js never breaks the CORS preflight.
@@ -702,7 +705,7 @@ function bearerToken(req: Request) {
   return (match?.[1] || '').trim();
 }
 
-async function requireSettingsAccess(db: Db, req: Request) {
+async function getRequestEmployee(db: Db, req: Request) {
   const token = bearerToken(req);
   if (!token) {
     const err = new Error('Not authenticated') as SquareError;
@@ -719,13 +722,14 @@ async function requireSettingsAccess(db: Db, req: Request) {
 
   const user = userData.user;
   const employeeId = typeof user.user_metadata?.employee_id === 'string' ? user.user_metadata.employee_id : null;
-  let employee: { role?: string | null; permissions?: string[] | null } | null = null;
+  let employee: { id?: string | null; auth_user_id?: string | null; role?: string | null; permissions?: string[] | null } | null = null;
 
   if (employeeId) {
     const { data, error } = await db
       .from('employees')
-      .select('role, permissions')
+      .select('id, auth_user_id, role, permissions')
       .eq('id', employeeId)
+      .eq('active', true)
       .maybeSingle();
     if (error) throw error;
     employee = data as typeof employee;
@@ -734,15 +738,45 @@ async function requireSettingsAccess(db: Db, req: Request) {
   if (!employee) {
     const { data, error } = await db
       .from('employees')
-      .select('role, permissions')
+      .select('id, auth_user_id, role, permissions')
       .eq('auth_user_id', user.id)
+      .eq('active', true)
       .maybeSingle();
     if (error) throw error;
     employee = data as typeof employee;
   }
 
+  if (!employee) {
+    const err = new Error('Not authenticated') as SquareError;
+    err.status = 401;
+    throw err;
+  }
+
+  return employee;
+}
+
+function isSebastianAdminEmployee(
+  employee: { id?: string | null; auth_user_id?: string | null } | null | undefined
+) {
+  return (
+    employee?.auth_user_id === SEBASTIAN_ADMIN_AUTH_USER_ID ||
+    employee?.id === SEBASTIAN_ADMIN_EMPLOYEE_ID
+  );
+}
+
+async function requirePriceAdmin(db: Db, req: Request) {
+  const employee = await getRequestEmployee(db, req);
+  if (isSebastianAdminEmployee(employee)) return;
+
+  const err = new Error('Price sync and print lists are restricted to Sebastian.') as SquareError;
+  err.status = 403;
+  throw err;
+}
+
+async function requireSettingsAccess(db: Db, req: Request) {
+  const employee = await getRequestEmployee(db, req);
   const permissions = Array.isArray(employee?.permissions) ? employee.permissions : [];
-  if (employee?.role === 'admin' || permissions.includes('settings')) return;
+  if (employee?.role === 'admin' || isSebastianAdminEmployee(employee) || permissions.includes('settings')) return;
 
   const err = new Error('Settings access required') as SquareError;
   err.status = 403;
@@ -1337,6 +1371,10 @@ Deno.serve(async req => {
 
     if (!tokenSet && (action === 'lookup' || action === 'sync' || action === 'audit')) {
       return jsonResponse({ error: 'SQUARE_ACCESS_TOKEN no esta configurado en el servidor.' }, 500);
+    }
+
+    if (PRICE_ADMIN_ACTIONS.has(action)) {
+      await requirePriceAdmin(db, req);
     }
 
     if (action === 'vendor-map-status') {

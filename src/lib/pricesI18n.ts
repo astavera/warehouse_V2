@@ -31,6 +31,13 @@ export type Dict = {
   ph_barcode: string;
   btn_search: string;
   btn_view: string;
+  btn_camera: string;
+  scanner_title: string;
+  scanner_hint: string;
+  scanner_close: string;
+  scanner_permission_err: string;
+  scanner_not_found_err: string;
+  scanner_start_err: string;
   btn_sync: string;
   btn_print: string;
   searching: string;
@@ -107,6 +114,13 @@ export const PRICE_I18N: Record<PriceLang, Dict> = {
     ph_barcode: 'Barcode / SKU',
     btn_search: 'Buscar',
     btn_view: 'Ver',
+    btn_camera: 'Escanear con camara',
+    scanner_title: 'Escanear barcode',
+    scanner_hint: 'Apunta la camara al barcode hasta que llene el cuadro.',
+    scanner_close: 'Cerrar',
+    scanner_permission_err: 'El permiso de camara fue bloqueado en este dispositivo.',
+    scanner_not_found_err: 'No se encontro camara en este dispositivo.',
+    scanner_start_err: 'No se pudo iniciar el escaner de camara.',
     btn_sync: 'Buscar cambios de precio',
     btn_print: 'Imprimir lista (con barcodes)',
     searching: 'Buscando…',
@@ -180,6 +194,13 @@ export const PRICE_I18N: Record<PriceLang, Dict> = {
     ph_barcode: 'Barcode / SKU',
     btn_search: 'Search',
     btn_view: 'View',
+    btn_camera: 'Scan with camera',
+    scanner_title: 'Scan barcode',
+    scanner_hint: 'Point the camera at the barcode until it fills the frame.',
+    scanner_close: 'Close',
+    scanner_permission_err: 'Camera permission was blocked on this device.',
+    scanner_not_found_err: 'No camera was found on this device.',
+    scanner_start_err: 'Camera scanner could not start.',
     btn_sync: 'Find price changes',
     btn_print: 'Print list (with barcodes)',
     searching: 'Searching…',

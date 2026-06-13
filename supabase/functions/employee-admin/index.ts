@@ -20,6 +20,8 @@ const PERMISSIONS = new Set([
   'accounting.reports',
   'accounting.catalogs',
 ]);
+const SEBASTIAN_ADMIN_AUTH_USER_ID = 'e7bb5b60-b264-49b2-8358-81d0f3c37b09';
+const SEBASTIAN_ADMIN_EMPLOYEE_ID = '77f47458-3aa1-4fdb-a08a-8e7924671ec1';
 
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -40,8 +42,15 @@ function errorMessage(error: unknown) {
   return String(error || 'Unknown employee admin error');
 }
 
-function isAdminEmployee(employee: { name?: string | null; role?: string | null }) {
-  return employee.role === 'admin' || (employee.name || '').trim().toLowerCase() === 'sebastian';
+function isSebastianAdmin(employee: { id?: string | null; auth_user_id?: string | null }) {
+  return (
+    employee.auth_user_id === SEBASTIAN_ADMIN_AUTH_USER_ID ||
+    employee.id === SEBASTIAN_ADMIN_EMPLOYEE_ID
+  );
+}
+
+function isAdminEmployee(employee: { id?: string | null; auth_user_id?: string | null; role?: string | null }) {
+  return employee.role === 'admin' || isSebastianAdmin(employee);
 }
 
 function cleanStoreNumber(value: unknown) {
@@ -97,7 +106,7 @@ Deno.serve(async req => {
 
     const { data: actor, error: actorError } = await admin
       .from('employees')
-      .select('id, name, role')
+      .select('id, auth_user_id, name, role')
       .eq('auth_user_id', authData.user.id)
       .eq('active', true)
       .maybeSingle();
@@ -112,7 +121,7 @@ Deno.serve(async req => {
       const passcode = typeof payload.passcode === 'string' ? payload.passcode.trim() : '';
       const role = cleanRole(payload.role || 'warehouse');
       const storeNumber = role === 'store' ? cleanStoreNumber(payload.storeNumber) : null;
-      const permissions = cleanPermissions(payload.permissions);
+      const permissions = role === 'store' ? ['prices'] : cleanPermissions(payload.permissions);
 
       if (!name) return jsonResponse({ error: 'Name is required' }, 400);
       if (!/^[0-9]{4}$/.test(passcode)) return jsonResponse({ error: 'Passcode must be 4 digits' }, 400);
@@ -159,6 +168,7 @@ Deno.serve(async req => {
         updates.store_number = cleanStoreNumber(patch.store_number ?? patch.storeNumber);
       }
       if (updates.role && updates.role !== 'store') updates.store_number = null;
+      if (updates.role === 'store') updates.permissions = ['prices'];
       if (Object.keys(updates).length === 0) return jsonResponse({ error: 'Nothing to update' }, 400);
 
       if (employeeId === actor.id && updates.role && updates.role !== 'admin') {

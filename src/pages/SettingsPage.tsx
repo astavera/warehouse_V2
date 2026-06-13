@@ -35,6 +35,7 @@ function cleanRole(role: string | null | undefined): EmployeeRole {
 }
 
 function cleanModules(value: string[] | null | undefined, role: EmployeeRole): AppModule[] {
+  if (role === 'store') return defaultModulesForRole(role);
   const modules = value?.filter((item): item is AppModule => APP_MODULES.includes(item as AppModule));
   return modules && modules.length > 0 ? modules : defaultModulesForRole(role);
 }
@@ -250,7 +251,8 @@ function EmployeeAccessCard({
 
   const savedRole = cleanRole(employee.role);
   const savedPermissions = cleanModules(employee.permissions, savedRole);
-  const effectivePermissions = role === 'admin' ? defaultModulesForRole('admin') : permissions;
+  const effectivePermissions =
+    role === 'admin' || role === 'store' ? defaultModulesForRole(role) : permissions;
   const isDirty =
     name !== employee.name ||
     role !== savedRole ||
@@ -398,7 +400,7 @@ function EmployeeAccessCard({
                 variant="ghost"
                 size="sm"
                 onClick={() => setPermissions(defaultModulesForRole(role))}
-                disabled={role === 'admin'}
+                disabled={role === 'admin' || role === 'store'}
                 className="gap-1.5"
               >
                 <RotateCcw className="h-4 w-4" />
@@ -410,8 +412,13 @@ function EmployeeAccessCard({
                 Admin users always keep full access.
               </p>
             )}
+            {role === 'store' && (
+              <p className="text-sm text-muted-foreground">
+                Store staff users only keep Prices access.
+              </p>
+            )}
             <PermissionToggleGrid
-              disabled={role === 'admin'}
+              disabled={role === 'admin' || role === 'store'}
               modules={effectivePermissions}
               onChange={setPermissions}
             />
@@ -478,7 +485,8 @@ export default function SettingsPage() {
   const createUser = async () => {
     setCreating(true);
     try {
-      const effectivePermissions = role === 'admin' ? defaultModulesForRole('admin') : permissions;
+      const effectivePermissions =
+        role === 'admin' || role === 'store' ? defaultModulesForRole(role) : permissions;
       await createEmployeeAccess({
         name: name.trim(),
         passcode,
@@ -590,7 +598,7 @@ export default function SettingsPage() {
                 variant="ghost"
                 size="sm"
                 onClick={() => setPermissions(defaultModulesForRole(role))}
-                disabled={role === 'admin'}
+                disabled={role === 'admin' || role === 'store'}
                 className="gap-1.5"
               >
                 <RotateCcw className="h-4 w-4" />
@@ -598,8 +606,8 @@ export default function SettingsPage() {
               </Button>
             </div>
             <PermissionToggleGrid
-              disabled={role === 'admin'}
-              modules={role === 'admin' ? defaultModulesForRole('admin') : permissions}
+              disabled={role === 'admin' || role === 'store'}
+              modules={role === 'admin' || role === 'store' ? defaultModulesForRole(role) : permissions}
               onChange={setPermissions}
             />
           </div>

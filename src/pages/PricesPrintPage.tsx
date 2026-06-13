@@ -3,6 +3,8 @@ import JsBarcode from 'jsbarcode';
 import { squarePrices, formatMoney, type PriceCatalogMissing, type PriceChange, type PriceDuplicate } from '@/hooks/useSquarePrices';
 import { groupPriceItems, UNKNOWN_PRICE_VENDOR, type PriceGroupBy } from '@/lib/priceCategories';
 import { getPriceLang, PRICE_I18N } from '@/lib/pricesI18n';
+import { useAuth } from '@/hooks/useAuth';
+import { canAccessPricePermission } from '@/lib/permissions';
 
 // Printable sheet ported from square-precios/public/print.html.
 // Renders a clean table (its own minimal layout, no app chrome) with a scannable
@@ -10,6 +12,7 @@ import { getPriceLang, PRICE_I18N } from '@/lib/pricesI18n';
 // Language follows the toggle picked in PricesPage (shared via localStorage),
 // or can be forced with ?lang=en|es.
 export default function PricesPrintPage() {
+  const { user, loading } = useAuth();
   const [items, setItems] = useState<Array<PriceChange | PriceCatalogMissing | PriceDuplicate> | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -26,6 +29,7 @@ export default function PricesPrintPage() {
   const emptyText = isDuplicates ? t.print_duplicates_empty : isMissingCatalog ? t.print_missing_empty : t.print_empty;
   const groupedItems = useMemo(() => groupPriceItems(items || [], groupBy), [items, groupBy]);
   const groupQueryPrefix = isDuplicates ? 'kind=duplicates&' : isMissingCatalog ? 'kind=missing&' : '';
+  const canPrintPrices = canAccessPricePermission(user, 'prices.manage');
 
   useEffect(() => {
     document.documentElement.lang = lang;
@@ -33,6 +37,7 @@ export default function PricesPrintPage() {
   }, [lang, title]);
 
   useEffect(() => {
+    if (loading || !canPrintPrices) return;
     const request = isDuplicates
       ? squarePrices.duplicates()
       : isMissingCatalog
@@ -42,7 +47,7 @@ export default function PricesPrintPage() {
       .then(data => setItems('duplicates' in data ? data.duplicates : 'missing' in data ? data.missing : data.changes))
       .catch(err => setError(err instanceof Error ? err.message : t.print_load_err));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isDuplicates, isMissingCatalog]);
+  }, [canPrintPrices, isDuplicates, isMissingCatalog, loading]);
 
   // Render barcodes once rows are in the DOM.
   useEffect(() => {
@@ -58,6 +63,14 @@ export default function PricesPrintPage() {
   }, [items]);
 
   const now = new Date();
+
+  if (!loading && !canPrintPrices) {
+    return (
+      <div style={{ fontFamily: 'Arial, Helvetica, sans-serif', color: '#111', margin: 24 }}>
+        <p style={{ color: '#b91c1c' }}>This print list is only available to the price admin.</p>
+      </div>
+    );
+  }
 
   return (
     <div style={{ fontFamily: 'Arial, Helvetica, sans-serif', color: '#111', margin: 24 }}>

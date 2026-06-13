@@ -1,5 +1,6 @@
 export type EmployeeRole = 'admin' | 'accounting' | 'warehouse' | 'store';
 export type AppModule = 'receiving' | 'expected_boxes' | 'prices' | 'audit' | 'accounting' | 'settings';
+export type PricePermission = 'prices.use' | 'prices.manage';
 export type AccountingPermission =
   | 'accounting.view'
   | 'accounting.manage'
@@ -9,6 +10,9 @@ export type AccountingPermission =
 
 export const EMPLOYEE_ROLES: EmployeeRole[] = ['admin', 'accounting', 'warehouse', 'store'];
 export const APP_MODULES: AppModule[] = ['receiving', 'expected_boxes', 'prices', 'audit', 'accounting', 'settings'];
+export const SEBASTIAN_ADMIN_AUTH_USER_ID = 'e7bb5b60-b264-49b2-8358-81d0f3c37b09';
+export const SEBASTIAN_ADMIN_EMPLOYEE_ID = '77f47458-3aa1-4fdb-a08a-8e7924671ec1';
+export const LOCAL_SEBASTIAN_ADMIN_EMPLOYEE_ID = '00000000-0000-0000-0000-000000000101';
 export const ACCOUNTING_PERMISSIONS: AccountingPermission[] = [
   'accounting.view',
   'accounting.manage',
@@ -18,18 +22,28 @@ export const ACCOUNTING_PERMISSIONS: AccountingPermission[] = [
 ];
 
 type PermissionUser = {
+  id?: string | null;
+  auth_user_id?: string | null;
   name?: string | null;
   permissions?: string[] | null;
   role?: string | null;
 };
 
+export function isSebastianAdmin(user: PermissionUser | null | undefined) {
+  return (
+    user?.auth_user_id === SEBASTIAN_ADMIN_AUTH_USER_ID ||
+    user?.id === SEBASTIAN_ADMIN_EMPLOYEE_ID ||
+    user?.id === LOCAL_SEBASTIAN_ADMIN_EMPLOYEE_ID
+  );
+}
+
 export function getEmployeeRole(user: PermissionUser | null | undefined): EmployeeRole {
   const role = user?.role;
+  if (isSebastianAdmin(user)) return 'admin';
   if (role === 'admin' || role === 'accounting' || role === 'warehouse' || role === 'store') {
     return role;
   }
 
-  if ((user?.name || '').trim().toLowerCase() === 'sebastian') return 'admin';
   return 'warehouse';
 }
 
@@ -48,6 +62,7 @@ export function defaultAccountingPermissionsForRole(role: EmployeeRole): Account
 export function getEffectiveModules(user: PermissionUser | null | undefined): AppModule[] {
   const role = getEmployeeRole(user);
   if (role === 'admin') return defaultModulesForRole(role);
+  if (role === 'store') return defaultModulesForRole(role);
 
   const custom = user?.permissions?.filter((module): module is AppModule =>
     APP_MODULES.includes(module as AppModule)
@@ -64,6 +79,15 @@ export function getEffectiveModules(user: PermissionUser | null | undefined): Ap
 
 export function canAccessModule(user: PermissionUser | null | undefined, module: AppModule) {
   return getEffectiveModules(user).includes(module);
+}
+
+export function canAccessPricePermission(
+  user: PermissionUser | null | undefined,
+  permission: PricePermission
+) {
+  if (!canAccessModule(user, 'prices')) return false;
+  if (permission === 'prices.use') return true;
+  return isSebastianAdmin(user);
 }
 
 export function getEffectiveAccountingPermissions(user: PermissionUser | null | undefined): AccountingPermission[] {
