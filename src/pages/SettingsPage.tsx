@@ -17,6 +17,7 @@ import {
   EMPLOYEE_ROLES,
   defaultModulesForRole,
   moduleLabel,
+  normalizeEmployeeRole,
   type AppModule,
   type EmployeeRole,
   roleLabel,
@@ -31,7 +32,7 @@ function getErrorMessage(error: unknown, fallback: string) {
 }
 
 function cleanRole(role: string | null | undefined): EmployeeRole {
-  return EMPLOYEE_ROLES.includes(role as EmployeeRole) ? (role as EmployeeRole) : 'warehouse';
+  return normalizeEmployeeRole(role);
 }
 
 function cleanModules(value: string[] | null | undefined, role: EmployeeRole): AppModule[] {

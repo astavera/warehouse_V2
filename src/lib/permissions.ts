@@ -20,6 +20,7 @@ export const ACCOUNTING_PERMISSIONS: AccountingPermission[] = [
   'accounting.reports',
   'accounting.catalogs',
 ];
+const STORE_ROLE_ALIASES = new Set(['store', 'staff', 'store_staff', 'staff_store', 'store-staff', 'staff-store']);
 
 type PermissionUser = {
   id?: string | null;
@@ -37,14 +38,16 @@ export function isSebastianAdmin(user: PermissionUser | null | undefined) {
   );
 }
 
-export function getEmployeeRole(user: PermissionUser | null | undefined): EmployeeRole {
-  const role = user?.role;
-  if (isSebastianAdmin(user)) return 'admin';
-  if (role === 'admin' || role === 'accounting' || role === 'warehouse' || role === 'store') {
-    return role;
-  }
-
+export function normalizeEmployeeRole(role: string | null | undefined): EmployeeRole {
+  const value = (role || '').trim().toLowerCase();
+  if (value === 'admin' || value === 'accounting' || value === 'warehouse') return value;
+  if (STORE_ROLE_ALIASES.has(value)) return 'store';
   return 'warehouse';
+}
+
+export function getEmployeeRole(user: PermissionUser | null | undefined): EmployeeRole {
+  if (isSebastianAdmin(user)) return 'admin';
+  return normalizeEmployeeRole(user?.role);
 }
 
 export function defaultModulesForRole(role: EmployeeRole): AppModule[] {
@@ -109,6 +112,7 @@ export function canAccessAccountingPermission(
 }
 
 export function getDefaultLandingPath(user: PermissionUser | null | undefined) {
+  if (getEmployeeRole(user) === 'store' && canAccessModule(user, 'prices')) return '/prices';
   if (getEmployeeRole(user) === 'accounting' && canAccessModule(user, 'accounting')) return '/accounting';
   if (canAccessModule(user, 'receiving')) return '/';
   if (canAccessModule(user, 'expected_boxes')) return '/expected-boxes';

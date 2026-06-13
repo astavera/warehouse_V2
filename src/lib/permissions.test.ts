@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   canAccessModule,
   canAccessPricePermission,
+  getDefaultLandingPath,
   getEffectiveModules,
   SEBASTIAN_ADMIN_AUTH_USER_ID,
 } from './permissions';
@@ -18,6 +19,19 @@ describe('permissions', () => {
     expect(canAccessModule(user, 'prices')).toBe(true);
     expect(canAccessModule(user, 'receiving')).toBe(false);
     expect(canAccessModule(user, 'settings')).toBe(false);
+  });
+
+  it('treats legacy staff role as store price staff', () => {
+    const user = {
+      id: 'legacy-staff-user',
+      role: 'staff',
+      permissions: ['receiving', 'prices', 'settings'],
+    };
+
+    expect(getEffectiveModules(user)).toEqual(['prices']);
+    expect(canAccessModule(user, 'prices')).toBe(true);
+    expect(canAccessModule(user, 'receiving')).toBe(false);
+    expect(getDefaultLandingPath(user)).toBe('/prices');
   });
 
   it('allows only Sebastian admin id to manage prices', () => {
