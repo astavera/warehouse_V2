@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/hooks/useAuth';
+import { getDefaultLandingPath } from '@/lib/permissions';
 
 const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'clear', '0', 'back'] as const;
 type Mode = 'login' | 'admin' | 'register';
@@ -51,7 +52,9 @@ export default function LoginPage() {
       setShowSuccess(true);
 
       window.setTimeout(() => {
+        const landingPath = getDefaultLandingPath(employee);
         completeSignIn(employee);
+        window.location.replace(landingPath);
       }, 250);
 
       toast.success(`Welcome, ${employee.name}`);
