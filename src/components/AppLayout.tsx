@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom';
-import { Package, ClipboardList, Truck, Users, BarChart3, Menu, X, LogOut, Warehouse, PackageSearch, Cloud, RefreshCw, WifiOff, Tag, SearchCheck, Settings, Landmark } from 'lucide-react';
+import { Package, ClipboardList, Truck, Users, BarChart3, Menu, X, LogOut, PackageSearch, Cloud, RefreshCw, WifiOff, Tag, SearchCheck, Settings, Landmark } from 'lucide-react';
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/hooks/useAuth';
@@ -50,12 +50,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 {open ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
               </button>
               <Link to="/" className="flex min-w-0 items-center gap-3 font-semibold">
-                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-sm">
-                  <Warehouse className="h-5 w-5" />
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border/70 bg-white shadow-sm">
+                  <img src="/all-zentro-logo-square.png" alt="" className="h-9 w-9 object-contain" />
                 </span>
                 <span className="min-w-0">
                   <span className="block truncate text-base font-semibold text-foreground">All Zentro Solutions</span>
-                  <span className="block truncate text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Modern State</span>
                 </span>
               </Link>
             </div>

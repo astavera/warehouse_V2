@@ -21,7 +21,6 @@ export default function LoginPage() {
   const [successName, setSuccessName] = useState('');
   const [showSuccess, setShowSuccess] = useState(false);
   const [statusMessage, setStatusMessage] = useState('');
-  const [now, setNow] = useState(() => new Date());
   const [verifiedAdminPasscode, setVerifiedAdminPasscode] = useState('');
   const autoSubmitLock = useRef(false);
 
@@ -84,14 +83,6 @@ export default function LoginPage() {
     void submit();
   }, [isAdminMode, isSignup, loading, passcode, showSuccess, submit]);
 
-  useEffect(() => {
-    const timer = window.setInterval(() => {
-      setNow(new Date());
-    }, 1000);
-
-    return () => window.clearInterval(timer);
-  }, []);
-
   const handleKeypad = (key: (typeof KEYS)[number]) => {
     if (loading) return;
     if (key === 'spacer') return;
@@ -102,32 +93,18 @@ export default function LoginPage() {
     setPasscode(prev => (prev.length < 4 ? `${prev}${key}` : prev));
   };
 
-  const formattedDate = now.toLocaleDateString('en-US', {
-    weekday: 'long',
-    month: 'long',
-    day: 'numeric',
-  });
-
-  const formattedTime = now.toLocaleTimeString('en-US', {
-    hour: 'numeric',
-    minute: '2-digit',
-  });
-
   return (
     <div className="app-surface min-h-screen px-4 py-5 sm:px-6 sm:py-6">
       <div className="mx-auto flex min-h-screen max-w-6xl items-center justify-center">
         <div className="grid w-full items-center gap-8 lg:grid-cols-[1.08fr_0.92fr] lg:gap-12">
           <div className="hidden lg:flex flex-col justify-center">
             <div className="max-w-xl">
-              <div className="mb-8 flex h-36 items-center px-1">
+              <div className="mb-8 flex h-52 items-center px-1">
                 <img
-                  src="/modern-state-logo-v2.png"
-                  alt="Modern State"
-                  className="h-[10rem] w-full max-w-[37rem] object-contain mix-blend-multiply"
+                  src="/all-zentro-logo.png"
+                  alt="All Zentro Solutions"
+                  className="h-[13rem] w-full max-w-[34rem] object-contain"
                 />
-              </div>
-              <div className="inline-flex items-center gap-2 rounded-lg border border-border/70 bg-white/75 px-3 py-1.5 text-[11px] font-medium uppercase tracking-[0.24em] text-muted-foreground shadow-sm backdrop-blur-sm">
-                Modern State
               </div>
               <h1 className="mt-5 text-5xl font-semibold tracking-[-0.05em] text-foreground xl:text-6xl">
                 All Zentro Solutions
@@ -152,26 +129,18 @@ export default function LoginPage() {
                 <p className="mt-3 text-sm text-muted-foreground">{statusMessage || 'Opening workspace...'}</p>
               </div>
 
-              <div className="mb-6 lg:hidden">
-                <div className="mx-auto flex h-24 w-full max-w-[19rem] items-center justify-center px-1">
+              <div className="mb-5 lg:hidden">
+                <div className="mx-auto flex h-36 w-full max-w-[17rem] items-center justify-center px-1">
                   <img
-                    src="/modern-state-logo-v2.png"
-                    alt="Modern State"
-                    className="h-[7rem] w-full object-contain mix-blend-multiply"
+                    src="/all-zentro-logo.png"
+                    alt="All Zentro Solutions"
+                    className="h-full w-full object-contain"
                   />
                 </div>
               </div>
 
               <div className="mb-6 text-center">
-                <p className="text-lg font-semibold tracking-tight text-foreground">All Zentro Solutions</p>
-                <p className="mt-1 text-[11px] font-medium uppercase tracking-[0.34em] text-muted-foreground">Modern State</p>
-                <div className="mt-3">
-                  <p className="text-[0.8rem] uppercase tracking-[0.28em] text-muted-foreground">{formattedDate}</p>
-                  <h2 className="mt-2 text-[2.15rem] font-semibold tracking-[-0.06em] text-foreground sm:text-[2.75rem]">
-                    {formattedTime}
-                  </h2>
-                </div>
-                <p className="mt-3 text-sm leading-6 text-muted-foreground">
+                <p className="text-sm leading-6 text-muted-foreground">
                   {isAdminMode
                     ? 'Admin verification required'
                     : isSignup
@@ -222,10 +191,10 @@ export default function LoginPage() {
                   )}
                 </div>
 
-                <div className="mx-auto grid w-fit grid-cols-3 justify-items-center gap-x-6 gap-y-3 sm:gap-x-8 sm:gap-y-4">
+                <div className="mx-auto grid w-fit grid-cols-3 justify-items-center gap-x-6 gap-y-4 sm:gap-x-8 sm:gap-y-4">
                   {KEYS.map(key => {
                     if (key === 'spacer') {
-                      return <div key={key} className="h-14 w-14 sm:h-16 sm:w-16" aria-hidden="true" />;
+                      return <div key={key} className="h-[4.35rem] w-[4.35rem] sm:h-20 sm:w-20" aria-hidden="true" />;
                     }
 
                     return (
@@ -234,7 +203,7 @@ export default function LoginPage() {
                         type="button"
                         variant="ghost"
                         className={cn(
-                          'h-14 w-14 rounded-full p-0 text-xl font-medium shadow-none transition-all duration-150 active:scale-95 sm:h-16 sm:w-16 sm:text-2xl',
+                          'h-[4.35rem] w-[4.35rem] rounded-full p-0 text-2xl font-medium shadow-none transition-all duration-150 active:scale-95 sm:h-20 sm:w-20 sm:text-3xl',
                           key === 'back'
                             ? 'border border-slate-400 bg-white text-slate-800 hover:bg-slate-50'
                             : 'bg-slate-700 text-white hover:bg-slate-800'
@@ -242,7 +211,7 @@ export default function LoginPage() {
                         onClick={() => handleKeypad(key)}
                         aria-label={key === 'back' ? 'Backspace' : `Number ${key}`}
                       >
-                        {key === 'back' ? <Delete className="h-4 w-4 sm:h-5 sm:w-5" /> : key}
+                        {key === 'back' ? <Delete className="h-5 w-5 sm:h-6 sm:w-6" /> : key}
                       </Button>
                     );
                   })}

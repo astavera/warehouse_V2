@@ -1,13 +1,12 @@
-const CACHE_NAME = 'warehouse-receiving-v3';
+const CACHE_NAME = 'warehouse-receiving-v4';
 const APP_SHELL = [
   '/',
   '/index.html',
   '/offline.html',
   '/manifest.webmanifest',
   '/favicon.ico',
-  '/modern-state-logo.png',
-  '/modern-state-logo-v2.png',
-  '/modern-state-logo-transparent.png',
+  '/all-zentro-logo.png',
+  '/all-zentro-logo-square.png',
 ];
 
 async function cacheBuildAssets(cache) {
