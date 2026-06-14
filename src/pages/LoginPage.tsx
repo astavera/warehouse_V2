@@ -9,7 +9,7 @@ import { cn } from '@/lib/utils';
 import { useAuth } from '@/hooks/useAuth';
 import { getDefaultLandingPath } from '@/lib/permissions';
 
-const KEYS = ['8', '0', '3', '2', '7', '9', '4', '1', '6', 'spacer', '5', 'back'] as const;
+const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'spacer', '0', 'back'] as const;
 type Mode = 'login' | 'admin' | 'register';
 
 export default function LoginPage() {
