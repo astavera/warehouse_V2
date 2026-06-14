@@ -9,7 +9,7 @@ import { cn } from '@/lib/utils';
 import { useAuth } from '@/hooks/useAuth';
 import { getDefaultLandingPath } from '@/lib/permissions';
 
-const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'clear', '0', 'back'] as const;
+const KEYS = ['8', '0', '3', '2', '7', '9', '4', '1', '6', 'spacer', '5', 'back'] as const;
 type Mode = 'login' | 'admin' | 'register';
 
 export default function LoginPage() {
@@ -94,10 +94,7 @@ export default function LoginPage() {
 
   const handleKeypad = (key: (typeof KEYS)[number]) => {
     if (loading) return;
-    if (key === 'clear') {
-      setPasscode('');
-      return;
-    }
+    if (key === 'spacer') return;
     if (key === 'back') {
       setPasscode(prev => prev.slice(0, -1));
       return;
@@ -225,23 +222,30 @@ export default function LoginPage() {
                   )}
                 </div>
 
-                <div className="grid grid-cols-3 gap-2.5">
-                  {KEYS.map(key => (
-                    <Button
-                      key={key}
-                      type="button"
-                      variant="ghost"
-                      className={cn(
-                        'h-14 rounded-xl text-lg font-medium shadow-none transition-all duration-200 active:scale-[0.98]',
-                        key === 'clear'
-                          ? 'border-transparent bg-transparent text-muted-foreground hover:bg-muted/60'
-                          : 'bg-white/94 ring-1 ring-black/6 hover:bg-[#f7f7f8] hover:ring-black/10'
-                      )}
-                      onClick={() => handleKeypad(key)}
-                    >
-                      {key === 'clear' ? 'Clear' : key === 'back' ? <Delete className="h-5 w-5" /> : key}
-                    </Button>
-                  ))}
+                <div className="mx-auto grid w-fit grid-cols-3 justify-items-center gap-x-6 gap-y-3 sm:gap-x-8 sm:gap-y-4">
+                  {KEYS.map(key => {
+                    if (key === 'spacer') {
+                      return <div key={key} className="h-14 w-14 sm:h-16 sm:w-16" aria-hidden="true" />;
+                    }
+
+                    return (
+                      <Button
+                        key={key}
+                        type="button"
+                        variant="ghost"
+                        className={cn(
+                          'h-14 w-14 rounded-full p-0 text-xl font-medium shadow-none transition-all duration-150 active:scale-95 sm:h-16 sm:w-16 sm:text-2xl',
+                          key === 'back'
+                            ? 'border border-slate-400 bg-white text-slate-800 hover:bg-slate-50'
+                            : 'bg-slate-700 text-white hover:bg-slate-800'
+                        )}
+                        onClick={() => handleKeypad(key)}
+                        aria-label={key === 'back' ? 'Backspace' : `Number ${key}`}
+                      >
+                        {key === 'back' ? <Delete className="h-4 w-4 sm:h-5 sm:w-5" /> : key}
+                      </Button>
+                    );
+                  })}
                 </div>
 
               </form>
