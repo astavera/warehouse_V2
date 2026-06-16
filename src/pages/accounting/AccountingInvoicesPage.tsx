@@ -1,11 +1,12 @@
 import { useMemo, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { Camera, CreditCard, Edit, Loader2, MapPin, Plus, RotateCcw, Save, Search, SlidersHorizontal, Trash2, Users } from 'lucide-react';
+import { Camera, CreditCard, Edit, ListChecks, Loader2, MapPin, Plus, RotateCcw, Save, Search, SlidersHorizontal, Trash2, Users } from 'lucide-react';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -77,6 +78,7 @@ type CheckPaymentLine = {
   photo_name: string;
   photo_path: string;
   photo_preview: string;
+  sent_date: string;
   sent_to_address: string;
 };
 
@@ -124,6 +126,20 @@ type PayInvoiceFormState = {
   reference_number: string;
 };
 
+type CombinedInvoicePaymentFormState = {
+  account_id: string;
+  account_number: string;
+  category_id: string;
+  checkLines: CheckPaymentLine[];
+  notes: string;
+  payment_date: string;
+  payment_method_id: string;
+  reference_number: string;
+  selectedInvoiceIds: string[];
+  sent_to_address: string;
+  vendor_id: string;
+};
+
 function getErrorMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
 }
@@ -153,7 +169,7 @@ function createLocalId(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function createCheckPaymentLine(amount = ''): CheckPaymentLine {
+function createCheckPaymentLine(amount = '', sentDate = ''): CheckPaymentLine {
   return {
     amount,
     check_number: '',
@@ -165,7 +181,25 @@ function createCheckPaymentLine(amount = ''): CheckPaymentLine {
     photo_name: '',
     photo_path: '',
     photo_preview: '',
+    sent_date: sentDate,
     sent_to_address: '',
+  };
+}
+
+function createCombinedInvoicePaymentForm(): CombinedInvoicePaymentFormState {
+  const today = new Date().toISOString().slice(0, 10);
+  return {
+    account_id: 'none',
+    account_number: '',
+    category_id: 'none',
+    checkLines: [createCheckPaymentLine('', today)],
+    notes: '',
+    payment_date: today,
+    payment_method_id: 'none',
+    reference_number: '',
+    selectedInvoiceIds: [],
+    sent_to_address: '',
+    vendor_id: 'none',
   };
 }
 
@@ -181,6 +215,7 @@ function normalizeCheckPaymentLines(lines: CheckPaymentLine[]) {
       photo_data_url: line.photo_preview || null,
       photo_name: line.photo_name || null,
       photo_path: line.photo_path || null,
+      sent_date: line.sent_date || null,
       sent_to_address: line.sent_to_address.trim(),
     }))
     .filter(line => line.amount || line.check_number || line.sent_to_address || line.photo_data_url || line.photo_path);
@@ -219,6 +254,7 @@ async function prepareCheckPaymentLinesForSave(lines: CheckPaymentLine[], paymen
       photo_data_url: localPhotoDataUrl || (!photoPath ? line.photo_preview : null),
       photo_name: line.photo_name || null,
       photo_path: photoPath || null,
+      sent_date: line.sent_date || null,
       sent_to_address: line.sent_to_address.trim(),
     };
   }));
@@ -487,6 +523,14 @@ function methodIdForKind(
 ) {
   const preferred = kind === 'credit_card' ? ['credit card', 'card'] : ['bank check', 'check'];
   return methods.find(method => preferred.some(label => normalizeText(method.name).includes(label)))?.id || 'none';
+}
+
+function moneyDifference(left: string | number | null | undefined, right: string | number | null | undefined) {
+  const leftCents = decimalStringToCents(left);
+  const rightCents = decimalStringToCents(right);
+  return leftCents >= rightCents
+    ? finalAmountToPay(left, right)
+    : finalAmountToPay(right, left);
 }
 
 function dueRowClass(invoice: AccountingInvoice) {
@@ -1267,6 +1311,345 @@ function PayInvoiceDialog({
   );
 }
 
+function CombinedInvoicePaymentDialog({
+  form,
+  invoices,
+  onChange,
+  onClose,
+  onSave,
+  open,
+  saving,
+}: {
+  form: CombinedInvoicePaymentFormState;
+  invoices: AccountingInvoice[];
+  onChange: (patch: Partial<CombinedInvoicePaymentFormState>) => void;
+  onClose: () => void;
+  onSave: () => void;
+  open: boolean;
+  saving: boolean;
+}) {
+  const { data: catalogs } = useAccountingCatalogs();
+  const selectedVendor = catalogs?.vendors.find(vendor => vendor.id === form.vendor_id) || null;
+  const activeAccounts = (catalogs?.accounts || []).filter(account => account.active !== false);
+  const bankAccounts = activeAccounts.filter(account => !isCreditCardAccount(account));
+  const accountOptions = bankAccounts.length ? bankAccounts : activeAccounts;
+  const candidateInvoices = useMemo(
+    () => invoices
+      .filter(invoice => !isInvoicePaid(invoice) && invoice.vendor_id === form.vendor_id)
+      .sort((a, b) => String(a.due_date || '').localeCompare(String(b.due_date || ''))),
+    [form.vendor_id, invoices]
+  );
+  const selectedInvoiceIdSet = useMemo(() => new Set(form.selectedInvoiceIds), [form.selectedInvoiceIds]);
+  const selectedInvoices = useMemo(
+    () => candidateInvoices.filter(invoice => selectedInvoiceIdSet.has(invoice.id)),
+    [candidateInvoices, selectedInvoiceIdSet]
+  );
+  const selectedTotal = addMoney(selectedInvoices.map(invoice => invoice.final_amount_to_pay || finalAmountToPay(invoice.amount, invoice.credit)));
+  const checkTotal = checkPaymentTotal(form.checkLines);
+  const balanceCents = decimalStringToCents(selectedTotal) - decimalStringToCents(checkTotal);
+  const balanceAmount = moneyDifference(selectedTotal, checkTotal);
+  const hasCheckTotal = decimalStringToCents(checkTotal) > 0n;
+  const canSave = form.vendor_id !== 'none' && selectedInvoices.length > 0 && hasCheckTotal && balanceCents === 0n;
+  const allSelected = candidateInvoices.length > 0 && candidateInvoices.every(invoice => selectedInvoiceIdSet.has(invoice.id));
+
+  const selectVendor = (vendorId: string) => {
+    const vendor = catalogs?.vendors.find(item => item.id === vendorId);
+    const defaultMethod = catalogs?.paymentMethods.find(item => item.id === vendor?.default_payment_method_id);
+    const methodId = methodIdForKind('check', catalogs?.paymentMethods || []);
+    const vendorMethodIsCheck = paymentKindFromMethodName(defaultMethod?.name) === 'check';
+    const keepAccountId = accountOptions.some(account => account.id === form.account_id);
+    onChange({
+      account_id: keepAccountId ? form.account_id : 'none',
+      account_number: vendor?.account_number || '',
+      checkLines: form.checkLines.length ? form.checkLines : [createCheckPaymentLine('', form.payment_date)],
+      payment_method_id: vendorMethodIsCheck && defaultMethod ? defaultMethod.id : methodId,
+      selectedInvoiceIds: [],
+      sent_to_address: vendor?.address || '',
+      vendor_id: vendorId,
+    });
+  };
+
+  const toggleInvoice = (invoiceId: string, checked: boolean) => {
+    onChange({
+      selectedInvoiceIds: checked
+        ? [...form.selectedInvoiceIds, invoiceId]
+        : form.selectedInvoiceIds.filter(id => id !== invoiceId),
+    });
+  };
+
+  const toggleAll = (checked: boolean) => {
+    onChange({
+      selectedInvoiceIds: checked ? candidateInvoices.map(invoice => invoice.id) : [],
+    });
+  };
+
+  const updateCheckLine = (id: string, patch: Partial<CheckPaymentLine>) => {
+    onChange({
+      checkLines: form.checkLines.map(line => line.id === id ? { ...line, ...patch } : line),
+    });
+  };
+
+  const addCheckLine = () => {
+    const nextAmount = balanceCents > 0n ? balanceAmount : '';
+    onChange({
+      checkLines: [
+        ...form.checkLines,
+        createCheckPaymentLine(nextAmount, form.payment_date),
+      ],
+    });
+  };
+
+  const removeCheckLine = (id: string) => {
+    const nextLines = form.checkLines.filter(line => line.id !== id);
+    onChange({ checkLines: nextLines.length ? nextLines : [createCheckPaymentLine('', form.payment_date)] });
+  };
+
+  const applyVendorAddress = () => {
+    if (!selectedVendor?.address) return;
+    onChange({ sent_to_address: selectedVendor.address });
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={value => !value && onClose()}>
+      <DialogContent className="max-h-[90vh] max-w-6xl overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Pay multiple invoices</DialogTitle>
+          <DialogDescription>
+            Create one combined vendor payment with multiple checks.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_220px_260px]">
+          <div className="space-y-1.5">
+            <Label>Vendor</Label>
+            <Select value={form.vendor_id} onValueChange={selectVendor}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Choose vendor</SelectItem>
+                {catalogs?.vendors.map(vendor => (
+                  <SelectItem key={vendor.id} value={vendor.id}>{vendor.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label>Payment date</Label>
+            <Input type="date" value={form.payment_date} onChange={event => onChange({ payment_date: event.target.value })} />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Bank/check account used</Label>
+            <Select value={form.account_id} onValueChange={value => onChange({ account_id: value })}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">No account selected</SelectItem>
+                {accountOptions.map(account => (
+                  <SelectItem key={account.id} value={account.id}>{accountLabel(account)}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+
+        <div className="grid gap-4 lg:grid-cols-[minmax(180px,0.7fr)_minmax(180px,0.7fr)_minmax(0,1fr)]">
+          <div className="space-y-1.5">
+            <Label>Vendor account #</Label>
+            <Input value={form.account_number} onChange={event => onChange({ account_number: event.target.value })} />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Category</Label>
+            <Select value={form.category_id} onValueChange={value => onChange({ category_id: value })}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Keep invoice categories</SelectItem>
+                {catalogs?.categories.map(category => (
+                  <SelectItem key={category.id} value={category.id}>{category.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-3">
+            <div className="rounded-lg border bg-muted/20 px-3 py-2">
+              <div className="text-xs text-muted-foreground">Selected</div>
+              <div className="text-lg font-semibold tabular-nums"><MoneyText value={selectedTotal} /></div>
+            </div>
+            <div className="rounded-lg border bg-muted/20 px-3 py-2">
+              <div className="text-xs text-muted-foreground">Checks total</div>
+              <div className="text-lg font-semibold tabular-nums"><MoneyText value={checkTotal} /></div>
+            </div>
+            <div className={cn(
+              'rounded-lg border px-3 py-2',
+              balanceCents === 0n && hasCheckTotal ? 'bg-emerald-50 text-emerald-950' : 'bg-amber-50 text-amber-950'
+            )}>
+              <div className="text-xs">{balanceCents < 0n ? 'Over by' : 'Remaining'}</div>
+              <div className="text-lg font-semibold tabular-nums"><MoneyText value={balanceAmount} /></div>
+            </div>
+          </div>
+        </div>
+
+        <div className="space-y-3 rounded-lg border bg-muted/10 p-3">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <Label>Open invoices</Label>
+              <div className="text-xs text-muted-foreground">{selectedInvoices.length} selected from this vendor</div>
+            </div>
+            <Badge variant="outline">{candidateInvoices.length} open</Badge>
+          </div>
+          {form.vendor_id === 'none' ? (
+            <EmptyState label="Choose a vendor to see open invoices." />
+          ) : candidateInvoices.length ? (
+            <div className="max-h-[300px] overflow-auto rounded-md border bg-white">
+              <Table>
+                <TableHeader className="sticky top-0 z-10 bg-white">
+                  <TableRow>
+                    <TableHead className="w-10">
+                      <Checkbox
+                        aria-label="Select all invoices"
+                        checked={allSelected}
+                        onCheckedChange={checked => toggleAll(checked === true)}
+                      />
+                    </TableHead>
+                    <TableHead>Invoice</TableHead>
+                    <TableHead>Store</TableHead>
+                    <TableHead>Due</TableHead>
+                    <TableHead className="text-right">Final</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {candidateInvoices.map(invoice => {
+                    const checked = selectedInvoiceIdSet.has(invoice.id);
+                    return (
+                      <TableRow key={invoice.id} className={cn('cursor-pointer', checked ? 'bg-primary/5' : dueRowClass(invoice))}>
+                        <TableCell>
+                          <Checkbox
+                            aria-label={`Select invoice ${compactMultiLine(invoice.invoice_number) || invoice.id}`}
+                            checked={checked}
+                            onCheckedChange={nextChecked => toggleInvoice(invoice.id, nextChecked === true)}
+                          />
+                        </TableCell>
+                        <TableCell className="max-w-[260px] whitespace-normal font-medium">{compactMultiLine(invoice.invoice_number) || '-'}</TableCell>
+                        <TableCell>{invoice.accounting_stores?.name || '-'}</TableCell>
+                        <TableCell>{invoice.due_date || '-'}</TableCell>
+                        <TableCell className="text-right font-semibold">
+                          <MoneyText value={invoice.final_amount_to_pay || finalAmountToPay(invoice.amount, invoice.credit)} />
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </div>
+          ) : (
+            <EmptyState label="No open invoices found for this vendor." />
+          )}
+        </div>
+
+        <div className="space-y-3 rounded-lg border bg-muted/10 p-3">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <Label>Checks</Label>
+              <div className="text-xs text-muted-foreground">Same mailing address for all checks.</div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Badge variant="outline">Total: <MoneyText value={checkTotal} /></Badge>
+              <Button type="button" variant="outline" onClick={addCheckLine} className="gap-1.5">
+                <Plus className="h-4 w-4" />
+                Add check
+              </Button>
+            </div>
+          </div>
+
+          <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_240px] xl:grid-cols-[minmax(0,1fr)_260px]">
+            <div className="overflow-x-auto rounded-md border bg-white">
+              <div className="min-w-[490px]">
+                <div className="grid grid-cols-[32px_124px_104px_148px_34px] gap-2 border-b bg-muted/30 px-2 py-1.5 text-[11px] font-medium text-muted-foreground">
+                  <span>#</span>
+                  <span>Check #</span>
+                  <span>Amount</span>
+                  <span>Date sent</span>
+                  <span />
+                </div>
+                <div className="divide-y">
+                  {form.checkLines.map((line, index) => (
+                    <div key={line.id} className="grid grid-cols-[32px_124px_104px_148px_34px] gap-2 px-2 py-1.5">
+                      <div className="flex items-center text-sm font-semibold text-muted-foreground">{index + 1}</div>
+                      <Input
+                        value={line.check_number}
+                        onChange={event => updateCheckLine(line.id, { check_number: event.target.value })}
+                        placeholder="Check number"
+                        className="h-8 px-2"
+                      />
+                      <Input
+                        inputMode="decimal"
+                        value={line.amount}
+                        onChange={event => updateCheckLine(line.id, { amount: event.target.value })}
+                        placeholder="0.00"
+                        className="h-8 px-2"
+                      />
+                      <Input
+                        type="date"
+                        value={line.sent_date}
+                        onChange={event => updateCheckLine(line.id, { sent_date: event.target.value })}
+                        className="h-8 px-2"
+                      />
+                      <Button type="button" variant="ghost" size="icon" onClick={() => removeCheckLine(line.id)} aria-label="Remove check" className="h-8 w-8">
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between gap-2">
+                <Label>Sent to address</Label>
+                {selectedVendor?.address && (
+                  <Button type="button" variant="ghost" size="sm" onClick={applyVendorAddress} className="h-7 gap-1 px-2">
+                    <MapPin className="h-3.5 w-3.5" />
+                    Vendor
+                  </Button>
+                )}
+              </div>
+              <Textarea
+                value={form.sent_to_address}
+                onChange={event => onChange({ sent_to_address: event.target.value })}
+                className="min-h-[84px] text-sm"
+                placeholder="Mailing address for all checks"
+              />
+              <div className="text-xs text-muted-foreground">
+                Saved on every check in this batch.
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="grid gap-4 lg:grid-cols-2">
+          <div className="space-y-1.5">
+            <Label>Reference / confirmation</Label>
+            <Textarea value={form.reference_number} onChange={event => onChange({ reference_number: event.target.value })} />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Payment notes</Label>
+            <Textarea value={form.notes} onChange={event => onChange({ notes: event.target.value })} />
+          </div>
+        </div>
+
+        <DialogFooter className="gap-2">
+          {balanceCents !== 0n && (
+            <div className="mr-auto text-sm text-muted-foreground">
+              Checks must match selected invoices before saving.
+            </div>
+          )}
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={onSave} disabled={saving || !canSave} className="gap-1.5">
+            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <ListChecks className="h-4 w-4" />}
+            Save combined payment
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function AccountingInvoicesPage() {
   const [includeAllInvoices, setIncludeAllInvoices] = useState(false);
   const { data: invoices = [], isLoading, isFetching } = useAccountingInvoices({ includeAll: includeAllInvoices });
@@ -1298,6 +1681,9 @@ export default function AccountingInvoicesPage() {
     reference_number: '',
   });
   const [payDialogOpen, setPayDialogOpen] = useState(false);
+  const [combinedPayForm, setCombinedPayForm] = useState<CombinedInvoicePaymentFormState>(() => createCombinedInvoicePaymentForm());
+  const [combinedPayDialogOpen, setCombinedPayDialogOpen] = useState(false);
+  const [combinedPaySaving, setCombinedPaySaving] = useState(false);
   const [loadingInvoiceAction, setLoadingInvoiceAction] = useState<{ action: 'edit' | 'pay'; id: string } | null>(null);
 
   const displayInvoices = useMemo(() => {
@@ -1383,6 +1769,28 @@ export default function AccountingInvoicesPage() {
     setEditing(null);
     setForm(EMPTY_FORM);
     setDialogOpen(true);
+  };
+
+  const openCombinedPay = () => {
+    const initialVendorId = vendorFilter !== 'all' ? vendorFilter : 'none';
+    const vendor = catalogs?.vendors.find(item => item.id === initialVendorId);
+    const defaultMethod = catalogs?.paymentMethods.find(item => item.id === vendor?.default_payment_method_id);
+    const methodId = methodIdForKind('check', catalogs?.paymentMethods || []);
+    const activeAccounts = (catalogs?.accounts || []).filter(account => account.active !== false);
+    const bankAccounts = activeAccounts.filter(account => !isCreditCardAccount(account));
+    const accountOptions = bankAccounts.length ? bankAccounts : activeAccounts;
+    setCombinedPayForm({
+      ...createCombinedInvoicePaymentForm(),
+      account_id: 'none',
+      account_number: vendor?.account_number || '',
+      payment_method_id: paymentKindFromMethodName(defaultMethod?.name) === 'check' && defaultMethod
+        ? defaultMethod.id
+        : methodId,
+      sent_to_address: vendor?.address || '',
+      vendor_id: vendor ? vendor.id : 'none',
+      ...(accountOptions.length === 1 ? { account_id: accountOptions[0].id } : {}),
+    });
+    setCombinedPayDialogOpen(true);
   };
 
   const openEdit = async (invoice: AccountingInvoice) => {
@@ -1536,16 +1944,105 @@ export default function AccountingInvoicesPage() {
     }
   };
 
+  const payMultipleInvoices = async () => {
+    const selectedInvoices = displayInvoices.filter(invoice => combinedPayForm.selectedInvoiceIds.includes(invoice.id));
+    if (!selectedInvoices.length) return;
+
+    const selectedTotal = addMoney(selectedInvoices.map(invoice => invoice.final_amount_to_pay || finalAmountToPay(invoice.amount, invoice.credit)));
+    const checkTotal = checkPaymentTotal(combinedPayForm.checkLines);
+    if (decimalStringToCents(selectedTotal) !== decimalStringToCents(checkTotal)) {
+      toast.error('Check total must match selected invoices');
+      return;
+    }
+
+    const batchId = createLocalId('combined-payment-batch');
+    const categoryId = combinedPayForm.category_id === 'none' ? null : combinedPayForm.category_id;
+    const selectedVendor = catalogs?.vendors.find(vendor => vendor.id === combinedPayForm.vendor_id);
+    setCombinedPaySaving(true);
+    try {
+      const checksForSave = combinedPayForm.checkLines.map(line => ({
+        ...line,
+        sent_to_address: combinedPayForm.sent_to_address,
+      }));
+      const checkLines = await prepareCheckPaymentLinesForSave(checksForSave, batchId);
+      const checkNumbers = checkLines.map(line => line.check_number).filter(Boolean).join('\n');
+      const checkAddresses = Array.from(new Set(checkLines.map(line => line.confirmed_address || line.sent_to_address).filter(Boolean)));
+      const allocations = selectedInvoices.map(invoice => ({
+        amount_applied: invoice.final_amount_to_pay || finalAmountToPay(invoice.amount, invoice.credit),
+        due_date: invoice.due_date,
+        invoice_id: invoice.id,
+        invoice_number: invoice.invoice_number,
+        store_id: invoice.store_id,
+      }));
+
+      for (const invoice of selectedInvoices) {
+        const amountApplied = invoice.final_amount_to_pay || finalAmountToPay(invoice.amount, invoice.credit);
+        await createInvoicePayment.mutateAsync({
+          account_id: combinedPayForm.account_id === 'none' ? null : combinedPayForm.account_id,
+          account_number: combinedPayForm.account_number || vendorAccountNumberForStore(selectedVendor, invoice.store_id) || null,
+          amount_paid: amountApplied,
+          category_id: categoryId ?? invoice.category_id,
+          check_number: checkNumbers || null,
+          id: createLocalId('accounting-payment'),
+          invoice_id: invoice.id,
+          invoice_number: invoice.invoice_number,
+          notes: combinedPayForm.notes || null,
+          payment_date: combinedPayForm.payment_date || null,
+          payment_method_id: combinedPayForm.payment_method_id === 'none' ? null : combinedPayForm.payment_method_id,
+          raw_payload: {
+            check_split_lines: checkLines,
+            check_split_total: checkTotal,
+            combined_payment: true,
+            combined_payment_allocations: allocations,
+            combined_payment_batch_id: batchId,
+            combined_payment_invoice_count: selectedInvoices.length,
+            combined_payment_invoice_ids: selectedInvoices.map(row => row.id),
+            combined_payment_total: selectedTotal,
+            mailed_to_addresses: checkAddresses,
+            payment_method_kind: 'check',
+          },
+          reference_number: combinedPayForm.reference_number || null,
+          status: 'Paid',
+          store_id: invoice.store_id,
+          vendor_id: invoice.vendor_id,
+        });
+        await updateInvoice.mutateAsync({
+          id: invoice.id,
+          patch: {
+            category_id: categoryId ?? invoice.category_id,
+            paid: true,
+            status: 'paid',
+          },
+        });
+      }
+
+      toast.success(`Combined payment saved for ${selectedInvoices.length} invoices`);
+      setCombinedPayForm(createCombinedInvoicePaymentForm());
+      setCombinedPayDialogOpen(false);
+      navigate('/accounting/paid-invoices');
+    } catch (error) {
+      toast.error(getErrorMessage(error, 'Could not save combined payment'));
+    } finally {
+      setCombinedPaySaving(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <AccountingPageHeader
         title="Invoices"
         description="Pending and paid AP invoices imported from Modern State plus manual AP entries."
         actions={
-          <Button onClick={openCreate} className="gap-1.5">
-            <Plus className="h-4 w-4" />
-            Create invoice
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" onClick={openCombinedPay} className="gap-1.5">
+              <ListChecks className="h-4 w-4" />
+              Pay multiple
+            </Button>
+            <Button onClick={openCreate} className="gap-1.5">
+              <Plus className="h-4 w-4" />
+              Create invoice
+            </Button>
+          </div>
         }
       />
 
@@ -1785,6 +2282,15 @@ export default function AccountingInvoicesPage() {
         onSave={() => void payInvoice()}
         open={payDialogOpen}
         saving={createInvoicePayment.isPending || updateInvoice.isPending}
+      />
+      <CombinedInvoicePaymentDialog
+        form={combinedPayForm}
+        invoices={displayInvoices}
+        onChange={patch => setCombinedPayForm(current => ({ ...current, ...patch }))}
+        onClose={() => setCombinedPayDialogOpen(false)}
+        onSave={() => void payMultipleInvoices()}
+        open={combinedPayDialogOpen}
+        saving={combinedPaySaving}
       />
     </div>
   );
