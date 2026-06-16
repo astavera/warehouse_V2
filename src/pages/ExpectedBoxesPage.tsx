@@ -7,9 +7,8 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { useAuth } from '@/hooks/useAuth';
-import { useEmployees, useSuppliers } from '@/hooks/useSupabaseData';
+import { useSuppliers } from '@/hooks/useSupabaseData';
 import {
-  useExpectedBoxAccess,
   useExpectedBoxRecipients,
   useExpectedBoxes,
   syncExpectedBoxTracking,
@@ -17,6 +16,7 @@ import {
   type ExpectedBoxStatus,
   type MatchCondition,
 } from '@/hooks/useExpectedBoxes';
+import { canAccessModule } from '@/lib/permissions';
 import { toast } from 'sonner';
 
 const STATUS_META: Record<ExpectedBoxStatus, { label: string; className: string; icon: typeof Clock3 }> = {
@@ -108,9 +108,7 @@ function getErrorMessage(error: unknown, fallback: string) {
 export default function ExpectedBoxesPage() {
   const { user } = useAuth();
   const { suppliers } = useSuppliers();
-  const { employees } = useEmployees();
   const { boxes, loading: boxesLoading, refetch: refetchExpectedBoxes, addExpectedBox, updateExpectedBox, deleteExpectedBox } = useExpectedBoxes();
-  const { access, grantAccess, revokeAccess } = useExpectedBoxAccess();
   const { recipients, addRecipient, updateRecipient } = useExpectedBoxRecipients();
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | ExpectedBoxStatus>('all');
@@ -119,7 +117,6 @@ export default function ExpectedBoxesPage() {
   const [editOpen, setEditOpen] = useState(false);
   const [recipientOpen, setRecipientOpen] = useState(false);
   const [matchCondition, setMatchCondition] = useState<MatchCondition>('supplier_only');
-  const [accessEmployeeId, setAccessEmployeeId] = useState('');
   const [recipientName, setRecipientName] = useState('');
   const [recipientEmail, setRecipientEmail] = useState('');
   const [carrier, setCarrier] = useState<'FedEx' | 'UPS' | 'USPS' | 'Amazon'>('FedEx');
@@ -194,14 +191,8 @@ export default function ExpectedBoxesPage() {
 
   const selectedBox = selectedId ? boxes.find(box => box.id === selectedId) || null : null;
   const activeRecipients = recipients.filter(recipient => recipient.active);
-  const normalizedUserName = user?.name?.trim().toLowerCase() || '';
-  const canConfigureExpectedBoxesAccess = normalizedUserName === 'sebastian' || normalizedUserName.includes('admin');
-  const canUseExpectedBoxes = Boolean(user && access.some(entry => entry.employee_id === user.id && entry.can_view));
-  const canAccessExpectedBoxes = canUseExpectedBoxes || canConfigureExpectedBoxesAccess;
-  const canManageNotifications = canUseExpectedBoxes || canConfigureExpectedBoxesAccess;
-  const accessEmployees = employees;
-  const allowedExpectedBoxUsers = accessEmployees.filter(employee => access.some(entry => entry.employee_id === employee.id && entry.can_view));
-  const selectableAccessUsers = accessEmployees.filter(employee => !allowedExpectedBoxUsers.some(allowed => allowed.id === employee.id));
+  const canAccessExpectedBoxes = canAccessModule(user, 'expected_boxes');
+  const canManageNotifications = canAccessExpectedBoxes;
 
   useEffect(() => {
     if (!selectedId || addOpen || editOpen || recipientOpen) return;
@@ -215,26 +206,6 @@ export default function ExpectedBoxesPage() {
     document.addEventListener('pointerdown', handlePointerDown, true);
     return () => document.removeEventListener('pointerdown', handlePointerDown, true);
   }, [selectedId, addOpen, editOpen, recipientOpen]);
-
-  const handleGrantAccess = async () => {
-    if (!accessEmployeeId) return;
-    try {
-      await grantAccess(accessEmployeeId, user?.id);
-      setAccessEmployeeId('');
-      toast.success('Expected Boxes access granted');
-    } catch (err) {
-      toast.error(getErrorMessage(err, 'Failed to grant access'));
-    }
-  };
-
-  const handleRevokeAccess = async (employeeId: string) => {
-    try {
-      await revokeAccess(employeeId);
-      toast.success('Expected Boxes access removed');
-    } catch (err) {
-      toast.error(getErrorMessage(err, 'Failed to remove access'));
-    }
-  };
 
   const handleAddRecipient = async () => {
     if (!recipientName.trim() || !recipientEmail.trim()) return;
@@ -398,7 +369,7 @@ export default function ExpectedBoxesPage() {
           </div>
           <h1 className="mt-4 text-xl font-semibold text-foreground">Expected Boxes is restricted</h1>
           <p className="mt-2 text-sm leading-6 text-muted-foreground">
-            This module is only available for Sharon. Sign in as Sharon to manage expected boxes and notifications.
+            Ask an admin to grant Expected Boxes access in Settings.
           </p>
         </div>
       </div>
@@ -434,47 +405,6 @@ export default function ExpectedBoxesPage() {
                   <DialogTitle>Expected Boxes settings</DialogTitle>
                 </DialogHeader>
                 <div className="space-y-3 pt-2">
-                  <div className="rounded-lg border border-border/70 bg-muted/20 p-2.5">
-                    <p className="text-sm font-semibold text-foreground">Module access</p>
-                    <p className="text-xs text-muted-foreground">Choose which registered users can view and use Expected Boxes.</p>
-                  </div>
-                  <div className="grid grid-cols-1 gap-2 rounded-lg border border-border/70 bg-white p-2.5 sm:grid-cols-[minmax(0,1fr)_auto]">
-                    <div className="space-y-1">
-                      <Label className="text-xs font-semibold text-muted-foreground">Add user access</Label>
-                      <Select value={accessEmployeeId} onValueChange={setAccessEmployeeId}>
-                        <SelectTrigger className="h-10 rounded-lg bg-background">
-                          <SelectValue placeholder="Select registered user" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {selectableAccessUsers.map(employee => (
-                            <SelectItem key={employee.id} value={employee.id}>{employee.name}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <Button className="h-10 self-end gap-2 rounded-lg" onClick={handleGrantAccess} disabled={!accessEmployeeId}>
-                      <Plus className="h-4 w-4" /> Grant access
-                    </Button>
-                  </div>
-                  <div className="rounded-lg border border-border/70 bg-white p-2.5">
-                    <div className="mb-2 flex items-center justify-between gap-2">
-                      <p className="text-xs font-semibold text-foreground">Users with access</p>
-                      <span className="rounded-md bg-primary/10 px-2 py-1 text-xs font-semibold text-primary">
-                        {allowedExpectedBoxUsers.length}
-                      </span>
-                    </div>
-                    <div className="flex flex-wrap gap-1.5">
-                      {allowedExpectedBoxUsers.map(employee => (
-                        <span key={employee.id} className="inline-flex items-center gap-1.5 rounded-md border border-border/70 bg-background px-2.5 py-1.5 text-xs font-semibold text-foreground">
-                          {employee.name}
-                          <button className="text-muted-foreground hover:text-destructive" type="button" aria-label={`Remove ${employee.name}`} onClick={() => handleRevokeAccess(employee.id)}>
-                            x
-                          </button>
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-
                   <div className="rounded-lg border border-border/70 bg-muted/20 p-2.5">
                     <p className="text-sm font-semibold text-foreground">Notification recipients</p>
                     <p className="text-xs text-muted-foreground">Recipients here apply to all expected boxes unless disabled.</p>
@@ -730,7 +660,7 @@ export default function ExpectedBoxesPage() {
         ))}
       </div>
 
-      {!canUseExpectedBoxes && (
+      {!canAccessExpectedBoxes && (
         <div className="rounded-xl border border-border/70 bg-white/96 p-5 text-center shadow-sm">
           <h2 className="text-base font-semibold text-foreground">Operational view is restricted</h2>
           <p className="mt-2 text-sm text-muted-foreground">
@@ -739,7 +669,7 @@ export default function ExpectedBoxesPage() {
         </div>
       )}
 
-      {canUseExpectedBoxes && <div className="grid grid-cols-1 gap-3">
+      {canAccessExpectedBoxes && <div className="grid grid-cols-1 gap-3">
         <section className="min-w-0 rounded-xl border border-border/70 bg-white/96 shadow-sm">
           <div className="flex flex-col gap-2 border-b border-border/70 bg-muted/20 px-3 py-2.5 md:flex-row md:items-center md:justify-between">
             <div className="relative md:w-[360px]">

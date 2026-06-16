@@ -6,6 +6,9 @@ type Employee = {
   passcode: string;
   active: boolean;
   auth_user_id: string | null;
+  permissions: string[] | null;
+  role: string;
+  store_number: number | null;
 };
 
 const corsHeaders = {
@@ -51,15 +54,25 @@ function clientIp(req: Request) {
 
 async function isRateLimited(admin: ReturnType<typeof createClient>, ipAddress: string, passcodeHash: string) {
   const windowStart = new Date(Date.now() - 10 * 60 * 1000).toISOString();
-  const { count, error } = await admin
-    .from('kiosk_login_attempts')
-    .select('id', { count: 'exact', head: true })
-    .eq('ip_address', ipAddress)
-    .eq('passcode_hash', passcodeHash)
-    .eq('success', false)
-    .gte('created_at', windowStart);
-  if (error) throw error;
-  return (count || 0) >= 8;
+  const [ipAttempts, credentialAttempts] = await Promise.all([
+    admin
+      .from('kiosk_login_attempts')
+      .select('id', { count: 'exact', head: true })
+      .eq('ip_address', ipAddress)
+      .eq('success', false)
+      .gte('created_at', windowStart),
+    admin
+      .from('kiosk_login_attempts')
+      .select('id', { count: 'exact', head: true })
+      .eq('ip_address', ipAddress)
+      .eq('passcode_hash', passcodeHash)
+      .eq('success', false)
+      .gte('created_at', windowStart),
+  ]);
+
+  if (ipAttempts.error) throw ipAttempts.error;
+  if (credentialAttempts.error) throw credentialAttempts.error;
+  return (ipAttempts.count || 0) >= 20 || (credentialAttempts.count || 0) >= 8;
 }
 
 async function recordLoginAttempt(
@@ -102,12 +115,21 @@ Deno.serve(async req => {
     const payload = await req.json().catch(() => ({}));
     const action = typeof payload.action === 'string' ? payload.action : '';
     const passcode = typeof payload.passcode === 'string' ? payload.passcode.trim() : '';
+    const requestedAdminPasscode = typeof payload.adminPasscode === 'string' ? payload.adminPasscode.trim() : '';
     const ipAddress = clientIp(req);
-    const passcodeHash = await sha256(passcode || 'invalid');
 
     if (!/^[0-9]{4}$/.test(passcode)) {
       return jsonResponse({ error: 'Passcode must be 4 digits' }, 400);
     }
+    if (action !== 'sign-in' && action !== 'sign-up') {
+      return jsonResponse({ error: 'Unsupported auth action' }, 400);
+    }
+
+    const passcodeHash = await sha256(
+      action === 'sign-up'
+        ? `admin:${requestedAdminPasscode || 'invalid'}`
+        : `employee:${passcode || 'invalid'}`
+    );
     if (await isRateLimited(admin, ipAddress, passcodeHash)) {
       return jsonResponse({ error: 'Too many attempts. Try again in 10 minutes.' }, 429);
     }
@@ -117,7 +139,7 @@ Deno.serve(async req => {
     if (action === 'sign-in') {
       const { data, error } = await admin
         .from('employees')
-        .select('id, name, passcode, active, auth_user_id')
+        .select('id, name, passcode, active, auth_user_id, role, store_number, permissions')
         .eq('passcode', passcode)
         .eq('active', true)
         .maybeSingle();
@@ -129,7 +151,6 @@ Deno.serve(async req => {
       employee = data as Employee;
     } else if (action === 'sign-up') {
       if (!adminPasscode) return jsonResponse({ error: 'Admin passcode is not configured' }, 500);
-      const requestedAdminPasscode = typeof payload.adminPasscode === 'string' ? payload.adminPasscode.trim() : '';
       const name = typeof payload.name === 'string' ? payload.name.trim() : '';
 
       if (requestedAdminPasscode !== adminPasscode) {
@@ -156,13 +177,11 @@ Deno.serve(async req => {
 
       const { data, error } = await admin
         .from('employees')
-        .insert({ name, passcode, active: true })
-        .select('id, name, passcode, active, auth_user_id')
+        .insert({ name, passcode, active: true, role: 'warehouse', store_number: null, permissions: null })
+        .select('id, name, passcode, active, auth_user_id, role, store_number, permissions')
         .single();
       if (error) throw error;
       employee = data as Employee;
-    } else {
-      return jsonResponse({ error: 'Unsupported auth action' }, 400);
     }
 
     const password = randomPassword();

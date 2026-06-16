@@ -1,6 +1,6 @@
 {
-  "name": "Modern State Warehouse Receiving",
-  "short_name": "Warehouse",
+  "name": "All Zentro Solutions",
+  "short_name": "All Zentro",
   "description": "Fast warehouse receiving and shipment logging",
   "start_url": "/",
   "scope": "/",
@@ -9,13 +9,13 @@
   "theme_color": "#0f172a",
   "icons": [
     {
-      "src": "/modern-state-logo.png",
+      "src": "/all-zentro-logo-square.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/modern-state-logo-v2.png",
+      "src": "/all-zentro-logo-square.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"

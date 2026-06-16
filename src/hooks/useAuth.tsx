@@ -2,6 +2,8 @@ import { useState, useEffect, createContext, useContext } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import type { Tables } from '@/integrations/supabase/types';
 import type { Session } from '@supabase/supabase-js';
+import { functionErrorMessage } from '@/lib/functionErrors';
+import { listLocalEmployees } from '@/lib/localWarehouseData';
 
 type Employee = Tables<'employees'>;
 type PublicEmployee = Omit<Employee, 'passcode'> & { auth_user_id?: string | null };
@@ -21,15 +23,18 @@ interface AuthCtx {
 
 const STORAGE_KEY = 'warehouse-kiosk-user-id';
 const USER_STORAGE_KEY = 'warehouse-kiosk-user';
-const EMPLOYEE_SELECT = 'id, name, active, created_at, updated_at, auth_user_id';
+const EMPLOYEE_SELECT = 'id, name, active, created_at, updated_at, auth_user_id, role, store_number, permissions';
 const MOCK_LOCAL = import.meta.env.VITE_MOCK_LOCAL === 'true';
 const MOCK_USER: PublicEmployee = {
   id: '00000000-0000-0000-0000-000000000101',
-  name: 'Test User',
+  name: 'Sebastian',
   active: true,
   created_at: new Date().toISOString(),
   updated_at: new Date().toISOString(),
   auth_user_id: null,
+  role: 'admin',
+  store_number: null,
+  permissions: ['receiving', 'expected_boxes', 'prices', 'audit', 'accounting', 'settings'],
 };
 
 function isOffline() {
@@ -53,12 +58,7 @@ function cacheUser(employee: PublicEmployee) {
 async function invokeKioskAuth(body: Record<string, unknown>) {
   const { data, error } = await supabase.functions.invoke('kiosk-auth', { body });
   if (error) {
-    const response = 'context' in error ? error.context : null;
-    if (response instanceof Response) {
-      const payload = await response.json().catch(() => null);
-      throw new Error(payload?.error || error.message);
-    }
-    throw error;
+    throw new Error(await functionErrorMessage(error, 'Sign-in failed'));
   }
 
   const result = data as KioskAuthResponse;
@@ -87,8 +87,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const restoreUser = async () => {
-      if (MOCK_LOCAL && localStorage.getItem(STORAGE_KEY) === MOCK_USER.id) {
-        setUser(MOCK_USER);
+      if (MOCK_LOCAL) {
+        const cachedId = localStorage.getItem(STORAGE_KEY);
+        const employee = listLocalEmployees().find(row => row.id === cachedId);
+        if (employee) {
+          const { passcode: _passcode, ...safeEmployee } = employee;
+          setUser(safeEmployee);
+          setLoading(false);
+          return;
+        }
+        if (cachedId === MOCK_USER.id) {
+          setUser(MOCK_USER);
+          setLoading(false);
+          return;
+        }
         setLoading(false);
         return;
       }
@@ -144,8 +156,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const beginSignIn = async (passcode: string) => {
     const normalizedPasscode = passcode.trim();
     if (MOCK_LOCAL) {
-      if (normalizedPasscode !== '0315') throw new Error('Incorrect passcode');
-      return MOCK_USER;
+      const employee = listLocalEmployees().find(row => row.passcode === normalizedPasscode && row.active);
+      if (!employee) throw new Error('Incorrect passcode');
+      const { passcode: _passcode, ...safeEmployee } = employee;
+      return safeEmployee;
     }
     if (isOffline()) {
       throw new Error('Reconnect to sign in. Offline mode works after a user has already opened the workspace on this device.');
@@ -166,7 +180,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const normalizedPasscode = passcode.trim();
     if (MOCK_LOCAL) {
       if (!normalizedName || normalizedPasscode.length !== 4 || !adminPasscode) throw new Error('Invalid test registration');
-      return { ...MOCK_USER, name: normalizedName };
+      return { ...MOCK_USER, name: normalizedName, role: 'warehouse', store_number: null, permissions: null };
     }
     if (isOffline()) {
       throw new Error('Reconnect to register a new employee.');

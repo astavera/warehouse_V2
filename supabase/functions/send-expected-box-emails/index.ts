@@ -23,6 +23,13 @@ type ExpectedBox = {
   } | null;
 };
 
+type Employee = {
+  id?: string | null;
+  auth_user_id?: string | null;
+  role?: string | null;
+  permissions?: string[] | null;
+};
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -56,7 +63,21 @@ function escapeHtml(value: string | null | undefined) {
     .replace(/'/g, '&#039;');
 }
 
-async function requireAuthenticatedUser(req: Request, supabaseUrl: string, serviceRoleKey: string) {
+function canAccessModule(employee: Employee, module: 'receiving' | 'expected_boxes') {
+  const permissions = Array.isArray(employee.permissions) ? employee.permissions : [];
+  if (employee.role === 'admin') return true;
+  if (module === 'receiving') {
+    return employee.role === 'warehouse' || employee.role === 'accounting' || permissions.includes('receiving');
+  }
+  return employee.role === 'accounting' || permissions.includes('expected_boxes');
+}
+
+async function requireModuleAccess(
+  req: Request,
+  supabaseUrl: string,
+  serviceRoleKey: string,
+  modules: Array<'receiving' | 'expected_boxes'>
+) {
   const authHeader = req.headers.get('Authorization') || '';
   const token = authHeader.replace(/^Bearer\s+/i, '').trim();
   if (!token) throw new Error('Authentication required');
@@ -64,7 +85,39 @@ async function requireAuthenticatedUser(req: Request, supabaseUrl: string, servi
   const supabase = createClient(supabaseUrl, serviceRoleKey);
   const { data, error } = await supabase.auth.getUser(token);
   if (error || !data.user) throw new Error('Authentication required');
-  return data.user;
+  const employeeId = typeof data.user.user_metadata?.employee_id === 'string' ? data.user.user_metadata.employee_id : null;
+
+  const employeeSelect = 'id, auth_user_id, role, permissions';
+  let employee: Employee | null = null;
+
+  if (employeeId) {
+    const { data: employeeById, error: employeeByIdError } = await supabase
+      .from('employees')
+      .select(employeeSelect)
+      .eq('id', employeeId)
+      .eq('active', true)
+      .maybeSingle();
+    if (employeeByIdError) throw employeeByIdError;
+    employee = employeeById as Employee | null;
+  }
+
+  if (!employee) {
+    const { data: employeeByAuth, error: employeeByAuthError } = await supabase
+      .from('employees')
+      .select(employeeSelect)
+      .eq('auth_user_id', data.user.id)
+      .eq('active', true)
+      .maybeSingle();
+    if (employeeByAuthError) throw employeeByAuthError;
+    employee = employeeByAuth as Employee | null;
+  }
+
+  if (!employee || !modules.some(module => canAccessModule(employee as Employee, module))) {
+    const accessError = new Error('Expected Boxes access required');
+    accessError.name = 'Forbidden';
+    throw accessError;
+  }
+  return employee as Employee;
 }
 
 async function sendEmail({
@@ -234,14 +287,22 @@ Deno.serve(async req => {
     if (!supabaseUrl || !serviceRoleKey) {
       return jsonResponse({ error: 'Missing Supabase function secrets' }, 500);
     }
-    await requireAuthenticatedUser(req, supabaseUrl, serviceRoleKey);
+    await requireModuleAccess(req, supabaseUrl, serviceRoleKey, ['receiving', 'expected_boxes']);
     if (!resendApiKey && (!gmailUser || !gmailAppPassword)) {
       return jsonResponse({ error: 'Missing email provider secrets' }, 500);
     }
 
     const supabase = createClient(supabaseUrl, serviceRoleKey);
     const payload = await req.json().catch(() => ({}));
-    const expectedBoxIds = Array.isArray(payload.expectedBoxIds) ? payload.expectedBoxIds : [];
+    const expectedBoxIds = Array.isArray(payload.expectedBoxIds)
+      ? payload.expectedBoxIds.filter((id: unknown): id is string => typeof id === 'string' && id.length > 0)
+      : [];
+    if (expectedBoxIds.length === 0) {
+      return jsonResponse({ error: 'expectedBoxIds is required' }, 400);
+    }
+    if (expectedBoxIds.length > 100) {
+      return jsonResponse({ error: 'Too many expected boxes requested' }, 400);
+    }
 
     let query = supabase
       .from('expected_boxes')
@@ -249,9 +310,7 @@ Deno.serve(async req => {
       .eq('status', 'received')
       .eq('warehouse_received_email_sent', false);
 
-    if (expectedBoxIds.length > 0) {
-      query = query.in('id', expectedBoxIds);
-    }
+    query = query.in('id', expectedBoxIds);
 
     const { data: boxes, error: boxesError } = await query;
     if (boxesError) throw boxesError;
@@ -292,6 +351,11 @@ Deno.serve(async req => {
 
     return jsonResponse({ sent: sentIds.length, sentIds });
   } catch (error) {
-    return jsonResponse({ error: error instanceof Error ? error.message : 'Unknown error' }, 500);
+    const status = error instanceof Error && error.name === 'Forbidden'
+      ? 403
+      : error instanceof Error && error.message === 'Authentication required'
+        ? 401
+        : 500;
+    return jsonResponse({ error: error instanceof Error ? error.message : 'Unknown error' }, status);
   }
 });

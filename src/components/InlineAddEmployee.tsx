@@ -3,10 +3,10 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Plus } from 'lucide-react';
-import { supabase } from '@/integrations/supabase/client';
 import type { Tables } from '@/integrations/supabase/types';
 import { toast } from 'sonner';
-import { createLocalEmployee, shouldUseLocalData } from '@/lib/localWarehouseData';
+import { createEmployeeAccess } from '@/hooks/useEmployeeAdmin';
+import { defaultModulesForRole } from '@/lib/permissions';
 
 type Employee = Tables<'employees'>;
 
@@ -28,28 +28,17 @@ export default function InlineAddEmployee({ onAdded }: Props) {
     if (!name.trim() || passcode.length !== 4) return;
     setSaving(true);
     try {
-      if (shouldUseLocalData()) {
-        const row = createLocalEmployee({
-          name: name.trim(),
-          passcode,
-          active: true,
-        });
-        setName('');
-        setPasscode('');
-        setOpen(false);
-        onAdded(row);
-        return;
-      }
-
-      const { data, error } = await supabase.from('employees').insert({
+      const result = await createEmployeeAccess({
         name: name.trim(),
         passcode,
-      }).select().single();
-      if (error) throw error;
+        permissions: defaultModulesForRole('warehouse'),
+        role: 'warehouse',
+        storeNumber: null,
+      });
       setName('');
       setPasscode('');
       setOpen(false);
-      onAdded(data!);
+      onAdded(result.employee);
     } catch (err) {
       toast.error(getErrorMessage(err, 'Failed to add receiver'));
     } finally {

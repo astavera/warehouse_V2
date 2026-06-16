@@ -8,6 +8,13 @@ type ExpectedBox = {
   warehouse_received_at: string | null;
 };
 
+type Employee = {
+  id?: string | null;
+  auth_user_id?: string | null;
+  role?: string | null;
+  permissions?: string[] | null;
+};
+
 type EasyPostTrackingDetail = {
   message?: string;
   status?: string;
@@ -152,7 +159,12 @@ function errorMessage(error: unknown) {
   return String(error || 'Unknown error');
 }
 
-async function requireAuthenticatedUser(req: Request, supabaseUrl: string, serviceRoleKey: string) {
+function canAccessExpectedBoxes(employee: Employee) {
+  const permissions = Array.isArray(employee.permissions) ? employee.permissions : [];
+  return employee.role === 'admin' || employee.role === 'accounting' || permissions.includes('expected_boxes');
+}
+
+async function requireExpectedBoxesAccess(req: Request, supabaseUrl: string, serviceRoleKey: string) {
   const authHeader = req.headers.get('Authorization') || '';
   const token = authHeader.replace(/^Bearer\s+/i, '').trim();
   if (!token) throw new Error('Authentication required');
@@ -160,7 +172,39 @@ async function requireAuthenticatedUser(req: Request, supabaseUrl: string, servi
   const supabase = createClient(supabaseUrl, serviceRoleKey);
   const { data, error } = await supabase.auth.getUser(token);
   if (error || !data.user) throw new Error('Authentication required');
-  return data.user;
+  const employeeId = typeof data.user.user_metadata?.employee_id === 'string' ? data.user.user_metadata.employee_id : null;
+
+  const employeeSelect = 'id, auth_user_id, role, permissions';
+  let employee: Employee | null = null;
+
+  if (employeeId) {
+    const { data: employeeById, error: employeeByIdError } = await supabase
+      .from('employees')
+      .select(employeeSelect)
+      .eq('id', employeeId)
+      .eq('active', true)
+      .maybeSingle();
+    if (employeeByIdError) throw employeeByIdError;
+    employee = employeeById as Employee | null;
+  }
+
+  if (!employee) {
+    const { data: employeeByAuth, error: employeeByAuthError } = await supabase
+      .from('employees')
+      .select(employeeSelect)
+      .eq('auth_user_id', data.user.id)
+      .eq('active', true)
+      .maybeSingle();
+    if (employeeByAuthError) throw employeeByAuthError;
+    employee = employeeByAuth as Employee | null;
+  }
+
+  if (!employee || !canAccessExpectedBoxes(employee as Employee)) {
+    const accessError = new Error('Expected Boxes access required');
+    accessError.name = 'Forbidden';
+    throw accessError;
+  }
+  return employee as Employee;
 }
 
 function easyPostCarrier(carrier: ExpectedBox['carrier']) {
@@ -400,7 +444,7 @@ Deno.serve(async req => {
     if (!supabaseUrl || !serviceRoleKey) {
       return jsonResponse({ error: 'Missing Supabase function secrets' }, 500);
     }
-    await requireAuthenticatedUser(req, supabaseUrl, serviceRoleKey);
+    await requireExpectedBoxesAccess(req, supabaseUrl, serviceRoleKey);
     if (!fedExApiKey && !ship24ApiKey && !easyPostApiKey) {
       return jsonResponse({ error: 'Missing tracking provider secret. Configure FEDEX_API_KEY, SHIP24_API_KEY, or EASYPOST_API_KEY.' }, 500);
     }
@@ -519,6 +563,11 @@ Deno.serve(async req => {
 
     return jsonResponse({ box: updatedBox, tracker, provider: 'easypost' });
   } catch (error) {
-    return jsonResponse({ error: errorMessage(error) }, 500);
+    const status = error instanceof Error && error.name === 'Forbidden'
+      ? 403
+      : error instanceof Error && error.message === 'Authentication required'
+        ? 401
+        : 500;
+    return jsonResponse({ error: errorMessage(error) }, status);
   }
 });

@@ -7,8 +7,9 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/hooks/useAuth';
+import { getDefaultLandingPath } from '@/lib/permissions';
 
-const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'clear', '0', 'back'] as const;
+const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'spacer', '0', 'back'] as const;
 type Mode = 'login' | 'admin' | 'register';
 
 export default function LoginPage() {
@@ -20,7 +21,6 @@ export default function LoginPage() {
   const [successName, setSuccessName] = useState('');
   const [showSuccess, setShowSuccess] = useState(false);
   const [statusMessage, setStatusMessage] = useState('');
-  const [now, setNow] = useState(() => new Date());
   const [verifiedAdminPasscode, setVerifiedAdminPasscode] = useState('');
   const autoSubmitLock = useRef(false);
 
@@ -51,7 +51,9 @@ export default function LoginPage() {
       setShowSuccess(true);
 
       window.setTimeout(() => {
+        const landingPath = getDefaultLandingPath(employee);
         completeSignIn(employee);
+        window.location.replace(landingPath);
       }, 250);
 
       toast.success(`Welcome, ${employee.name}`);
@@ -81,56 +83,66 @@ export default function LoginPage() {
     void submit();
   }, [isAdminMode, isSignup, loading, passcode, showSuccess, submit]);
 
-  useEffect(() => {
-    const timer = window.setInterval(() => {
-      setNow(new Date());
-    }, 1000);
-
-    return () => window.clearInterval(timer);
-  }, []);
-
-  const handleKeypad = (key: (typeof KEYS)[number]) => {
+  const handleKeypad = useCallback((key: (typeof KEYS)[number]) => {
     if (loading) return;
-    if (key === 'clear') {
-      setPasscode('');
-      return;
-    }
+    if (key === 'spacer') return;
     if (key === 'back') {
       setPasscode(prev => prev.slice(0, -1));
       return;
     }
     setPasscode(prev => (prev.length < 4 ? `${prev}${key}` : prev));
-  };
+  }, [loading]);
 
-  const formattedDate = now.toLocaleDateString('en-US', {
-    weekday: 'long',
-    month: 'long',
-    day: 'numeric',
-  });
+  useEffect(() => {
+    const handlePhysicalKeyboard = (event: KeyboardEvent) => {
+      if (showSuccess || event.altKey || event.ctrlKey || event.metaKey) return;
 
-  const formattedTime = now.toLocaleTimeString('en-US', {
-    hour: 'numeric',
-    minute: '2-digit',
-  });
+      const target = event.target as HTMLElement | null;
+      const isTypingField =
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        target instanceof HTMLSelectElement ||
+        Boolean(target?.isContentEditable);
+
+      if (isTypingField) return;
+
+      if (/^[0-9]$/.test(event.key)) {
+        event.preventDefault();
+        handleKeypad(event.key as (typeof KEYS)[number]);
+        return;
+      }
+
+      if (event.key === 'Backspace' || event.key === 'Delete') {
+        event.preventDefault();
+        handleKeypad('back');
+        return;
+      }
+
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        void submit();
+      }
+    };
+
+    window.addEventListener('keydown', handlePhysicalKeyboard);
+    return () => window.removeEventListener('keydown', handlePhysicalKeyboard);
+  }, [handleKeypad, showSuccess, submit]);
 
   return (
-    <div className="app-surface min-h-screen px-4 py-5 sm:px-6 sm:py-6">
+    <div className="app-surface min-h-screen px-5 py-6 sm:px-6 sm:py-6">
       <div className="mx-auto flex min-h-screen max-w-6xl items-center justify-center">
         <div className="grid w-full items-center gap-8 lg:grid-cols-[1.08fr_0.92fr] lg:gap-12">
           <div className="hidden lg:flex flex-col justify-center">
             <div className="max-w-xl">
-              <div className="mb-8 flex h-36 items-center px-1">
+              <div className="mb-8 flex h-52 items-center px-1">
                 <img
-                  src="/modern-state-logo-v2.png"
+                  src="/all-zentro-logo.png"
                   alt="All Zentro Solutions"
-                  className="h-[10rem] w-full max-w-[37rem] object-contain mix-blend-multiply"
+                  className="h-[13rem] w-full max-w-[34rem] object-contain"
                 />
               </div>
-              <div className="inline-flex items-center gap-2 rounded-lg border border-border/70 bg-white/75 px-3 py-1.5 text-[11px] font-medium uppercase tracking-[0.24em] text-muted-foreground shadow-sm backdrop-blur-sm">
-                All Zentro Solutions 
-              </div>
               <h1 className="mt-5 text-5xl font-semibold tracking-[-0.05em] text-foreground xl:text-6xl">
-                Welcome back.
+                All Zentro Solutions
               </h1>
               <p className="mt-5 max-w-lg text-base leading-7 text-muted-foreground xl:text-lg xl:leading-8">
                 Use this app to receive incoming boxes and pallets before processing. Questions about the app? Contact Sebastian.
@@ -138,8 +150,8 @@ export default function LoginPage() {
             </div>
           </div>
 
-          <Card className="relative mx-auto w-full max-w-[30rem] overflow-hidden rounded-xl border border-white/90 bg-white/96 panel-shadow backdrop-blur">
-            <CardContent className="relative p-6 sm:p-7">
+          <Card className="relative mx-auto w-full max-w-[24rem] overflow-hidden border-0 bg-transparent shadow-none sm:max-w-[30rem] sm:rounded-xl sm:border sm:border-white/90 sm:bg-white/96 sm:panel-shadow sm:backdrop-blur">
+            <CardContent className="relative px-0 py-0 sm:p-7">
               <div
                 className={cn(
                   'absolute inset-0 z-20 flex flex-col items-center justify-center bg-white/96 px-8 text-center transition-all duration-500 backdrop-blur',
@@ -153,33 +165,26 @@ export default function LoginPage() {
               </div>
 
               <div className="mb-6 lg:hidden">
-                <div className="mx-auto flex h-24 w-full max-w-[19rem] items-center justify-center px-1">
+                <div className="mx-auto flex h-32 w-full max-w-[16rem] items-center justify-center px-1">
                   <img
-                    src="/modern-state-logo-v2.png"
-                    alt="All Zentro Solutions "
-                    className="h-[7rem] w-full object-contain mix-blend-multiply"
+                    src="/all-zentro-logo.png"
+                    alt="All Zentro Solutions"
+                    className="h-full w-full object-contain"
                   />
                 </div>
               </div>
 
-              <div className="mb-6 text-center">
-                <p className="text-[11px] font-medium uppercase tracking-[0.34em] text-muted-foreground">All Zentro Solutions </p>
-                <div className="mt-3">
-                  <p className="text-[0.8rem] uppercase tracking-[0.28em] text-muted-foreground">{formattedDate}</p>
-                  <h2 className="mt-2 text-[2.15rem] font-semibold tracking-[-0.06em] text-foreground sm:text-[2.75rem]">
-                    {formattedTime}
-                  </h2>
-                </div>
-                <p className="mt-3 text-sm leading-6 text-muted-foreground">
+              <div className="mb-7 text-center">
+                <p className="text-[0.95rem] font-medium leading-6 text-muted-foreground">
                   {isAdminMode
                     ? 'Admin verification required'
                     : isSignup
-                    ? 'Create a new Modern State employee passcode'
+                    ? 'Create a new employee passcode'
                     : 'Enter your 4-digit passcode'}
                 </p>
               </div>
 
-              <form onSubmit={handleSubmit} className="space-y-5">
+              <form onSubmit={handleSubmit} className="space-y-6">
                 {isSignup && (
                   <div className="space-y-2">
                     <Label className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Name</Label>
@@ -195,11 +200,11 @@ export default function LoginPage() {
                 )}
 
                 <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <Label className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                  <div className="flex items-center justify-center sm:justify-between">
+                    <Label className="text-xs uppercase tracking-[0.28em] text-muted-foreground">
                       {isAdminMode ? 'Admin Passcode' : 'Passcode'}
                     </Label>
-                    {mode === 'login' && <span className="text-xs text-muted-foreground">Returning users</span>}
+                    {mode === 'login' && <span className="hidden text-xs text-muted-foreground sm:inline">Returning users</span>}
                   </div>
                   <div className="flex items-center justify-center gap-3 py-1">
                     {Array.from({ length: 4 }).map((_, index) => (
@@ -214,56 +219,38 @@ export default function LoginPage() {
                       />
                     ))}
                   </div>
-                  {loading && !showSuccess && (
-                    <p className="text-center text-xs font-medium uppercase tracking-[0.22em] text-muted-foreground">
-                      {statusMessage}
-                    </p>
-                  )}
+                  <p className="min-h-5 text-center text-xs font-medium uppercase tracking-[0.22em] text-muted-foreground">
+                    {loading && !showSuccess ? statusMessage : ''}
+                  </p>
                 </div>
 
-                <div className="grid grid-cols-3 gap-2.5">
-                  {KEYS.map(key => (
-                    <Button
-                      key={key}
-                      type="button"
-                      variant="ghost"
-                      className={cn(
-                        'h-14 rounded-xl text-lg font-medium shadow-none transition-all duration-200 active:scale-[0.98]',
-                        key === 'clear'
-                          ? 'border-transparent bg-transparent text-muted-foreground hover:bg-muted/60'
-                          : 'bg-white/94 ring-1 ring-black/6 hover:bg-[#f7f7f8] hover:ring-black/10'
-                      )}
-                      onClick={() => handleKeypad(key)}
-                    >
-                      {key === 'clear' ? 'Clear' : key === 'back' ? <Delete className="h-5 w-5" /> : key}
-                    </Button>
-                  ))}
+                <div className="mx-auto grid w-fit grid-cols-3 justify-items-center gap-x-5 gap-y-4 sm:gap-x-8 sm:gap-y-4">
+                  {KEYS.map(key => {
+                    if (key === 'spacer') {
+                      return <div key={key} className="h-[4.65rem] w-[4.65rem] sm:h-20 sm:w-20" aria-hidden="true" />;
+                    }
+
+                    return (
+                      <Button
+                        key={key}
+                        type="button"
+                        variant="ghost"
+                        className={cn(
+                          'h-[4.65rem] w-[4.65rem] rounded-full p-0 text-[1.7rem] font-medium shadow-none transition-all duration-150 active:scale-95 sm:h-20 sm:w-20 sm:text-3xl',
+                          key === 'back'
+                            ? 'border border-slate-400 bg-white text-slate-800 hover:bg-slate-50'
+                            : 'bg-slate-700 text-white hover:bg-slate-800'
+                        )}
+                        onClick={() => handleKeypad(key)}
+                        aria-label={key === 'back' ? 'Backspace' : `Number ${key}`}
+                      >
+                        {key === 'back' ? <Delete className="h-5 w-5 sm:h-6 sm:w-6" /> : key}
+                      </Button>
+                    );
+                  })}
                 </div>
 
-                {isSignup || isAdminMode ? (
-                  <Button
-                    type="submit"
-                    disabled={loading || (isSignup && !name.trim()) || passcode.length !== 4}
-                    className="h-12 w-full rounded-xl bg-foreground text-base font-semibold text-background shadow-[0_18px_40px_rgba(15,23,42,0.16)] transition-transform duration-200 active:scale-[0.99] hover:bg-foreground/92"
-                  >
-                    {loading ? 'Please wait...' : isAdminMode ? 'Verify admin' : 'Register employee'}
-                  </Button>
-                ) : (
-                  <div className="h-12" aria-hidden="true" />
-                )}
               </form>
-
-              <button
-                className="mt-4 w-full text-center text-sm text-muted-foreground transition-colors hover:text-foreground"
-                onClick={() => {
-                  setMode(mode === 'register' ? 'login' : 'admin');
-                  setPasscode('');
-                  setName('');
-                  setVerifiedAdminPasscode('');
-                }}
-              >
-                {mode === 'register' ? 'Back to employee login' : 'Admin registration'}
-              </button>
             </CardContent>
           </Card>
         </div>

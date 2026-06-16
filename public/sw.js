@@ -1,13 +1,12 @@
-const CACHE_NAME = 'warehouse-receiving-v2';
+const CACHE_NAME = 'warehouse-receiving-v4';
 const APP_SHELL = [
   '/',
   '/index.html',
   '/offline.html',
   '/manifest.webmanifest',
   '/favicon.ico',
-  '/modern-state-logo.png',
-  '/modern-state-logo-v2.png',
-  '/modern-state-logo-transparent.png',
+  '/all-zentro-logo.png',
+  '/all-zentro-logo-square.png',
 ];
 
 async function cacheBuildAssets(cache) {
@@ -36,6 +35,12 @@ self.addEventListener('install', event => {
   );
 });
 
+self.addEventListener('message', event => {
+  if (event.data?.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
+});
+
 self.addEventListener('activate', event => {
   event.waitUntil(
     caches.keys().then(async keys => {
@@ -48,7 +53,7 @@ self.addEventListener('activate', event => {
 async function networkFirst(request) {
   const cache = await caches.open(CACHE_NAME);
   try {
-    const response = await fetch(request);
+    const response = await fetch(request, { cache: 'no-store' });
     if (response.ok) {
       await cache.put(request, response.clone());
     }
