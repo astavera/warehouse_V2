@@ -83,7 +83,7 @@ export default function LoginPage() {
     void submit();
   }, [isAdminMode, isSignup, loading, passcode, showSuccess, submit]);
 
-  const handleKeypad = (key: (typeof KEYS)[number]) => {
+  const handleKeypad = useCallback((key: (typeof KEYS)[number]) => {
     if (loading) return;
     if (key === 'spacer') return;
     if (key === 'back') {
@@ -91,7 +91,42 @@ export default function LoginPage() {
       return;
     }
     setPasscode(prev => (prev.length < 4 ? `${prev}${key}` : prev));
-  };
+  }, [loading]);
+
+  useEffect(() => {
+    const handlePhysicalKeyboard = (event: KeyboardEvent) => {
+      if (showSuccess || event.altKey || event.ctrlKey || event.metaKey) return;
+
+      const target = event.target as HTMLElement | null;
+      const isTypingField =
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        target instanceof HTMLSelectElement ||
+        Boolean(target?.isContentEditable);
+
+      if (isTypingField) return;
+
+      if (/^[0-9]$/.test(event.key)) {
+        event.preventDefault();
+        handleKeypad(event.key as (typeof KEYS)[number]);
+        return;
+      }
+
+      if (event.key === 'Backspace' || event.key === 'Delete') {
+        event.preventDefault();
+        handleKeypad('back');
+        return;
+      }
+
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        void submit();
+      }
+    };
+
+    window.addEventListener('keydown', handlePhysicalKeyboard);
+    return () => window.removeEventListener('keydown', handlePhysicalKeyboard);
+  }, [handleKeypad, showSuccess, submit]);
 
   return (
     <div className="app-surface min-h-screen px-5 py-6 sm:px-6 sm:py-6">
