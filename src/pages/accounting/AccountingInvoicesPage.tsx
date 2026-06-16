@@ -68,6 +68,7 @@ type InvoiceLocationAccountRow = {
 };
 
 type CheckPaymentLine = {
+  account_id: string;
   amount: string;
   check_number: string;
   detected_address: string;
@@ -169,8 +170,9 @@ function createLocalId(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function createCheckPaymentLine(amount = '', sentDate = ''): CheckPaymentLine {
+function createCheckPaymentLine(amount = '', sentDate = '', accountId = 'none'): CheckPaymentLine {
   return {
+    account_id: accountId,
     amount,
     check_number: '',
     detected_address: '',
@@ -207,6 +209,7 @@ function normalizeCheckPaymentLines(lines: CheckPaymentLine[]) {
   return lines
     .map(line => ({
       amount: parseMoney(line.amount) || '',
+      bank_account_id: line.account_id === 'none' ? null : line.account_id,
       check_number: line.check_number.trim(),
       confirmed_address: line.sent_to_address.trim(),
       detected_address: line.detected_address.trim() || null,
@@ -246,6 +249,7 @@ async function prepareCheckPaymentLinesForSave(lines: CheckPaymentLine[], paymen
 
     return {
       amount: parseMoney(line.amount) || '',
+      bank_account_id: line.account_id === 'none' ? null : line.account_id,
       check_number: line.check_number.trim(),
       confirmed_address: line.sent_to_address.trim(),
       detected_address: line.detected_address.trim() || null,
@@ -1352,16 +1356,35 @@ function CombinedInvoicePaymentDialog({
   const canSave = form.vendor_id !== 'none' && selectedInvoices.length > 0 && hasCheckTotal && balanceCents === 0n;
   const allSelected = candidateInvoices.length > 0 && candidateInvoices.every(invoice => selectedInvoiceIdSet.has(invoice.id));
 
+  const selectDefaultAccount = (accountId: string) => {
+    const previousAccountId = form.account_id || 'none';
+    onChange({
+      account_id: accountId,
+      checkLines: form.checkLines.map(line => {
+        const lineAccountId = line.account_id || 'none';
+        return lineAccountId === 'none' || lineAccountId === previousAccountId
+          ? { ...line, account_id: accountId }
+          : line;
+      }),
+    });
+  };
+
   const selectVendor = (vendorId: string) => {
     const vendor = catalogs?.vendors.find(item => item.id === vendorId);
     const defaultMethod = catalogs?.paymentMethods.find(item => item.id === vendor?.default_payment_method_id);
     const methodId = methodIdForKind('check', catalogs?.paymentMethods || []);
     const vendorMethodIsCheck = paymentKindFromMethodName(defaultMethod?.name) === 'check';
     const keepAccountId = accountOptions.some(account => account.id === form.account_id);
+    const nextAccountId = keepAccountId ? form.account_id : 'none';
     onChange({
-      account_id: keepAccountId ? form.account_id : 'none',
+      account_id: nextAccountId,
       account_number: vendor?.account_number || '',
-      checkLines: form.checkLines.length ? form.checkLines : [createCheckPaymentLine('', form.payment_date)],
+      checkLines: form.checkLines.length
+        ? form.checkLines.map(line => ({
+            ...line,
+            account_id: line.account_id && line.account_id !== 'none' ? line.account_id : nextAccountId,
+          }))
+        : [createCheckPaymentLine('', form.payment_date, nextAccountId)],
       payment_method_id: vendorMethodIsCheck && defaultMethod ? defaultMethod.id : methodId,
       selectedInvoiceIds: [],
       sent_to_address: vendor?.address || '',
@@ -1394,14 +1417,14 @@ function CombinedInvoicePaymentDialog({
     onChange({
       checkLines: [
         ...form.checkLines,
-        createCheckPaymentLine(nextAmount, form.payment_date),
+        createCheckPaymentLine(nextAmount, form.payment_date, form.account_id),
       ],
     });
   };
 
   const removeCheckLine = (id: string) => {
     const nextLines = form.checkLines.filter(line => line.id !== id);
-    onChange({ checkLines: nextLines.length ? nextLines : [createCheckPaymentLine('', form.payment_date)] });
+    onChange({ checkLines: nextLines.length ? nextLines : [createCheckPaymentLine('', form.payment_date, form.account_id)] });
   };
 
   const applyVendorAddress = () => {
@@ -1437,8 +1460,8 @@ function CombinedInvoicePaymentDialog({
             <Input type="date" value={form.payment_date} onChange={event => onChange({ payment_date: event.target.value })} />
           </div>
           <div className="space-y-1.5">
-            <Label>Bank/check account used</Label>
-            <Select value={form.account_id} onValueChange={value => onChange({ account_id: value })}>
+            <Label>Default bank</Label>
+            <Select value={form.account_id} onValueChange={selectDefaultAccount}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="none">No account selected</SelectItem>
@@ -1560,17 +1583,18 @@ function CombinedInvoicePaymentDialog({
 
           <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_240px] xl:grid-cols-[minmax(0,1fr)_260px]">
             <div className="overflow-x-auto rounded-md border bg-white">
-              <div className="min-w-[490px]">
-                <div className="grid grid-cols-[32px_124px_104px_148px_34px] gap-2 border-b bg-muted/30 px-2 py-1.5 text-[11px] font-medium text-muted-foreground">
+              <div className="min-w-[650px]">
+                <div className="grid grid-cols-[32px_124px_104px_148px_minmax(150px,1fr)_34px] gap-2 border-b bg-muted/30 px-2 py-1.5 text-[11px] font-medium text-muted-foreground">
                   <span>#</span>
                   <span>Check #</span>
                   <span>Amount</span>
                   <span>Date sent</span>
+                  <span>Bank</span>
                   <span />
                 </div>
                 <div className="divide-y">
                   {form.checkLines.map((line, index) => (
-                    <div key={line.id} className="grid grid-cols-[32px_124px_104px_148px_34px] gap-2 px-2 py-1.5">
+                    <div key={line.id} className="grid grid-cols-[32px_124px_104px_148px_minmax(150px,1fr)_34px] gap-2 px-2 py-1.5">
                       <div className="flex items-center text-sm font-semibold text-muted-foreground">{index + 1}</div>
                       <Input
                         value={line.check_number}
@@ -1591,6 +1615,17 @@ function CombinedInvoicePaymentDialog({
                         onChange={event => updateCheckLine(line.id, { sent_date: event.target.value })}
                         className="h-8 px-2"
                       />
+                      <Select value={line.account_id || 'none'} onValueChange={value => updateCheckLine(line.id, { account_id: value })}>
+                        <SelectTrigger className="h-8 px-2 text-xs">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">No bank</SelectItem>
+                          {accountOptions.map(account => (
+                            <SelectItem key={account.id} value={account.id}>{accountLabel(account)}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                       <Button type="button" variant="ghost" size="icon" onClick={() => removeCheckLine(line.id)} aria-label="Remove check" className="h-8 w-8">
                         <Trash2 className="h-3.5 w-3.5" />
                       </Button>
@@ -1779,16 +1814,18 @@ export default function AccountingInvoicesPage() {
     const activeAccounts = (catalogs?.accounts || []).filter(account => account.active !== false);
     const bankAccounts = activeAccounts.filter(account => !isCreditCardAccount(account));
     const accountOptions = bankAccounts.length ? bankAccounts : activeAccounts;
+    const defaultAccountId = accountOptions.length === 1 ? accountOptions[0].id : 'none';
+    const baseCombinedForm = createCombinedInvoicePaymentForm();
     setCombinedPayForm({
-      ...createCombinedInvoicePaymentForm(),
-      account_id: 'none',
+      ...baseCombinedForm,
+      account_id: defaultAccountId,
       account_number: vendor?.account_number || '',
+      checkLines: baseCombinedForm.checkLines.map(line => ({ ...line, account_id: defaultAccountId })),
       payment_method_id: paymentKindFromMethodName(defaultMethod?.name) === 'check' && defaultMethod
         ? defaultMethod.id
         : methodId,
       sent_to_address: vendor?.address || '',
       vendor_id: vendor ? vendor.id : 'none',
-      ...(accountOptions.length === 1 ? { account_id: accountOptions[0].id } : {}),
     });
     setCombinedPayDialogOpen(true);
   };
@@ -1958,15 +1995,29 @@ export default function AccountingInvoicesPage() {
     const batchId = createLocalId('combined-payment-batch');
     const categoryId = combinedPayForm.category_id === 'none' ? null : combinedPayForm.category_id;
     const selectedVendor = catalogs?.vendors.find(vendor => vendor.id === combinedPayForm.vendor_id);
+    const accountsById = new Map((catalogs?.accounts || []).map(account => [account.id, account]));
     setCombinedPaySaving(true);
     try {
       const checksForSave = combinedPayForm.checkLines.map(line => ({
         ...line,
         sent_to_address: combinedPayForm.sent_to_address,
       }));
-      const checkLines = await prepareCheckPaymentLinesForSave(checksForSave, batchId);
+      const checkLines = (await prepareCheckPaymentLinesForSave(checksForSave, batchId)).map(line => {
+        const bankAccountId = line.bank_account_id ? String(line.bank_account_id) : null;
+        const bankAccount = bankAccountId ? accountsById.get(bankAccountId) || null : null;
+        return {
+          ...line,
+          bank_account_id: bankAccountId,
+          bank_account_label: bankAccount ? accountLabel(bankAccount) : null,
+          bank_account_name: bankAccount?.name || null,
+        };
+      });
       const checkNumbers = checkLines.map(line => line.check_number).filter(Boolean).join('\n');
       const checkAddresses = Array.from(new Set(checkLines.map(line => line.confirmed_address || line.sent_to_address).filter(Boolean)));
+      const uniqueCheckAccountIds = Array.from(new Set(checkLines.map(line => line.bank_account_id).filter(Boolean)));
+      const paymentAccountId = uniqueCheckAccountIds.length === 1
+        ? uniqueCheckAccountIds[0]
+        : combinedPayForm.account_id === 'none' ? null : combinedPayForm.account_id;
       const allocations = selectedInvoices.map(invoice => ({
         amount_applied: invoice.final_amount_to_pay || finalAmountToPay(invoice.amount, invoice.credit),
         due_date: invoice.due_date,
@@ -1978,7 +2029,7 @@ export default function AccountingInvoicesPage() {
       for (const invoice of selectedInvoices) {
         const amountApplied = invoice.final_amount_to_pay || finalAmountToPay(invoice.amount, invoice.credit);
         await createInvoicePayment.mutateAsync({
-          account_id: combinedPayForm.account_id === 'none' ? null : combinedPayForm.account_id,
+          account_id: paymentAccountId,
           account_number: combinedPayForm.account_number || vendorAccountNumberForStore(selectedVendor, invoice.store_id) || null,
           amount_paid: amountApplied,
           category_id: categoryId ?? invoice.category_id,
