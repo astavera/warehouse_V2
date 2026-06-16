@@ -97,6 +97,12 @@ function formatWarehouseReceived(box: ExpectedBox) {
   return receivedAt ? `Received - ${receivedAt}` : 'Received - count pending';
 }
 
+function getDefaultWarehouseReceivedCount(box: ExpectedBox) {
+  const notes = (box.notes || '').trim();
+  const notesCount = /^\d+$/.test(notes) ? Number(notes) : 0;
+  return Math.max(1, box.warehouse_received_box_count || 0, box.carrier_shipped_count || 0, notesCount || 0);
+}
+
 function getErrorMessage(error: unknown, fallback: string) {
   if (error instanceof Error) return error.message;
   if (typeof error === 'object' && error && 'message' in error && typeof error.message === 'string') {
@@ -275,6 +281,9 @@ export default function ExpectedBoxesPage() {
       toast.error('P.O is required for Supplier + P.O matching');
       return;
     }
+    const markReceived = editStatus === 'received';
+    const nextNotes = editNotes.trim() || null;
+    const nextReceivedCount = markReceived ? getDefaultWarehouseReceivedCount({ ...selectedBox, notes: nextNotes }) : 0;
     try {
       await updateExpectedBox(selectedBox.id, {
         carrier: editCarrier,
@@ -283,10 +292,12 @@ export default function ExpectedBoxesPage() {
         match_condition: editMatchCondition,
         po_number: editMatchCondition === 'supplier_po' ? editPoNumber.trim() : null,
         status: editStatus,
-        notes: editNotes.trim() || null,
-        warehouse_received_at: editStatus === 'received' ? selectedBox.warehouse_received_at : null,
-        received_batch_id: editStatus === 'received' ? selectedBox.received_batch_id : null,
-        received_item_id: editStatus === 'received' ? selectedBox.received_item_id : null,
+        notes: nextNotes,
+        warehouse_received_at: markReceived ? selectedBox.warehouse_received_at || new Date().toISOString() : null,
+        warehouse_received_box_count: nextReceivedCount,
+        received_batch_id: markReceived ? selectedBox.received_batch_id : null,
+        received_item_id: markReceived ? selectedBox.received_item_id : null,
+        warehouse_received_email_sent: markReceived ? selectedBox.warehouse_received_email_sent : false,
       });
       setEditOpen(false);
       toast.success('Expected box updated');
@@ -357,6 +368,21 @@ export default function ExpectedBoxesPage() {
     } finally {
       setSyncingId('');
       setSyncingList(false);
+    }
+  };
+
+  const handleMarkWarehouseReceived = async (box: ExpectedBox) => {
+    try {
+      await updateExpectedBox(box.id, {
+        status: 'received',
+        warehouse_received_at: box.warehouse_received_at || new Date().toISOString(),
+        warehouse_received_box_count: getDefaultWarehouseReceivedCount(box),
+        warehouse_received_email_sent: box.warehouse_received_email_sent,
+      });
+      setSelectedId(box.id);
+      toast.success('Marked as received in WH');
+    } catch (err) {
+      toast.error(getErrorMessage(err, 'Failed to mark received in WH'));
     }
   };
 
@@ -809,7 +835,13 @@ export default function ExpectedBoxesPage() {
                                 ))}
                               </div>
 
-                              <div className="grid grid-cols-3 gap-2 xl:w-[360px]">
+                              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 xl:w-[480px]">
+                                {(box.status !== 'received' || !box.warehouse_received_at) && (
+                                  <Button type="button" variant="outline" className="h-10 gap-2 rounded-lg bg-white px-3 text-sm" onClick={() => handleMarkWarehouseReceived(box)}>
+                                    <CheckCircle2 className="h-4 w-4" />
+                                    WH received
+                                  </Button>
+                                )}
                                 <Button type="button" className="h-10 gap-2 rounded-lg px-3 text-sm" onClick={() => handleSyncTracking(box)} disabled={syncingList || syncingId === box.id}>
                                   {syncingId === box.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
                                   Refresh

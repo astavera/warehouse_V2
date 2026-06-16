@@ -24,6 +24,7 @@ export default function LoginPage() {
   const [statusMessage, setStatusMessage] = useState('');
   const [verifiedAdminPasscode, setVerifiedAdminPasscode] = useState('');
   const autoSubmitLock = useRef(false);
+  const lastPointerInputRef = useRef(0);
 
   const isSignup = mode === 'register';
   const isAdminMode = mode === 'admin';
@@ -94,6 +95,24 @@ export default function LoginPage() {
     setPasscode(prev => (prev.length < 4 ? `${prev}${key}` : prev));
   }, [loading]);
 
+  const handleKeypadPointerDown = useCallback(
+    (event: React.PointerEvent<HTMLButtonElement>, key: (typeof KEYS)[number]) => {
+      event.preventDefault();
+      lastPointerInputRef.current = globalThis.performance?.now?.() ?? Date.now();
+      handleKeypad(key);
+    },
+    [handleKeypad]
+  );
+
+  const handleKeypadClick = useCallback(
+    (key: (typeof KEYS)[number]) => {
+      const now = globalThis.performance?.now?.() ?? Date.now();
+      if (now - lastPointerInputRef.current < 450) return;
+      handleKeypad(key);
+    },
+    [handleKeypad]
+  );
+
   useEffect(() => {
     const handlePhysicalKeyboard = (event: KeyboardEvent) => {
       if (showSuccess || event.altKey || event.ctrlKey || event.metaKey) return;
@@ -149,11 +168,11 @@ export default function LoginPage() {
             </div>
           </div>
 
-          <Card className="relative mx-auto w-full max-w-[24rem] overflow-hidden border-0 bg-white/94 shadow-[0_24px_80px_rgba(15,23,42,0.12)] backdrop-blur-xl sm:max-w-[30rem] sm:rounded-xl sm:border sm:border-white/80">
+          <Card className="relative mx-auto w-full max-w-[24rem] overflow-hidden border-0 bg-white/94 shadow-[0_18px_48px_rgba(15,23,42,0.10)] backdrop-blur-sm sm:max-w-[30rem] sm:rounded-xl sm:border sm:border-white/80">
             <CardContent className="relative px-0 py-0 sm:p-7">
               <div
                 className={cn(
-                  'absolute inset-0 z-20 flex flex-col items-center justify-center bg-white/96 px-8 text-center transition-all duration-500 backdrop-blur',
+                  'absolute inset-0 z-20 flex flex-col items-center justify-center bg-white/96 px-8 text-center transition-opacity duration-200 backdrop-blur-sm',
                   showSuccess ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'
                 )}
               >
@@ -210,10 +229,8 @@ export default function LoginPage() {
                       <div
                         key={index}
                         className={cn(
-                          'h-2.5 w-2.5 rounded-full transition-all duration-300',
-                          passcode[index]
-                            ? 'scale-100 bg-foreground shadow-[0_3px_10px_rgba(15,23,42,0.18)]'
-                            : 'scale-90 bg-black/10'
+                          'h-2.5 w-2.5 rounded-full transition-colors duration-100',
+                          passcode[index] ? 'bg-foreground' : 'bg-black/10'
                         )}
                       />
                     ))}
@@ -235,12 +252,13 @@ export default function LoginPage() {
                         type="button"
                         variant="ghost"
                         className={cn(
-                          'h-[4.65rem] w-[4.65rem] rounded-full p-0 text-[1.7rem] font-medium shadow-none transition-all duration-150 active:scale-95 sm:h-20 sm:w-20 sm:text-3xl',
+                          'login-keypad-button h-[4.65rem] w-[4.65rem] touch-manipulation select-none rounded-full p-0 text-[1.7rem] font-medium shadow-none transition-colors duration-75 active:translate-y-px sm:h-20 sm:w-20 sm:text-3xl',
                           key === 'back'
                             ? 'border border-slate-400 bg-white text-slate-800 hover:bg-slate-50'
                             : 'bg-slate-700 text-white hover:bg-slate-800'
                         )}
-                        onClick={() => handleKeypad(key)}
+                        onPointerDown={event => handleKeypadPointerDown(event, key)}
+                        onClick={() => handleKeypadClick(key)}
                         aria-label={key === 'back' ? 'Backspace' : `Number ${key}`}
                       >
                         {key === 'back' ? <Delete className="h-5 w-5 sm:h-6 sm:w-6" /> : key}

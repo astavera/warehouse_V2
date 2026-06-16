@@ -118,6 +118,13 @@
     @apply min-h-[44px] min-w-[44px];
   }
 
+  .login-keypad-button {
+    touch-action: manipulation;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+
   .app-surface {
     background:
       linear-gradient(180deg, hsl(210 24% 97%) 0%, hsl(210 22% 94%) 100%);
