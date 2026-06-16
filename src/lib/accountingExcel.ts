@@ -29,6 +29,7 @@ export type AccountingTemplateVendor = {
   email: string | null;
   name: string;
   notes: string | null;
+  payment_terms_days: number | null;
   phone: string | null;
   rowNumber: number;
 };
@@ -139,7 +140,7 @@ export type AccountingTemplateImport = {
 };
 
 const SHEET_HEADERS: Record<string, string[]> = {
-  Vendors: ['Vendor Name', 'Address', 'Contact Name', 'Phone Number', 'Email', 'Account Number', 'Default Payment Method', 'Notes'],
+  Vendors: ['Vendor Name', 'Address', 'Contact Name', 'Phone Number', 'Email', 'Account Number', 'Default Payment Method', 'Payment Terms Days', 'Notes'],
   'Credit Cards': ['Card Name', 'Store', 'Brand / Bank', 'Last 4', 'Active'],
   'Pending Invoices': [
     'Vendor Name',
@@ -173,17 +174,19 @@ const SHEET_HEADERS: Record<string, string[]> = {
     'Status',
   ],
   'Credit Card Payments': ['Credit Card', 'Payment Date', 'Amount', 'Confirmation / Reference', 'Status', 'Notes'],
-  'Personal Bills': ['Bill Name', 'Vendor Name', 'Payer', 'Payment Method', 'Payment Date', 'Amount', 'Status', 'Notes'],
+  'Personal Bills': ['Concept', 'Payment Method', 'Payment Date', 'Amount', 'Status', 'Notes'],
   Truck: ['Violation Number', 'Violation Date', 'Description', 'Amount', 'Receipt / Reference', 'Payment Method', 'Paid Amount', 'Payment Date', 'Notes'],
 };
 
+const PERSONAL_BILLS_PARSE_HEADERS = ['Concept', 'Bill Name', 'Vendor Name', 'Payer', 'Payment Method', 'Payment Date', 'Amount', 'Status', 'Notes'];
+
 const TEMPLATE_SAMPLE_ROWS: Record<string, unknown[][]> = {
-  Vendors: [['Example Vendor', '123 Main St', 'Accounts Receivable', '555-0101', 'ar@example.com', 'ACCT-123', 'Check', 'Optional notes']],
+  Vendors: [['Example Vendor', '123 Main St', 'Accounts Receivable', '555-0101', 'ar@example.com', 'ACCT-123', 'Check', 30, 'Optional notes']],
   'Credit Cards': [['TD Business 7627', 'Both Stores', 'TD', '7627', 'Yes']],
   'Pending Invoices': [['Example Vendor', 'Warehouse', 'INV-1001', 'PO-1001', '', '', '2026-07-15', '2026-06-30', 1250.5, 50, 'Damaged item credit', 'Freight', 'Pay before due date', 'pending']],
   'Paid Invoices': [['Example Vendor', 'Warehouse', 'INV-1001\nINV-1002', '2026-07-01', 1800, 'Credit Card', 'TD Business 7627', 'ACCT-123', '', 'CONF-123', 'Freight', 'One combined payment row', 'Paid']],
   'Credit Card Payments': [['TD Business 7627', '2026-07-05', 1800, 'CONF-123', 'Paid', 'Statement payment']],
-  'Personal Bills': [['Directv', 'Example Vendor', 'Sebastian', 'Credit Card', '2026-07-06', 50.44, 'Paid', 'Optional notes']],
+  'Personal Bills': [['Directv', 'Credit Card', '2026-07-06', 50.44, 'Paid', 'Optional notes']],
   Truck: [['925661674-9', '2026-07-07', 'Double parking', 115, 'CPY052894306', 'eCheck 1648', 115, '2026-07-15', 'Optional notes']],
 };
 
@@ -213,6 +216,13 @@ function moneyValue(row: ExcelJS.Row, headerMap: Map<string, number>, header: st
 
 function dateValue(row: ExcelJS.Row, headerMap: Map<string, number>, header: string) {
   return toIsoDate(rowValue(row, headerMap, header));
+}
+
+function integerValue(row: ExcelJS.Row, headerMap: Map<string, number>, header: string) {
+  const value = rowValue(row, headerMap, header);
+  if (!value) return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.round(parsed) : null;
 }
 
 function boolValue(value: string | null | undefined, defaultValue = true) {
@@ -300,7 +310,7 @@ export async function createAccountingTemplateBuffer() {
     ['2. Pending Invoices', 'Use one row per open invoice. Credit Amount and Credit Reason are optional.'],
     ['3. Paid Invoices', 'Use one row per payment. Store is optional. Invoice Number(s) can contain multiple invoice numbers separated by new lines.'],
     ['4. Dates and money', 'Use YYYY-MM-DD for dates and plain numbers for amounts. Example: 1250.50'],
-    ['5. Import', 'Upload this file from Accounting > Imports. Rows are matched by file name, sheet, and row number.'],
+    ['5. Import', 'Upload this file from Accounting > Imports. Rows are matched by file hash, sheet, and row number.'],
   ].forEach(row => instructions.addRow(row));
   instructions.getRow(1).font = { bold: true };
 
@@ -350,7 +360,7 @@ export async function parseAccountingTemplateFile(file: File): Promise<Accountin
       addWarning(result.warnings, file.name, sheetName, null, 'sheet_missing', `Sheet "${sheetName}" was not found.`);
       continue;
     }
-    const headers = SHEET_HEADERS[sheetName] || [];
+    const headers = sheetName === 'Personal Bills' ? PERSONAL_BILLS_PARSE_HEADERS : SHEET_HEADERS[sheetName] || [];
     const headerMap = headerMapFor(sheet);
     let rowsProcessed = 0;
 
@@ -374,6 +384,7 @@ export async function parseAccountingTemplateFile(file: File): Promise<Accountin
           email: rowValue(row, headerMap, 'Email'),
           name,
           notes: rowValue(row, headerMap, 'Notes'),
+          payment_terms_days: integerValue(row, headerMap, 'Payment Terms Days'),
           phone: rowValue(row, headerMap, 'Phone Number'),
           rowNumber,
         });
@@ -467,7 +478,7 @@ export async function parseAccountingTemplateFile(file: File): Promise<Accountin
       if (sheetName === 'Personal Bills') {
         result.personalBills.push({
           amount: moneyValue(row, headerMap, 'Amount'),
-          bill_name: rowValue(row, headerMap, 'Bill Name'),
+          bill_name: rowValue(row, headerMap, 'Concept') || rowValue(row, headerMap, 'Bill Name'),
           notes: rowValue(row, headerMap, 'Notes'),
           payer: rowValue(row, headerMap, 'Payer'),
           payment_date: dateValue(row, headerMap, 'Payment Date'),

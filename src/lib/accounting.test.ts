@@ -5,6 +5,7 @@ import {
   getDefaultLandingPath,
 } from '@/lib/permissions';
 import {
+  addDaysToIsoDate,
   finalAmountToPay,
   findTruckDuplicateGroups,
   hasCreditApplied,
@@ -14,8 +15,10 @@ import {
   parseExcelDate,
   parseMoney,
   parsePaidStatus,
+  paymentTermsLabel,
   sourceRowHash,
   sourceRowKey,
+  summarizeVendorBalances,
   type AccountingInvoice,
   type AccountingTruckViolation,
 } from '@/lib/accounting';
@@ -69,6 +72,12 @@ describe('accounting domain helpers', () => {
     expect(parseExcelDate('1/5/26')).toBe('2026-01-05');
   });
 
+  it('labels payment terms and calculates due dates', () => {
+    expect(paymentTermsLabel(30)).toBe('Net 30');
+    expect(paymentTermsLabel(0)).toBe('Due on receipt');
+    expect(addDaysToIsoDate('2026-06-16', 30)).toBe('2026-07-16');
+  });
+
   it('parses paid status values', () => {
     expect(parsePaidStatus('Paid ')).toBe('paid');
     expect(parsePaidStatus('')).toBe('pending');
@@ -82,6 +91,37 @@ describe('accounting domain helpers', () => {
     expect(isDueSoon(invoice({ due_date: '2026-01-15' }), 7, today)).toBe(true);
     expect(isHighAmount(row)).toBe(true);
     expect(hasCreditApplied(row)).toBe(true);
+  });
+
+  it('summarizes vendor balances due within 15 days', () => {
+    const today = new Date('2026-01-10T12:00:00.000Z');
+    const rows = summarizeVendorBalances([
+      invoice({
+        accounting_vendors: { id: 'vendor-a', name: 'Vendor A', normalized_name: 'vendor a' },
+        amount: '100.00',
+        credit: '10.00',
+        due_date: '2026-01-20',
+        vendor_id: 'vendor-a',
+      }),
+      invoice({
+        accounting_vendors: { id: 'vendor-a', name: 'Vendor A', normalized_name: 'vendor a' },
+        amount: '200.00',
+        due_date: '2026-02-05',
+        vendor_id: 'vendor-a',
+      }),
+      invoice({
+        accounting_vendors: { id: 'vendor-a', name: 'Vendor A', normalized_name: 'vendor a' },
+        amount: '300.00',
+        due_date: '2026-01-15',
+        status: 'paid',
+        paid: true,
+        vendor_id: 'vendor-a',
+      }),
+    ], today);
+
+    expect(rows[0].dueNext15Count).toBe(1);
+    expect(rows[0].dueNext15Amount).toBe('90.00');
+    expect(rows[0].totalAmount).toBe('290.00');
   });
 
   it('creates stable source row keys and hashes', () => {

@@ -21,7 +21,9 @@ import {
 import { cn } from '@/lib/utils';
 import {
   addMoney,
+  addDaysToIsoDate,
   daysUntilDue,
+  decimalStringToCents,
   finalAmountToPay,
   hasCreditApplied,
   invoiceFinalAmount,
@@ -30,6 +32,7 @@ import {
   isInvoicePaid,
   isOverdue,
   normalizeText,
+  paymentTermsLabel,
   parseMoney,
   summarizeVendorBalances,
   vendorAccountNumberForStore,
@@ -551,6 +554,8 @@ function InvoiceFormDialog({
 }) {
   const { data: catalogs } = useAccountingCatalogs();
   const selectedVendor = catalogs?.vendors.find(vendor => vendor.id === form.vendor_id) || null;
+  const selectedVendorTermsDays = selectedVendor?.payment_terms_days ?? null;
+  const termsDueDate = addDaysToIsoDate(form.issue_date, selectedVendorTermsDays);
   const activeAccounts = (catalogs?.accounts || []).filter(account => account.active !== false);
   const bankAccountOptions = activeAccounts.filter(account => !isCreditCardAccount(account));
   const saveDisabled = saving || !form.amount.trim() || !form.invoiceNumbers.length;
@@ -569,7 +574,9 @@ function InvoiceFormDialog({
   };
   const selectVendor = (vendorId: string) => {
     const vendor = catalogs?.vendors.find(item => item.id === vendorId);
+    const dueDateFromTerms = !form.due_date ? addDaysToIsoDate(form.issue_date, vendor?.payment_terms_days) : null;
     onChange({
+      ...(dueDateFromTerms ? { due_date: dueDateFromTerms } : {}),
       locationAccounts: buildLocationAccountRows({
         accounts: catalogs?.accounts || [],
         existingRows: form.locationAccounts,
@@ -580,6 +587,17 @@ function InvoiceFormDialog({
       }),
       vendor_id: vendorId,
     });
+  };
+  const updateIssueDate = (issueDate: string) => {
+    const dueDateFromTerms = !form.due_date ? addDaysToIsoDate(issueDate, selectedVendorTermsDays) : null;
+    onChange({
+      issue_date: issueDate,
+      ...(dueDateFromTerms ? { due_date: dueDateFromTerms } : {}),
+    });
+  };
+  const applyVendorTerms = () => {
+    if (!termsDueDate) return;
+    onChange({ due_date: termsDueDate });
   };
   const selectStore = (storeId: string) => {
     onChange({
@@ -765,18 +783,54 @@ function InvoiceFormDialog({
                 <div className="py-4 text-center text-sm text-muted-foreground">No invoice numbers added yet.</div>
               )}
             </div>
+            <div className="grid gap-4 pt-2 sm:grid-cols-[minmax(180px,240px)_220px]">
+              <div className="space-y-1.5">
+                <Label>Invoice amount</Label>
+                <Input inputMode="decimal" value={form.amount} onChange={event => onChange({ amount: event.target.value })} placeholder="0.00" />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Status</Label>
+                <Select value={form.status} onValueChange={value => onChange({ status: value as AccountingStatus })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="pending">Pending</SelectItem>
+                    <SelectItem value="paid">Paid</SelectItem>
+                    <SelectItem value="cancelled">Cancelled</SelectItem>
+                    <SelectItem value="unknown">Unknown</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
           </div>
           <div className="grid content-start gap-4">
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-1">
               <div className="space-y-1.5">
                 <Label>Issue date</Label>
-                <Input type="date" value={form.issue_date} onChange={event => onChange({ issue_date: event.target.value })} />
+                <Input type="date" value={form.issue_date} onChange={event => updateIssueDate(event.target.value)} />
               </div>
               <div className="space-y-1.5">
                 <Label>Due date</Label>
                 <Input type="date" value={form.due_date} onChange={event => onChange({ due_date: event.target.value })} />
               </div>
             </div>
+            {selectedVendor && (
+              <div className="rounded-lg border bg-muted/20 p-3 text-sm">
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <div className="text-xs font-medium uppercase text-muted-foreground">Terms</div>
+                    <div className="font-semibold">{paymentTermsLabel(selectedVendorTermsDays)}</div>
+                  </div>
+                  {selectedVendorTermsDays != null && termsDueDate && (
+                    <Button type="button" variant="outline" size="sm" onClick={applyVendorTerms}>
+                      Apply terms
+                    </Button>
+                  )}
+                </div>
+                {selectedVendorTermsDays != null && termsDueDate && (
+                  <div className="mt-2 text-xs text-muted-foreground">Calculated due date: {termsDueDate}</div>
+                )}
+              </div>
+            )}
             <div className="rounded-lg border bg-muted/20 p-3">
               <div className="text-xs font-medium uppercase text-muted-foreground">Final amount</div>
               <div className="mt-1 text-2xl font-semibold tabular-nums">
@@ -786,25 +840,6 @@ function InvoiceFormDialog({
                 Credit total: <MoneyText value={totalCredit} />
               </div>
             </div>
-          </div>
-        </div>
-
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_220px]">
-          <div className="space-y-1.5">
-            <Label>Amount</Label>
-            <Input inputMode="decimal" value={form.amount} onChange={event => onChange({ amount: event.target.value })} placeholder="0.00" />
-          </div>
-          <div className="space-y-1.5">
-            <Label>Status</Label>
-            <Select value={form.status} onValueChange={value => onChange({ status: value as AccountingStatus })}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="pending">Pending</SelectItem>
-                <SelectItem value="paid">Paid</SelectItem>
-                <SelectItem value="cancelled">Cancelled</SelectItem>
-                <SelectItem value="unknown">Unknown</SelectItem>
-              </SelectContent>
-            </Select>
           </div>
         </div>
 
@@ -1275,6 +1310,7 @@ export default function AccountingInvoicesPage() {
         invoice.invoice_number,
         invoice.notes,
         invoice.accounting_invoice_categories?.name,
+        paymentTermsLabel(invoice.accounting_vendors?.payment_terms_days),
       ].filter(Boolean).join(' '));
       return haystack.includes(query);
     });
@@ -1283,14 +1319,20 @@ export default function AccountingInvoicesPage() {
   const vendorBalances = useMemo(() => summarizeVendorBalances(invoices), [invoices]);
   const visibleVendorBalances = useMemo(() => {
     const query = normalizeText(balanceSearch);
+    const dueWithin15Rows = vendorBalances.filter(row => decimalStringToCents(row.dueNext15Amount) > 0n);
     const rows = vendorFilter === 'all'
-      ? vendorBalances
-      : vendorBalances.filter(row => (row.vendorId || 'none') === vendorFilter);
-    if (!query) return rows;
-    return rows.filter(row => normalizeText(row.vendorName).includes(query));
+      ? dueWithin15Rows
+      : dueWithin15Rows.filter(row => (row.vendorId || 'none') === vendorFilter);
+    const searchedRows = query ? rows.filter(row => normalizeText(row.vendorName).includes(query)) : rows;
+    return [...searchedRows].sort((a, b) => {
+      const amountA = decimalStringToCents(a.dueNext15Amount);
+      const amountB = decimalStringToCents(b.dueNext15Amount);
+      if (amountA !== amountB) return amountA > amountB ? -1 : 1;
+      return a.vendorName.localeCompare(b.vendorName);
+    });
   }, [balanceSearch, vendorBalances, vendorFilter]);
   const visibleVendorOwedTotal = useMemo(
-    () => addMoney(visibleVendorBalances.map(row => row.totalAmount)),
+    () => addMoney(visibleVendorBalances.map(row => row.dueNext15Amount)),
     [visibleVendorBalances]
   );
   const filtersActive =
@@ -1323,6 +1365,7 @@ export default function AccountingInvoicesPage() {
   const save = async () => {
     const cleanedCredits = cleanCreditLines(form.creditLines);
     const totalCredit = addMoney(cleanedCredits.map(line => line.amount || '0.00'));
+    const selectedVendorForSave = catalogs?.vendors.find(vendor => vendor.id === form.vendor_id);
     const payload = {
       amount: form.amount,
       category_id: form.category_id === 'none' ? null : form.category_id,
@@ -1342,6 +1385,7 @@ export default function AccountingInvoicesPage() {
           store_id: row.store_id === 'none' ? null : row.store_id,
           store_name: row.store_name || null,
         })),
+        vendor_payment_terms_days: selectedVendorForSave?.payment_terms_days ?? null,
       },
       status: form.status,
       store_id: form.store_id === 'none' ? null : form.store_id,
@@ -1524,11 +1568,11 @@ export default function AccountingInvoicesPage() {
                 <div>
                   <div className="flex items-center gap-2">
                     <Users className="h-4 w-4 text-primary" />
-                    <h2 className="text-sm font-semibold">Amount owed by vendor</h2>
+                    <h2 className="text-sm font-semibold">Due within 15 days by vendor</h2>
                     <Badge variant="outline">{visibleVendorBalances.length}</Badge>
                   </div>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    Visible total: <span className="font-semibold text-foreground"><MoneyText value={visibleVendorOwedTotal} /></span>
+                    Due 15d total: <span className="font-semibold text-foreground"><MoneyText value={visibleVendorOwedTotal} /></span>
                   </p>
                 </div>
                 <div className="relative lg:w-[260px]">
@@ -1547,8 +1591,8 @@ export default function AccountingInvoicesPage() {
                     <TableHeader className="sticky top-0 z-10 bg-white">
                       <TableRow>
                         <TableHead>Vendor</TableHead>
-                        <TableHead className="text-right">Open</TableHead>
-                        <TableHead className="text-right">Due 30d</TableHead>
+                        <TableHead className="text-right">Invoices</TableHead>
+                        <TableHead className="text-right">Due 15d</TableHead>
                         <TableHead className="text-right">Total owed</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -1556,8 +1600,8 @@ export default function AccountingInvoicesPage() {
                       {visibleVendorBalances.map(row => (
                         <TableRow key={row.vendorId || row.vendorName}>
                           <TableCell className="min-w-[180px] font-medium">{row.vendorName}</TableCell>
-                          <TableCell className="text-right">{row.invoiceCount}</TableCell>
-                          <TableCell className="text-right"><MoneyText value={row.dueNext30Amount} /></TableCell>
+                          <TableCell className="text-right">{row.dueNext15Count}</TableCell>
+                          <TableCell className="text-right"><MoneyText value={row.dueNext15Amount} /></TableCell>
                           <TableCell className="text-right font-semibold"><MoneyText value={row.totalAmount} /></TableCell>
                         </TableRow>
                       ))}
@@ -1565,7 +1609,7 @@ export default function AccountingInvoicesPage() {
                   </Table>
                 </div>
               ) : (
-                <EmptyState label="No open vendor balances for the current filter." />
+                <EmptyState label="No vendor balances due within 15 days for the current filter." />
               )}
             </div>
             <div className="self-start rounded-lg border bg-muted/20 p-3 text-sm">
@@ -1588,6 +1632,7 @@ export default function AccountingInvoicesPage() {
                     <TableHead>Store</TableHead>
                     <TableHead>Invoice</TableHead>
                     <TableHead>Due</TableHead>
+                    <TableHead>Terms</TableHead>
                     <TableHead className="text-right">Amount</TableHead>
                     <TableHead className="text-right">Credit</TableHead>
                     <TableHead className="text-right">Final</TableHead>
@@ -1602,6 +1647,11 @@ export default function AccountingInvoicesPage() {
                       <TableCell>{invoice.accounting_stores?.name || '-'}</TableCell>
                       <TableCell className="max-w-[220px] whitespace-normal">{compactMultiLine(invoice.invoice_number) || '-'}</TableCell>
                       <TableCell>{invoice.due_date || '-'}</TableCell>
+                      <TableCell>
+                        {invoice.accounting_vendors?.payment_terms_days == null
+                          ? '-'
+                          : <Badge variant="outline">{paymentTermsLabel(invoice.accounting_vendors.payment_terms_days)}</Badge>}
+                      </TableCell>
                       <TableCell className="text-right"><MoneyText value={invoice.amount} /></TableCell>
                       <TableCell className="text-right">
                         <div><MoneyText value={invoice.credit} /></div>

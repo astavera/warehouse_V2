@@ -783,6 +783,32 @@ async function requireSettingsAccess(db: Db, req: Request) {
   throw err;
 }
 
+function canAccessModule(
+  employee: {
+    id?: string | null;
+    auth_user_id?: string | null;
+    role?: string | null;
+    permissions?: string[] | null;
+  } | null | undefined,
+  module: 'prices' | 'audit'
+) {
+  const permissions = Array.isArray(employee?.permissions) ? employee.permissions : [];
+  if (employee?.role === 'admin' || isSebastianAdminEmployee(employee)) return true;
+  if (module === 'prices') {
+    return employee?.role === 'accounting' || employee?.role === 'store' || permissions.includes('prices');
+  }
+  return employee?.role === 'accounting' || permissions.includes('audit');
+}
+
+async function requireModuleAccess(db: Db, req: Request, module: 'prices' | 'audit') {
+  const employee = await getRequestEmployee(db, req);
+  if (canAccessModule(employee, module)) return;
+
+  const err = new Error(`${module === 'prices' ? 'Prices' : 'Audit'} access required`) as SquareError;
+  err.status = 403;
+  throw err;
+}
+
 async function getProduct(db: Db, barcode: string): Promise<ProductRow | null> {
   const { data, error } = await db.from(TABLE).select('*').eq('barcode', barcode).maybeSingle();
   if (error) throw error;
@@ -1383,6 +1409,7 @@ Deno.serve(async req => {
     }
 
     if (action === 'lookup') {
+      await requireModuleAccess(db, req, 'prices');
       const barcode = String(payload.barcode ?? '').trim();
       const live = await lookupByBarcode(barcode);
       if (!live.found) return jsonResponse(live);
@@ -1403,6 +1430,7 @@ Deno.serve(async req => {
     }
 
     if (action === 'tag') {
+      await requireModuleAccess(db, req, 'prices');
       const barcode = String(payload.barcode ?? '').trim();
       const store = Number(payload.store);
       if (store !== 72 && store !== 86) {
@@ -1449,6 +1477,7 @@ Deno.serve(async req => {
     }
 
     if (action === 'audit') {
+      await requireModuleAccess(db, req, 'audit');
       const cursor = typeof payload.cursor === 'string' && payload.cursor ? payload.cursor : null;
       const { variations, nextCursor } = await listVariationPage(cursor);
       const movementIds = await listInventoryMovementIds(variations.map(v => v.variationId));

@@ -11,7 +11,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { Download, ChevronDown, ChevronRight, Trash2, Pencil } from 'lucide-react';
-import { useCarriers, useSuppliers, useEmployees, type BatchWithItems } from '@/hooks/useSupabaseData';
+import { createReceiptPhotoUrl, useCarriers, useSuppliers, useEmployees, type BatchWithItems } from '@/hooks/useSupabaseData';
 import { supabase } from '@/integrations/supabase/client';
 import CarrierBadge from '@/components/CarrierBadge';
 import { toast } from 'sonner';
@@ -32,24 +32,28 @@ function escapeCsv(val: string) {
 }
 
 function PhotoPreview({ path }: { path: string }) {
-  if (path.startsWith('data:') || path.startsWith('blob:') || path.startsWith('http')) {
-    return (
-      <a href={path} target="_blank" rel="noopener noreferrer" className="block">
-        <img
-          src={path}
-          alt="Receipt photo"
-          className="rounded-lg border max-h-48 object-contain bg-muted"
-          loading="lazy"
-        />
-      </a>
-    );
-  }
+  const [url, setUrl] = useState('');
 
-  const { data } = supabase.storage.from('receipts_photos').getPublicUrl(path);
+  useEffect(() => {
+    let active = true;
+    setUrl('');
+    createReceiptPhotoUrl(path)
+      .then(nextUrl => {
+        if (active) setUrl(nextUrl);
+      })
+      .catch(() => {
+        if (active) setUrl('');
+      });
+    return () => {
+      active = false;
+    };
+  }, [path]);
+
+  if (!url) return null;
   return (
-    <a href={data.publicUrl} target="_blank" rel="noopener noreferrer" className="block">
+    <a href={url} target="_blank" rel="noopener noreferrer" className="block">
       <img
-        src={data.publicUrl}
+        src={url}
         alt="Receipt photo"
         className="rounded-lg border max-h-48 object-contain bg-muted"
         loading="lazy"

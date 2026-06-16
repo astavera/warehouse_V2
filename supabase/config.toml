@@ -5,3 +5,12 @@ verify_jwt = false
 
 [functions.employee-admin]
 verify_jwt = true
+
+[functions.square-prices]
+verify_jwt = true
+
+[functions.send-expected-box-emails]
+verify_jwt = true
+
+[functions.sync-expected-box-tracking]
+verify_jwt = true

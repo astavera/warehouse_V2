@@ -94,7 +94,7 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="app-surface min-h-screen px-4 py-5 sm:px-6 sm:py-6">
+    <div className="app-surface min-h-screen px-5 py-6 sm:px-6 sm:py-6">
       <div className="mx-auto flex min-h-screen max-w-6xl items-center justify-center">
         <div className="grid w-full items-center gap-8 lg:grid-cols-[1.08fr_0.92fr] lg:gap-12">
           <div className="hidden lg:flex flex-col justify-center">
@@ -115,8 +115,8 @@ export default function LoginPage() {
             </div>
           </div>
 
-          <Card className="relative mx-auto w-full max-w-[30rem] overflow-hidden rounded-xl border border-white/90 bg-white/96 panel-shadow backdrop-blur">
-            <CardContent className="relative p-6 sm:p-7">
+          <Card className="relative mx-auto w-full max-w-[24rem] overflow-hidden border-0 bg-transparent shadow-none sm:max-w-[30rem] sm:rounded-xl sm:border sm:border-white/90 sm:bg-white/96 sm:panel-shadow sm:backdrop-blur">
+            <CardContent className="relative px-0 py-0 sm:p-7">
               <div
                 className={cn(
                   'absolute inset-0 z-20 flex flex-col items-center justify-center bg-white/96 px-8 text-center transition-all duration-500 backdrop-blur',
@@ -129,8 +129,8 @@ export default function LoginPage() {
                 <p className="mt-3 text-sm text-muted-foreground">{statusMessage || 'Opening workspace...'}</p>
               </div>
 
-              <div className="mb-5 lg:hidden">
-                <div className="mx-auto flex h-36 w-full max-w-[17rem] items-center justify-center px-1">
+              <div className="mb-6 lg:hidden">
+                <div className="mx-auto flex h-32 w-full max-w-[16rem] items-center justify-center px-1">
                   <img
                     src="/all-zentro-logo.png"
                     alt="All Zentro Solutions"
@@ -139,8 +139,8 @@ export default function LoginPage() {
                 </div>
               </div>
 
-              <div className="mb-6 text-center">
-                <p className="text-sm leading-6 text-muted-foreground">
+              <div className="mb-7 text-center">
+                <p className="text-[0.95rem] font-medium leading-6 text-muted-foreground">
                   {isAdminMode
                     ? 'Admin verification required'
                     : isSignup
@@ -149,7 +149,7 @@ export default function LoginPage() {
                 </p>
               </div>
 
-              <form onSubmit={handleSubmit} className="space-y-5">
+              <form onSubmit={handleSubmit} className="space-y-6">
                 {isSignup && (
                   <div className="space-y-2">
                     <Label className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Name</Label>
@@ -165,11 +165,11 @@ export default function LoginPage() {
                 )}
 
                 <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <Label className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                  <div className="flex items-center justify-center sm:justify-between">
+                    <Label className="text-xs uppercase tracking-[0.28em] text-muted-foreground">
                       {isAdminMode ? 'Admin Passcode' : 'Passcode'}
                     </Label>
-                    {mode === 'login' && <span className="text-xs text-muted-foreground">Returning users</span>}
+                    {mode === 'login' && <span className="hidden text-xs text-muted-foreground sm:inline">Returning users</span>}
                   </div>
                   <div className="flex items-center justify-center gap-3 py-1">
                     {Array.from({ length: 4 }).map((_, index) => (
@@ -184,17 +184,15 @@ export default function LoginPage() {
                       />
                     ))}
                   </div>
-                  {loading && !showSuccess && (
-                    <p className="text-center text-xs font-medium uppercase tracking-[0.22em] text-muted-foreground">
-                      {statusMessage}
-                    </p>
-                  )}
+                  <p className="min-h-5 text-center text-xs font-medium uppercase tracking-[0.22em] text-muted-foreground">
+                    {loading && !showSuccess ? statusMessage : ''}
+                  </p>
                 </div>
 
-                <div className="mx-auto grid w-fit grid-cols-3 justify-items-center gap-x-6 gap-y-4 sm:gap-x-8 sm:gap-y-4">
+                <div className="mx-auto grid w-fit grid-cols-3 justify-items-center gap-x-5 gap-y-4 sm:gap-x-8 sm:gap-y-4">
                   {KEYS.map(key => {
                     if (key === 'spacer') {
-                      return <div key={key} className="h-[4.35rem] w-[4.35rem] sm:h-20 sm:w-20" aria-hidden="true" />;
+                      return <div key={key} className="h-[4.65rem] w-[4.65rem] sm:h-20 sm:w-20" aria-hidden="true" />;
                     }
 
                     return (
@@ -203,7 +201,7 @@ export default function LoginPage() {
                         type="button"
                         variant="ghost"
                         className={cn(
-                          'h-[4.35rem] w-[4.35rem] rounded-full p-0 text-2xl font-medium shadow-none transition-all duration-150 active:scale-95 sm:h-20 sm:w-20 sm:text-3xl',
+                          'h-[4.65rem] w-[4.65rem] rounded-full p-0 text-[1.7rem] font-medium shadow-none transition-all duration-150 active:scale-95 sm:h-20 sm:w-20 sm:text-3xl',
                           key === 'back'
                             ? 'border border-slate-400 bg-white text-slate-800 hover:bg-slate-50'
                             : 'bg-slate-700 text-white hover:bg-slate-800'

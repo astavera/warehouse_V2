@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
 import { useAccountingCatalogs, useAccountingVendorMutations } from '@/hooks/useAccountingData';
-import { normalizeText, vendorLocationAccountRows, type AccountingVendor } from '@/lib/accounting';
+import { normalizeText, paymentTermsLabel, vendorLocationAccountRows, type AccountingVendor } from '@/lib/accounting';
 import { AccountingPageHeader, EmptyState, LoadingState } from './AccountingComponents';
 
 type VendorForm = {
@@ -29,6 +29,7 @@ type VendorForm = {
   }>;
   name: string;
   notes: string;
+  payment_terms_days: string;
   phone: string;
 };
 
@@ -42,6 +43,7 @@ const EMPTY_VENDOR_FORM: VendorForm = {
   locationAccounts: [],
   name: '',
   notes: '',
+  payment_terms_days: '',
   phone: '',
 };
 
@@ -71,8 +73,17 @@ function formFromVendor(vendor: AccountingVendor): VendorForm {
     locationAccounts,
     name: vendor.name,
     notes: vendor.notes || '',
+    payment_terms_days: vendor.payment_terms_days == null ? '' : String(vendor.payment_terms_days),
     phone: vendor.phone || '',
   };
+}
+
+function parseTermsDays(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const parsed = Number(trimmed);
+  if (!Number.isFinite(parsed) || parsed < 0 || parsed > 365) return undefined;
+  return Math.round(parsed);
 }
 
 function VendorDialog({
@@ -182,6 +193,18 @@ function VendorDialog({
               </SelectContent>
             </Select>
           </div>
+          <div className="space-y-1.5">
+            <Label>Payment terms</Label>
+            <Input
+              inputMode="numeric"
+              value={form.payment_terms_days}
+              onChange={event => onChange({ payment_terms_days: event.target.value })}
+              placeholder="30, 60, 90"
+            />
+            <div className="text-xs text-muted-foreground">
+              {form.payment_terms_days.trim() ? paymentTermsLabel(form.payment_terms_days) : 'Used to calculate invoice due dates.'}
+            </div>
+          </div>
         </div>
         {form.account_number_mode === 'by_location' && (
           <div className="space-y-3 rounded-lg border bg-muted/10 p-3">
@@ -276,6 +299,7 @@ export default function AccountingVendorsPage() {
         vendor.contact_name,
         vendor.phone,
         vendor.email,
+        paymentTermsLabel(vendor.payment_terms_days),
         vendor.notes,
       ].filter(Boolean).join(' ')).includes(query)
     );
@@ -294,6 +318,11 @@ export default function AccountingVendorsPage() {
   };
 
   const save = async () => {
+    const termsDays = parseTermsDays(form.payment_terms_days);
+    if (termsDays === undefined) {
+      toast.error('Payment terms must be a number between 0 and 365 days');
+      return;
+    }
     const locationAccountRows = form.account_number_mode === 'by_location'
       ? form.locationAccounts
           .map(row => ({
@@ -311,6 +340,7 @@ export default function AccountingVendorsPage() {
       email: form.email || null,
       name: form.name,
       notes: form.notes || null,
+      payment_terms_days: termsDays,
       phone: form.phone || null,
       raw_payload: {
         ...(editing?.raw_payload || {}),
@@ -360,6 +390,7 @@ export default function AccountingVendorsPage() {
                   <TableHead>Phone</TableHead>
                   <TableHead>Email</TableHead>
                   <TableHead>Default method</TableHead>
+                  <TableHead>Terms</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -388,6 +419,9 @@ export default function AccountingVendorsPage() {
                       <TableCell>{vendor.email || '-'}</TableCell>
                       <TableCell>
                         {method ? <Badge variant="outline">{method.name}</Badge> : '-'}
+                      </TableCell>
+                      <TableCell>
+                        {vendor.payment_terms_days == null ? '-' : <Badge variant="secondary">{paymentTermsLabel(vendor.payment_terms_days)}</Badge>}
                       </TableCell>
                       <TableCell className="text-right">
                         <Button variant="ghost" size="icon" onClick={() => openEdit(vendor)} aria-label="Edit vendor">

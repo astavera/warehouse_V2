@@ -1,13 +1,13 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import type { Tables, TablesInsert } from '@/integrations/supabase/types';
+import { createEmployeeAccess, updateEmployeeAccess } from '@/hooks/useEmployeeAdmin';
 import { invokeProtectedFunction } from '@/lib/protectedFunctions';
 import {
   cacheRemoteCarriers,
   cacheRemoteEmployees,
   cacheRemoteSuppliers,
   createLocalCarrier,
-  createLocalEmployee,
   createLocalSupplier,
   deleteLocalCarrier,
   deleteLocalSupplier,
@@ -21,10 +21,10 @@ import {
   saveLocalBatch,
   shouldUseLocalData,
   updateLocalCarrier,
-  updateLocalEmployee,
   updateLocalSupplier,
   type OfflineQueueItem,
 } from '@/lib/localWarehouseData';
+import { defaultModulesForRole, type AppModule, type EmployeeRole } from '@/lib/permissions';
 
 type Supplier = Tables<'suppliers'>;
 type Carrier = Tables<'carriers'>;
@@ -54,6 +54,7 @@ const expectedBoxesDb = supabase as unknown as {
   from: (table: string) => ExpectedBoxesQuery;
 };
 const EMPLOYEE_SELECT = 'id, name, active, created_at, updated_at, auth_user_id, role, store_number, permissions';
+const RECEIPT_PHOTOS_BUCKET = 'receipts_photos';
 
 export function useSuppliers() {
   const [data, setData] = useState<Supplier[]>([]);
@@ -231,26 +232,26 @@ export function useEmployees() {
   useEffect(() => { fetch(); }, [fetch]);
 
   const add = async (s: TablesInsert<'employees'>) => {
-    if (shouldUseLocalData()) {
-      const row = createLocalEmployee(s);
-      await fetch();
-      return row;
-    }
-
-    const { data: row, error } = await supabase.from('employees').insert(s).select().single();
-    if (error) throw error;
+    const role = (s.role || 'warehouse') as EmployeeRole;
+    const result = await createEmployeeAccess({
+      name: String(s.name || '').trim(),
+      passcode: String(s.passcode || ''),
+      permissions: (s.permissions as AppModule[] | null | undefined) || defaultModulesForRole(role),
+      role,
+      storeNumber: s.store_number ?? null,
+    });
     await fetch();
-    return row!;
+    return result.employee;
   };
 
   const update = async (id: string, patch: Partial<Employee>) => {
-    if (shouldUseLocalData()) {
-      updateLocalEmployee(id, patch);
-      await fetch();
-      return;
-    }
-
-    await supabase.from('employees').update(patch).eq('id', id);
+    await updateEmployeeAccess(id, {
+      active: patch.active,
+      name: patch.name,
+      permissions: patch.permissions as AppModule[] | null | undefined,
+      role: patch.role as EmployeeRole | undefined,
+      store_number: patch.store_number,
+    });
     await fetch();
   };
 
@@ -628,6 +629,18 @@ export async function sendExpectedBoxEmails(expectedBoxIds: string[]) {
   return invokeProtectedFunction<{ sent: number; sentIds?: string[] }>('send-expected-box-emails', { expectedBoxIds });
 }
 
+export async function createReceiptPhotoUrl(path: string) {
+  if (!path) return '';
+  if (path.startsWith('data:') || path.startsWith('blob:') || path.startsWith('http')) return path;
+  if (shouldUseLocalData()) return path;
+
+  const { data, error } = await supabase.storage
+    .from(RECEIPT_PHOTOS_BUCKET)
+    .createSignedUrl(path, 60 * 10);
+  if (error) throw error;
+  return data.signedUrl;
+}
+
 export async function uploadPhoto(file: File, path: string): Promise<string> {
   if (shouldUseLocalData()) {
     return new Promise((resolve, reject) => {
@@ -639,9 +652,8 @@ export async function uploadPhoto(file: File, path: string): Promise<string> {
   }
 
   const { error } = await supabase.storage
-    .from('receipts_photos')
+    .from(RECEIPT_PHOTOS_BUCKET)
     .upload(path, file, { upsert: true });
   if (error) throw error;
-  const { data } = supabase.storage.from('receipts_photos').getPublicUrl(path);
-  return data.publicUrl;
+  return path;
 }

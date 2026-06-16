@@ -6,6 +6,7 @@ import {
   isDueWithin,
   isInvoicePaid,
   normalizeText,
+  sortAccountingStores,
   sourceRowHash,
   summarizeAccountingDashboard,
   summarizeVendorBalances,
@@ -29,7 +30,10 @@ import {
   createLocalAccountingCategory,
   createLocalAccountingInvoicePayment,
   createLocalAccountingInvoice,
+  createLocalAccountingPaymentMethod,
+  createLocalAccountingPersonalBill,
   createLocalAccountingStore,
+  createLocalAccountingTruckViolation,
   createLocalAccountingVendor,
   importLocalAccountingTemplate,
   listLocalAccountingAccounts,
@@ -47,6 +51,7 @@ import {
   updateLocalAccountingInvoice,
   updateLocalAccountingAccount,
   updateLocalAccountingCategory,
+  updateLocalAccountingPaymentMethod,
   updateLocalAccountingStore,
   updateLocalAccountingVendor,
 } from '@/lib/localAccountingData';
@@ -122,6 +127,41 @@ export type AccountingInvoicePaymentInput = Partial<
   amount_paid: string;
 };
 
+export type AccountingPersonalBillInput = Partial<
+  Pick<
+    AccountingPersonalBill,
+    | 'bill_name'
+    | 'vendor_id'
+    | 'payer'
+    | 'payment_method_id'
+    | 'payment_date'
+    | 'amount'
+    | 'status'
+    | 'notes'
+    | 'raw_payload'
+  >
+> & {
+  amount: string;
+};
+
+export type AccountingTruckViolationInput = Partial<
+  Pick<
+    AccountingTruckViolation,
+    | 'violation_number'
+    | 'violation_date'
+    | 'description'
+    | 'amount'
+    | 'receipt_number'
+    | 'payment_method'
+    | 'paid_amount'
+    | 'payment_date'
+    | 'notes'
+    | 'raw_payload'
+  >
+> & {
+  amount: string;
+};
+
 export type AccountingVendorInput = {
   account_number?: string | null;
   address?: string | null;
@@ -131,6 +171,7 @@ export type AccountingVendorInput = {
   name: string;
   notes?: string | null;
   phone?: string | null;
+  payment_terms_days?: number | null;
   raw_payload?: Record<string, unknown>;
 };
 
@@ -148,6 +189,10 @@ export type AccountingStoreInput = {
 };
 
 export type AccountingCategoryInput = {
+  name: string;
+};
+
+export type AccountingPaymentMethodInput = {
   name: string;
 };
 
@@ -232,7 +277,7 @@ async function upsertCatalogRows<T extends { id: string; name: string; normalize
 async function upsertImportRows<T>(table: string, rows: Array<Record<string, unknown>>) {
   if (!rows.length) return [] as T[];
   const { data, error } = await asQuery<T[]>(
-    accountingDb.from(table).upsert(rows, { onConflict: 'source_file_name,source_sheet,source_row' })
+    accountingDb.from(table).upsert(rows, { onConflict: 'source_file_sha256,source_sheet,source_row' })
   )
     .select('*');
   if (error) throw error;
@@ -256,7 +301,7 @@ export function useAccountingInvoices() {
       if (shouldUseLocalData()) return listLocalAccountingInvoices();
       return queryRows<AccountingInvoice>(
         'accounting_invoices',
-        '*, accounting_vendors(id,name,normalized_name), accounting_stores(id,name,normalized_name), accounting_invoice_categories(id,name,normalized_name)',
+        '*, accounting_vendors(id,name,normalized_name,payment_terms_days), accounting_stores(id,name,normalized_name), accounting_invoice_categories(id,name,normalized_name)',
         { column: 'due_date', ascending: true }
       );
     },
@@ -354,7 +399,7 @@ export function useAccountingCatalogs() {
         queryRows<AccountingPaymentMethod>('accounting_payment_methods', '*', { column: 'name' }),
         queryRows<AccountingCategory>('accounting_invoice_categories', '*', { column: 'name' }),
       ]);
-      return { vendors, stores, accounts, paymentMethods, categories };
+      return { vendors, stores: sortAccountingStores(stores), accounts, paymentMethods, categories };
     },
   });
 }
@@ -368,7 +413,7 @@ export function useAccountingDashboard() {
           ? Promise.resolve(listLocalAccountingInvoices())
           : queryRows<AccountingInvoice>(
               'accounting_invoices',
-              '*, accounting_vendors(id,name,normalized_name), accounting_stores(id,name,normalized_name), accounting_invoice_categories(id,name,normalized_name)',
+              '*, accounting_vendors(id,name,normalized_name,payment_terms_days), accounting_stores(id,name,normalized_name), accounting_invoice_categories(id,name,normalized_name)',
               { column: 'due_date' }
             ),
         shouldUseLocalData()
@@ -517,6 +562,102 @@ export function useAccountingPaymentMutations() {
   return { createInvoicePayment };
 }
 
+export function useAccountingPersonalBillMutations() {
+  const queryClient = useQueryClient();
+
+  const createPersonalBill = useMutation({
+    mutationFn: async (input: AccountingPersonalBillInput) => {
+      ensureOnlineMutation();
+      const manualNonce = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+      const rawPayload = {
+        manual: true,
+        bill_name: input.bill_name,
+        amount: input.amount,
+        payment_date: input.payment_date,
+        ...(input.raw_payload || {}),
+      };
+      const payload = {
+        bill_name: input.bill_name || null,
+        vendor_id: input.vendor_id || null,
+        payer: input.payer || null,
+        payment_method_id: input.payment_method_id || null,
+        payment_date: input.payment_date || null,
+        amount: input.amount,
+        status: input.status || 'Pending',
+        notes: input.notes || null,
+        source_file_name: 'manual',
+        source_file_sha256: `manual-${manualNonce}`,
+        source_sheet: 'manual',
+        source_row: Math.floor(Math.random() * 1_000_000_000),
+        source_row_hash: sourceRowHash(rawPayload),
+        raw_payload: rawPayload,
+      };
+
+      if (shouldUseLocalData()) return createLocalAccountingPersonalBill(payload);
+      const { data, error } = await asQuery<AccountingPersonalBill>(
+        accountingDb.from('accounting_personal_bills').insert(payload)
+      )
+        .select('*, accounting_vendors(id,name,normalized_name), accounting_payment_methods(id,name,normalized_name)')
+        .single();
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => invalidateAccounting(queryClient),
+  });
+
+  return { createPersonalBill };
+}
+
+export function useAccountingTruckViolationMutations() {
+  const queryClient = useQueryClient();
+
+  const createTruckViolation = useMutation({
+    mutationFn: async (input: AccountingTruckViolationInput) => {
+      ensureOnlineMutation();
+      const manualNonce = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+      const duplicateGroupKey = truckDuplicateGroupKey(input.violation_number);
+      const rawPayload = {
+        manual: true,
+        violation_number: input.violation_number,
+        description: input.description,
+        amount: input.amount,
+        ...(input.raw_payload || {}),
+      };
+      const payload = {
+        violation_number: input.violation_number || null,
+        violation_date: input.violation_date || null,
+        description: input.description || null,
+        amount: input.amount,
+        receipt_number: input.receipt_number || null,
+        payment_method: input.payment_method || null,
+        paid_amount: input.paid_amount || null,
+        payment_date: input.payment_date || null,
+        is_possible_duplicate: false,
+        duplicate_group_key: duplicateGroupKey,
+        notes: input.notes || null,
+        source_file_name: 'manual',
+        source_file_sha256: `manual-${manualNonce}`,
+        source_sheet: 'manual',
+        source_row: Math.floor(Math.random() * 1_000_000_000),
+        source_row_hash: sourceRowHash(rawPayload),
+        raw_payload: rawPayload,
+      };
+
+      if (shouldUseLocalData()) return createLocalAccountingTruckViolation(payload);
+      const { data, error } = await asQuery<AccountingTruckViolation>(
+        accountingDb.from('accounting_truck_violations').insert(payload)
+      )
+        .select('*')
+        .single();
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => invalidateAccounting(queryClient),
+  });
+
+  return { createTruckViolation };
+}
+
 export function useAccountingVendorMutations() {
   const queryClient = useQueryClient();
 
@@ -532,6 +673,7 @@ export function useAccountingVendorMutations() {
         name: input.name.trim(),
         normalized_name: normalizeText(input.name),
         notes: input.notes || null,
+        payment_terms_days: input.payment_terms_days ?? null,
         phone: input.phone || null,
         source: 'manual',
         raw_payload: { manual: true, ...(input.raw_payload || {}) },
@@ -679,6 +821,55 @@ export function useAccountingStoreMutations() {
   return { createStore, updateStore };
 }
 
+export function useAccountingPaymentMethodMutations() {
+  const queryClient = useQueryClient();
+
+  const createPaymentMethod = useMutation({
+    mutationFn: async (input: AccountingPaymentMethodInput) => {
+      ensureOnlineMutation();
+      const payload = {
+        name: input.name.trim(),
+        normalized_name: normalizeText(input.name),
+      };
+      if (!payload.name) throw new Error('Payment method name is required');
+      if (shouldUseLocalData()) return createLocalAccountingPaymentMethod(payload);
+      const { data, error } = await asQuery<AccountingPaymentMethod>(
+        accountingDb.from('accounting_payment_methods').insert(payload)
+      )
+        .select('*')
+        .single();
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => invalidateAccounting(queryClient),
+  });
+
+  const updatePaymentMethod = useMutation({
+    mutationFn: async ({ id, patch }: { id: string; patch: Partial<AccountingPaymentMethodInput> }) => {
+      ensureOnlineMutation();
+      const payload = {
+        ...patch,
+        normalized_name: patch.name ? normalizeText(patch.name) : undefined,
+      };
+      if (shouldUseLocalData()) {
+        updateLocalAccountingPaymentMethod(id, payload);
+        return { id, ...payload };
+      }
+      const { data, error } = await asQuery<AccountingPaymentMethod>(
+        accountingDb.from('accounting_payment_methods').update(payload)
+      )
+        .eq('id', id)
+        .select('*')
+        .single();
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => invalidateAccounting(queryClient),
+  });
+
+  return { createPaymentMethod, updatePaymentMethod };
+}
+
 export function useAccountingCategoryMutations() {
   const queryClient = useQueryClient();
 
@@ -797,13 +988,14 @@ export function useAccountingImportMutations() {
               : null,
             email: row.email,
             notes: row.notes,
+            payment_terms_days: row.payment_terms_days,
             phone: row.phone,
             raw_payload: { template: true, row: row.rowNumber },
             source: 'template',
           })),
           ...payload.invoices.map(row => catalogRow(row.vendor_name, { source: 'template' })),
           ...payload.payments.map(row => catalogRow(row.vendor_name, { source: 'template' })),
-          ...payload.personalBills.map(row => catalogRow(row.vendor_name || row.bill_name, { source: 'template' })),
+          ...payload.personalBills.map(row => catalogRow(row.vendor_name, { source: 'template' })),
         ].filter(Boolean) as Array<Record<string, unknown> & { name: string; normalized_name: string }>
       );
       const vendors = await upsertCatalogRows<AccountingVendor>('accounting_vendors', vendorRows);
@@ -931,7 +1123,7 @@ export function useAccountingImportMutations() {
         const rawPayload = { template: true, ...row };
         return {
           bill_name: row.bill_name,
-          vendor_id: vendorId(row.vendor_name || row.bill_name),
+          vendor_id: vendorId(row.vendor_name),
           payer: row.payer,
           payment_method_id: methodId(row.payment_method_name),
           payment_date: row.payment_date,

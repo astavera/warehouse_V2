@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
-import { AlertTriangle, FileSpreadsheet, ReceiptText, RefreshCw } from 'lucide-react';
-import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { AlertTriangle, Building2, FileSpreadsheet, ReceiptText, RefreshCw } from 'lucide-react';
+import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -16,6 +16,8 @@ import {
   SummaryCard,
 } from './AccountingComponents';
 
+const VENDOR_BAR_COLORS = ['#0f766e', '#2563eb', '#7c3aed', '#db2777', '#ea580c', '#64748b', '#0891b2', '#4d7c0f'];
+
 function invoiceChartRows(invoices: AccountingInvoice[] = []) {
   return invoices.map(invoice => {
     const vendor = invoice.accounting_vendors?.name || 'No vendor';
@@ -25,6 +27,75 @@ function invoiceChartRows(invoices: AccountingInvoice[] = []) {
       label: `${vendor} - ${invoiceNumber}`.slice(0, 42),
     };
   });
+}
+
+function compactMoneyTick(value: string | number) {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) return '';
+  return new Intl.NumberFormat('en-US', {
+    currency: 'USD',
+    maximumFractionDigits: numericValue >= 1000 ? 0 : 1,
+    notation: 'compact',
+    style: 'currency',
+  }).format(numericValue);
+}
+
+function vendorBalanceChartRows(vendorBalances: NonNullable<ReturnType<typeof useAccountingDashboard>['data']>['vendorBalances'] = []) {
+  return vendorBalances.map(row => ({
+    invoiceCount: row.invoiceCount,
+    label: row.vendorName.slice(0, 34),
+    totalAmount: Number(row.totalAmount),
+    vendorName: row.vendorName,
+  }));
+}
+
+function TopVendorChartCard({
+  vendorBalances,
+}: {
+  vendorBalances: NonNullable<ReturnType<typeof useAccountingDashboard>['data']>['vendorBalances'] | undefined;
+}) {
+  const rows = vendorBalanceChartRows(vendorBalances || []);
+  const topVendor = rows[0];
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Building2 className="h-4 w-4 text-primary" />
+            Top vendors by open invoices
+          </CardTitle>
+          {topVendor && (
+            <Badge variant="secondary" className="w-fit">
+              Top: {topVendor.vendorName}
+            </Badge>
+          )}
+        </div>
+      </CardHeader>
+      <CardContent className="h-[340px]">
+        {rows.length ? (
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={rows} layout="vertical" margin={{ left: 8, right: 28, top: 6, bottom: 8 }}>
+              <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+              <XAxis type="number" tickFormatter={compactMoneyTick} />
+              <YAxis type="category" dataKey="label" width={170} tick={{ fontSize: 11 }} />
+              <Tooltip
+                formatter={(value: number) => [formatAccountingMoney(value), 'Open invoice total']}
+                labelFormatter={(label: string) => label}
+              />
+              <Bar dataKey="totalAmount" radius={[0, 6, 6, 0]}>
+                {rows.map((row, index) => (
+                  <Cell key={row.vendorName} fill={VENDOR_BAR_COLORS[index % VENDOR_BAR_COLORS.length]} />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        ) : (
+          <EmptyState label="No open vendor invoice balances found." />
+        )}
+      </CardContent>
+    </Card>
+  );
 }
 
 function TopInvoiceChartCard({
@@ -115,25 +186,7 @@ export default function AccountingDashboardPage() {
       )}
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base">
-              <ReceiptText className="h-4 w-4 text-primary" />
-              Invoice status
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="h-[280px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={statusChart}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                <XAxis dataKey="status" />
-                <YAxis allowDecimals={false} />
-                <Tooltip formatter={(value: number) => [value, 'Invoices']} />
-                <Bar dataKey="count" fill="#2563eb" radius={[6, 6, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
+        <TopVendorChartCard vendorBalances={data?.vendorBalances} />
 
         <Card>
           <CardHeader>
@@ -169,6 +222,28 @@ export default function AccountingDashboardPage() {
             ) : (
               <div className="py-10 text-center text-sm text-muted-foreground">No import has been recorded yet.</div>
             )}
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid gap-4">
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <ReceiptText className="h-4 w-4 text-primary" />
+              Invoice status
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="h-[280px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={statusChart}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                <XAxis dataKey="status" />
+                <YAxis allowDecimals={false} />
+                <Tooltip formatter={(value: number) => [value, 'Invoices']} />
+                <Bar dataKey="count" fill="#2563eb" radius={[6, 6, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
           </CardContent>
         </Card>
       </div>

@@ -328,8 +328,7 @@ export default function ReceivePage() {
           if (it.photoFile) {
             const ext = it.photoFile.name.split('.').pop() || 'jpg';
             const path = `items/${createId()}.${ext}`;
-            await uploadPhoto(it.photoFile, path);
-            photoPath = path;
+            photoPath = await uploadPhoto(it.photoFile, path);
           }
 
           return {

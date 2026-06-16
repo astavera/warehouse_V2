@@ -1,6 +1,7 @@
 import {
   finalAmountToPay,
   normalizeText,
+  sortAccountingStores,
   sourceRowHash,
   summarizeAccountingDashboard,
   truckDuplicateGroupKey,
@@ -80,6 +81,7 @@ function defaultVendors(): AccountingVendor[] {
       account_number: '61269-10392',
       default_payment_method_id: 'mock-payment-bank-check',
       notes: 'Mock vendor imported from Modern State AP.',
+      payment_terms_days: 30,
       source: 'mock',
       raw_payload: {},
     },
@@ -92,6 +94,7 @@ function defaultVendors(): AccountingVendor[] {
       account_number: '8150200050163655',
       default_payment_method_id: 'mock-payment-bank-account',
       notes: null,
+      payment_terms_days: 30,
       source: 'mock',
       raw_payload: {},
     },
@@ -104,6 +107,7 @@ function defaultVendors(): AccountingVendor[] {
       account_number: null,
       default_payment_method_id: 'mock-payment-credit-card',
       notes: null,
+      payment_terms_days: 30,
       source: 'mock',
       raw_payload: {},
     },
@@ -116,6 +120,7 @@ function defaultVendors(): AccountingVendor[] {
       account_number: '2186',
       default_payment_method_id: 'mock-payment-bank-check',
       notes: null,
+      payment_terms_days: 60,
       source: 'mock',
       raw_payload: {},
     },
@@ -437,11 +442,11 @@ function defaultWarnings(): AccountingImportWarning[] {
   ];
 }
 
-function sourceKey(row: { source_file_name: string; source_sheet: string; source_row: number }) {
-  return `${row.source_file_name}:${row.source_sheet}:${row.source_row}`;
+function sourceKey(row: { source_file_sha256: string; source_sheet: string; source_row: number }) {
+  return `${row.source_file_sha256}:${row.source_sheet}:${row.source_row}`;
 }
 
-function mergeBySource<T extends { created_at: string; id: string; source_file_name: string; source_row: number; source_sheet: string; updated_at: string }>(
+function mergeBySource<T extends { created_at: string; id: string; source_file_sha256: string; source_row: number; source_sheet: string; updated_at: string }>(
   existing: T[],
   incoming: T[]
 ) {
@@ -461,9 +466,29 @@ function mergeBySource<T extends { created_at: string; id: string; source_file_n
   return { inserted, rows, updated };
 }
 
+function backfillVendorPaymentTerms(vendors: AccountingVendor[]) {
+  const defaultTermsByName = new Map(
+    defaultVendors().map(vendor => [vendor.normalized_name, vendor.payment_terms_days ?? null])
+  );
+  let changed = false;
+  const rows = vendors.map(vendor => {
+    if (vendor.payment_terms_days != null) return vendor;
+    const paymentTermsDays = defaultTermsByName.get(vendor.normalized_name);
+    if (paymentTermsDays == null) return vendor;
+    changed = true;
+    return { ...vendor, payment_terms_days: paymentTermsDays, updated_at: nowIso() };
+  });
+  return changed ? rows : vendors;
+}
+
 function ensureSeeded() {
   if (typeof localStorage === 'undefined') return;
   if (!localStorage.getItem(KEYS.vendors)) write(KEYS.vendors, defaultVendors());
+  else {
+    const vendors = read<AccountingVendor[]>(KEYS.vendors, []);
+    const withTerms = backfillVendorPaymentTerms(vendors);
+    if (withTerms !== vendors) write(KEYS.vendors, withTerms);
+  }
   if (!localStorage.getItem(KEYS.stores)) write(KEYS.stores, defaultStores());
   else {
     const stores = read<AccountingStore[]>(KEYS.stores, []);
@@ -535,6 +560,7 @@ export function createLocalAccountingVendor(input: Partial<AccountingVendor> & {
     account_number: input.account_number ?? null,
     default_payment_method_id: input.default_payment_method_id ?? null,
     notes: input.notes ?? null,
+    payment_terms_days: input.payment_terms_days ?? null,
     source: input.source ?? 'manual',
     raw_payload: input.raw_payload ?? { manual: true },
     created_at: input.created_at || timestamp,
@@ -563,7 +589,7 @@ export function updateLocalAccountingVendor(id: string, patch: Partial<Accountin
 
 export function listLocalAccountingStores() {
   ensureSeeded();
-  return read<AccountingStore[]>(KEYS.stores, defaultStores()).sort((a, b) => a.name.localeCompare(b.name));
+  return sortAccountingStores(read<AccountingStore[]>(KEYS.stores, defaultStores()));
 }
 
 export function createLocalAccountingStore(input: Partial<AccountingStore> & { name: string }) {
@@ -648,6 +674,37 @@ export function updateLocalAccountingAccount(id: string, patch: Partial<Accounti
 export function listLocalAccountingPaymentMethods() {
   ensureSeeded();
   return read<AccountingPaymentMethod[]>(KEYS.paymentMethods, defaultPaymentMethods()).sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export function createLocalAccountingPaymentMethod(input: Partial<AccountingPaymentMethod> & { name: string }) {
+  ensureSeeded();
+  const timestamp = nowIso();
+  const method: AccountingPaymentMethod = {
+    id: input.id || createId('accounting-payment-method'),
+    name: input.name,
+    normalized_name: normalizeText(input.name),
+    created_at: input.created_at || timestamp,
+    updated_at: input.updated_at || timestamp,
+  };
+  write(KEYS.paymentMethods, [...read<AccountingPaymentMethod[]>(KEYS.paymentMethods, defaultPaymentMethods()), method]);
+  return method;
+}
+
+export function updateLocalAccountingPaymentMethod(id: string, patch: Partial<AccountingPaymentMethod>) {
+  ensureSeeded();
+  write(
+    KEYS.paymentMethods,
+    read<AccountingPaymentMethod[]>(KEYS.paymentMethods, defaultPaymentMethods()).map(method =>
+      method.id === id
+        ? {
+            ...method,
+            ...patch,
+            normalized_name: patch.name ? normalizeText(patch.name) : method.normalized_name,
+            updated_at: nowIso(),
+          }
+        : method
+    )
+  );
 }
 
 export function listLocalAccountingCategories() {
@@ -756,9 +813,81 @@ export function listLocalAccountingPersonalBills() {
   }));
 }
 
+export function createLocalAccountingPersonalBill(input: Partial<AccountingPersonalBill>) {
+  ensureSeeded();
+  const timestamp = nowIso();
+  const rawPayload = {
+    manual: true,
+    bill_name: input.bill_name,
+    amount: input.amount,
+    payment_date: input.payment_date,
+    ...(input.raw_payload || {}),
+  };
+  const bill: AccountingPersonalBill = {
+    id: input.id || createId('accounting-personal-bill'),
+    bill_name: input.bill_name ?? null,
+    vendor_id: input.vendor_id ?? null,
+    payer: input.payer ?? null,
+    payment_method_id: input.payment_method_id ?? null,
+    payment_date: input.payment_date ?? null,
+    amount: input.amount ?? '0.00',
+    status: input.status ?? 'Pending',
+    notes: input.notes ?? null,
+    source_file_name: input.source_file_name ?? 'manual',
+    source_file_sha256: input.source_file_sha256 ?? 'manual',
+    source_sheet: input.source_sheet ?? 'manual',
+    source_row: input.source_row ?? 0,
+    source_row_hash: input.source_row_hash ?? sourceRowHash(rawPayload),
+    import_batch_id: input.import_batch_id ?? null,
+    raw_payload: rawPayload,
+    created_at: timestamp,
+    updated_at: timestamp,
+  };
+  write(KEYS.personalBills, [bill, ...read<AccountingPersonalBill[]>(KEYS.personalBills, defaultPersonalBills())]);
+  return listLocalAccountingPersonalBills().find(row => row.id === bill.id) || bill;
+}
+
 export function listLocalAccountingTruckViolations() {
   ensureSeeded();
   return read<AccountingTruckViolation[]>(KEYS.truckViolations, defaultTruckViolations());
+}
+
+export function createLocalAccountingTruckViolation(input: Partial<AccountingTruckViolation>) {
+  ensureSeeded();
+  const timestamp = nowIso();
+  const duplicateGroupKey = truckDuplicateGroupKey(input.violation_number);
+  const rawPayload = {
+    manual: true,
+    violation_number: input.violation_number,
+    description: input.description,
+    amount: input.amount,
+    ...(input.raw_payload || {}),
+  };
+  const violation: AccountingTruckViolation = {
+    id: input.id || createId('accounting-truck'),
+    violation_number: input.violation_number ?? null,
+    violation_date: input.violation_date ?? null,
+    description: input.description ?? null,
+    amount: input.amount ?? '0.00',
+    receipt_number: input.receipt_number ?? null,
+    payment_method: input.payment_method ?? null,
+    paid_amount: input.paid_amount ?? null,
+    payment_date: input.payment_date ?? null,
+    is_possible_duplicate: input.is_possible_duplicate ?? false,
+    duplicate_group_key: input.duplicate_group_key ?? duplicateGroupKey,
+    notes: input.notes ?? null,
+    source_file_name: input.source_file_name ?? 'manual',
+    source_file_sha256: input.source_file_sha256 ?? 'manual',
+    source_sheet: input.source_sheet ?? 'manual',
+    source_row: input.source_row ?? 0,
+    source_row_hash: input.source_row_hash ?? sourceRowHash(rawPayload),
+    import_batch_id: input.import_batch_id ?? null,
+    raw_payload: rawPayload,
+    created_at: timestamp,
+    updated_at: timestamp,
+  };
+  write(KEYS.truckViolations, [violation, ...read<AccountingTruckViolation[]>(KEYS.truckViolations, defaultTruckViolations())]);
+  return violation;
 }
 
 export function listLocalAccountingImportBatches() {
@@ -931,6 +1060,7 @@ export function importLocalAccountingTemplate(payload: AccountingTemplateImport)
       default_payment_method_id: methodId,
       email: vendor.email,
       notes: vendor.notes,
+      payment_terms_days: vendor.payment_terms_days,
       phone: vendor.phone,
       raw_payload: { template: true, row: vendor.rowNumber },
       source: 'template',
@@ -951,7 +1081,7 @@ export function importLocalAccountingTemplate(payload: AccountingTemplateImport)
   });
   payload.creditCardPayments.forEach(payment => ensureAccount(payment.account_name, { account_type: 'credit_card' }));
   payload.personalBills.forEach(bill => {
-    ensureVendor(bill.vendor_name || bill.bill_name);
+    ensureVendor(bill.vendor_name);
     ensurePaymentMethod(bill.payment_method_name);
   });
 
@@ -1055,7 +1185,7 @@ export function importLocalAccountingTemplate(payload: AccountingTemplateImport)
     return {
       id: createId('accounting-personal-bill'),
       bill_name: row.bill_name,
-      vendor_id: ensureVendor(row.vendor_name || row.bill_name),
+      vendor_id: ensureVendor(row.vendor_name),
       payer: row.payer,
       payment_method_id: ensurePaymentMethod(row.payment_method_name),
       payment_date: row.payment_date,

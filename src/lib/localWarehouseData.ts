@@ -44,6 +44,12 @@ export type OfflineQueueItem =
     };
 
 const MOCK_USER_ID = '00000000-0000-0000-0000-000000000101';
+const MOCK_PASSCODES_BY_ID: Record<string, string> = {
+  [MOCK_USER_ID]: '9001',
+  '00000000-0000-0000-0000-000000000102': '9002',
+  '00000000-0000-0000-0000-000000000103': '9003',
+  '00000000-0000-0000-0000-000000000172': '9004',
+};
 const KEYS = {
   suppliers: 'warehouse_mock_suppliers',
   carriers: 'warehouse_mock_carriers',
@@ -53,7 +59,7 @@ const KEYS = {
   queue: 'warehouse_offline_queue',
   schema: 'warehouse_mock_schema_version',
 };
-const LOCAL_SCHEMA_VERSION = 'expected-boxes-permission-v1';
+const LOCAL_SCHEMA_VERSION = 'hardened-mock-passcodes-v1';
 
 function nowIso() {
   return new Date().toISOString();
@@ -145,7 +151,7 @@ function defaultEmployees(): Employee[] {
     {
       id: MOCK_USER_ID,
       name: 'Sebastian',
-      passcode: '0315',
+      passcode: MOCK_PASSCODES_BY_ID[MOCK_USER_ID],
       active: true,
       created_at: timestamp,
       updated_at: timestamp,
@@ -157,7 +163,7 @@ function defaultEmployees(): Employee[] {
     {
       id: '00000000-0000-0000-0000-000000000102',
       name: 'Warehouse Staff',
-      passcode: '1111',
+      passcode: MOCK_PASSCODES_BY_ID['00000000-0000-0000-0000-000000000102'],
       active: true,
       created_at: timestamp,
       updated_at: timestamp,
@@ -169,7 +175,7 @@ function defaultEmployees(): Employee[] {
     {
       id: '00000000-0000-0000-0000-000000000103',
       name: 'Accounting',
-      passcode: '2222',
+      passcode: MOCK_PASSCODES_BY_ID['00000000-0000-0000-0000-000000000103'],
       active: true,
       created_at: timestamp,
       updated_at: timestamp,
@@ -181,7 +187,7 @@ function defaultEmployees(): Employee[] {
     {
       id: '00000000-0000-0000-0000-000000000172',
       name: 'Store 72',
-      passcode: '7272',
+      passcode: MOCK_PASSCODES_BY_ID['00000000-0000-0000-0000-000000000172'],
       active: true,
       created_at: timestamp,
       updated_at: timestamp,
@@ -211,6 +217,8 @@ function migrateLocalEmployees() {
   if (localStorage.getItem(KEYS.schema) === LOCAL_SCHEMA_VERSION) return;
 
   const rows = read<Employee[]>(KEYS.employees, []).map(row => {
+    const hardenedPasscode = MOCK_PASSCODES_BY_ID[row.id] || row.passcode;
+
     if (
       (row.role === 'admin' || row.role === 'accounting' || row.id === MOCK_USER_ID) &&
       row.permissions &&
@@ -218,9 +226,13 @@ function migrateLocalEmployees() {
     ) {
       return {
         ...row,
+        passcode: hardenedPasscode,
         permissions: [...row.permissions, 'expected_boxes'],
         updated_at: nowIso(),
       };
+    }
+    if (hardenedPasscode !== row.passcode) {
+      return { ...row, passcode: hardenedPasscode, updated_at: nowIso() };
     }
     return row;
   });

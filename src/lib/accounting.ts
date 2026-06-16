@@ -10,6 +10,7 @@ export type AccountingVendor = {
   name: string;
   notes?: string | null;
   normalized_name: string;
+  payment_terms_days?: number | null;
   phone?: string | null;
   source?: string | null;
   raw_payload?: Record<string, unknown>;
@@ -30,6 +31,25 @@ export type AccountingStore = {
   created_at: string;
   updated_at: string;
 };
+
+const ACCOUNTING_STORE_ORDER = [
+  '86 street',
+  '3rd avenue',
+  'both stores',
+  'warehouse',
+  'all locations',
+];
+
+export function sortAccountingStores<T extends Pick<AccountingStore, 'name'>>(stores: T[]) {
+  return [...stores].sort((a, b) => {
+    const rankA = ACCOUNTING_STORE_ORDER.indexOf(normalizeText(a.name));
+    const rankB = ACCOUNTING_STORE_ORDER.indexOf(normalizeText(b.name));
+    const resolvedRankA = rankA === -1 ? ACCOUNTING_STORE_ORDER.length : rankA;
+    const resolvedRankB = rankB === -1 ? ACCOUNTING_STORE_ORDER.length : rankB;
+    if (resolvedRankA !== resolvedRankB) return resolvedRankA - resolvedRankB;
+    return a.name.localeCompare(b.name);
+  });
+}
 
 export function vendorLocationAccountRows(vendor: Pick<AccountingVendor, 'raw_payload'> | null | undefined): VendorLocationAccountRow[] {
   const rawPayload = vendor?.raw_payload && typeof vendor.raw_payload === 'object' ? vendor.raw_payload : {};
@@ -114,7 +134,7 @@ export type AccountingInvoice = {
   raw_payload: Record<string, unknown>;
   created_at: string;
   updated_at: string;
-  accounting_vendors?: Pick<AccountingVendor, 'id' | 'name' | 'normalized_name'> | null;
+  accounting_vendors?: Pick<AccountingVendor, 'id' | 'name' | 'normalized_name' | 'payment_terms_days'> | null;
   accounting_stores?: Pick<AccountingStore, 'id' | 'name' | 'normalized_name'> | null;
   accounting_invoice_categories?: Pick<AccountingCategory, 'id' | 'name' | 'normalized_name'> | null;
 };
@@ -266,6 +286,8 @@ export type AccountingDashboardSummary = {
 };
 
 export type VendorBalanceSummary = {
+  dueNext15Amount: string;
+  dueNext15Count: number;
   dueNext30Amount: string;
   invoiceCount: number;
   overdueAmount: string;
@@ -373,6 +395,23 @@ export function parseExcelDate(value: Date | string | number | null | undefined)
   const [, month, day, yearRaw] = match;
   const year = Number(yearRaw.length === 2 ? `20${yearRaw}` : yearRaw);
   return new Date(Date.UTC(year, Number(month) - 1, Number(day))).toISOString().slice(0, 10);
+}
+
+export function paymentTermsLabel(days: number | string | null | undefined) {
+  if (days == null || days === '') return 'No terms';
+  const numericDays = Number(days);
+  if (!Number.isFinite(numericDays)) return 'No terms';
+  if (numericDays === 0) return 'Due on receipt';
+  return `Net ${numericDays}`;
+}
+
+export function addDaysToIsoDate(date: string | null | undefined, days: number | string | null | undefined) {
+  const numericDays = Number(days);
+  if (!date || !Number.isFinite(numericDays)) return null;
+  const parsed = new Date(`${date}T00:00:00Z`);
+  if (Number.isNaN(parsed.getTime())) return null;
+  parsed.setUTCDate(parsed.getUTCDate() + numericDays);
+  return parsed.toISOString().slice(0, 10);
 }
 
 function todayKey(today = new Date()) {
@@ -505,6 +544,8 @@ export function summarizeVendorBalances(invoices: AccountingInvoice[], today = n
       const vendorId = invoice.vendor_id || null;
       const key = vendorId || invoice.accounting_vendors?.name || 'unknown';
       const current = rows.get(key) || {
+        dueNext15Amount: '0.00',
+        dueNext15Count: 0,
         dueNext30Amount: '0.00',
         invoiceCount: 0,
         overdueAmount: '0.00',
@@ -516,6 +557,10 @@ export function summarizeVendorBalances(invoices: AccountingInvoice[], today = n
       current.invoiceCount += 1;
       current.totalAmount = addMoney([current.totalAmount, amount]);
       if (isOverdue(invoice, today)) current.overdueAmount = addMoney([current.overdueAmount, amount]);
+      if (isDueWithin(invoice, 15, today)) {
+        current.dueNext15Amount = addMoney([current.dueNext15Amount, amount]);
+        current.dueNext15Count += 1;
+      }
       if (isDueWithin(invoice, 30, today)) current.dueNext30Amount = addMoney([current.dueNext30Amount, amount]);
       rows.set(key, current);
     });

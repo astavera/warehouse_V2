@@ -4,10 +4,10 @@ import {
   AlertTriangle,
   ArrowRight,
   CalendarDays,
+  Clock,
   ClipboardList,
   type LucideIcon,
   Package,
-  Sparkles,
   Truck,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -33,21 +33,23 @@ function MetricCard({
   tone?: 'default' | 'danger';
 }) {
   return (
-    <Card className="overflow-hidden rounded-xl border-border/70 bg-white/95 panel-shadow">
-      <CardContent className="p-5">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <p className="text-[11px] font-medium uppercase tracking-[0.24em] text-muted-foreground">{label}</p>
-            <p className="mt-3 text-3xl font-semibold tracking-[-0.04em] text-foreground">{value}</p>
-            <p className="mt-1 text-sm text-muted-foreground">{hint}</p>
+    <Card className="overflow-hidden rounded-lg border-border/70 bg-white/95 shadow-sm">
+      <CardContent className="p-4 sm:p-5">
+        <div className="flex min-h-[7.5rem] flex-col justify-between gap-4">
+          <div className="flex items-start justify-between gap-3">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">{label}</p>
+            <div
+              className={cn(
+                'rounded-md p-2.5',
+                tone === 'danger' ? 'bg-destructive/10 text-destructive' : 'bg-primary/10 text-primary'
+              )}
+            >
+              <Icon className="h-4 w-4" />
+            </div>
           </div>
-          <div
-            className={cn(
-              'rounded-xl p-3',
-              tone === 'danger' ? 'bg-destructive/10 text-destructive' : 'bg-primary/10 text-primary'
-            )}
-          >
-            <Icon className="h-5 w-5" />
+          <div>
+            <p className="text-3xl font-semibold text-foreground">{value}</p>
+            <p className="mt-1 text-sm text-muted-foreground">{hint}</p>
           </div>
         </div>
       </CardContent>
@@ -159,39 +161,48 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      <section className="rounded-xl border border-white/80 bg-white/92 p-6 panel-shadow sm:p-8">
-        <div className="flex flex-col gap-8 lg:flex-row lg:items-end lg:justify-between">
-          <div className="max-w-2xl">
-            <div className="inline-flex items-center gap-2 rounded-lg border border-primary/15 bg-primary/8 px-3 py-1.5 text-[11px] font-medium uppercase tracking-[0.22em] text-primary">
-              <Sparkles className="h-3.5 w-3.5" />
-              Receiving dashboard
+      <section className="rounded-lg border border-border/70 bg-white/95 p-5 shadow-sm sm:p-6">
+        <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-end">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="inline-flex items-center gap-2 rounded-md border border-primary/15 bg-primary/8 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-primary">
+                <ClipboardList className="h-3.5 w-3.5" />
+                Dashboard
+              </span>
+              <span className="rounded-md border border-border/70 bg-muted/35 px-2.5 py-1 text-xs font-medium text-muted-foreground">
+                {today}
+              </span>
             </div>
-            <p className="mt-4 text-sm uppercase tracking-[0.24em] text-muted-foreground">{today}</p>
-            <h1 className="mt-3 text-4xl font-semibold tracking-[-0.05em] text-foreground sm:text-5xl">
-              Welcome, <span className="text-primary">{user?.name}</span>
-            </h1>
-            <p className="mt-4 max-w-xl text-base leading-7 text-muted-foreground">
-              Review today&apos;s receipts and start a new intake when needed.
+            <h1 className="mt-4 text-3xl font-semibold text-foreground sm:text-4xl">Receiving overview</h1>
+            <p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground sm:text-base">
+              Welcome, <span className="font-medium text-foreground">{user?.name}</span>. Review today&apos;s receipts and start a new intake when needed.
             </p>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Card className="rounded-xl border-border/70 bg-muted/45 shadow-none">
-              <CardContent className="p-5">
-                <p className="text-[11px] uppercase tracking-[0.22em] text-muted-foreground">Current time</p>
-                <p className="mt-2 text-3xl font-semibold tracking-[-0.05em] text-foreground">{currentTime}</p>
-              </CardContent>
-            </Card>
-            <div className="flex flex-col gap-3">
-              <Link to="/receive">
-                <Button className="h-12 w-full justify-between rounded-2xl px-5 text-base">
-                  Start New Receipt
+          <div className="grid gap-3 sm:grid-cols-[minmax(9rem,0.75fr)_minmax(18rem,1fr)] xl:min-w-[34rem]">
+            <div className="rounded-lg border border-border/70 bg-muted/35 px-4 py-3">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Current time</p>
+              <p className="mt-2 flex items-center gap-2 text-2xl font-semibold text-foreground">
+                <Clock className="h-5 w-5 text-primary" />
+                {currentTime}
+              </p>
+            </div>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <Link to="/receive" className="min-w-0">
+                <Button className="h-12 w-full justify-between gap-2 rounded-lg px-4 text-sm font-semibold">
+                  <span className="inline-flex min-w-0 items-center gap-2">
+                    <Package className="h-4 w-4 shrink-0" />
+                    <span className="truncate">Start Receipt</span>
+                  </span>
                   <ArrowRight className="h-4 w-4" />
                 </Button>
               </Link>
-              <Link to="/history">
-                <Button variant="outline" className="h-12 w-full justify-between rounded-2xl px-5 text-base">
-                  View History
+              <Link to="/history" className="min-w-0">
+                <Button variant="outline" className="h-12 w-full justify-between gap-2 rounded-lg bg-white px-4 text-sm font-semibold">
+                  <span className="inline-flex min-w-0 items-center gap-2">
+                    <ClipboardList className="h-4 w-4 shrink-0" />
+                    <span className="truncate">View History</span>
+                  </span>
                   <ArrowRight className="h-4 w-4" />
                 </Button>
               </Link>
@@ -203,7 +214,7 @@ export default function DashboardPage() {
       <div className="grid grid-cols-2 gap-3 2xl:grid-cols-4">
         <MetricCard icon={ClipboardList} label="Batches" value={batches.length} hint="Receipts opened today" />
         <MetricCard icon={Package} label="Packages" value={totalPackages} hint="Total boxes and pallets" />
-        <MetricCard icon={Truck} label="Supplier Lines" value={totalItems} hint="Lines captured across receipts" />
+        <MetricCard icon={Truck} label="Lines" value={totalItems} hint="Suppliers captured" />
         <MetricCard icon={AlertTriangle} label="Damaged" value={damagedCount} hint="Items flagged with damage" tone="danger" />
       </div>
 

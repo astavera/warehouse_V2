@@ -18,11 +18,13 @@ import {
   useAccountingInvoicePayments,
   useAccountingPaymentMutations,
   useAccountingVendorMutations,
+  useAccountingPersonalBillMutations,
   useAccountingPersonalBills,
+  useAccountingTruckViolationMutations,
   useAccountingTruckViolations,
   createAccountingCheckPhotoUrl,
 } from '@/hooks/useAccountingData';
-import { normalizeText, type AccountingAccount, type AccountingInvoicePayment } from '@/lib/accounting';
+import { normalizeText, parseMoney, type AccountingAccount, type AccountingInvoicePayment } from '@/lib/accounting';
 import { AccountingPageHeader, EmptyState, LoadingState, MoneyText } from './AccountingComponents';
 
 function SearchBox({ value, onChange }: { value: string; onChange: (value: string) => void }) {
@@ -920,18 +922,154 @@ export function AccountingCreditCardPaymentsPage() {
   );
 }
 
+type PersonalBillFormState = {
+  amount: string;
+  bill_name: string;
+  notes: string;
+  payment_date: string;
+  payment_method_id: string;
+  status: string;
+};
+
+const EMPTY_PERSONAL_BILL_FORM: PersonalBillFormState = {
+  amount: '',
+  bill_name: '',
+  notes: '',
+  payment_date: new Date().toISOString().slice(0, 10),
+  payment_method_id: 'none',
+  status: 'Pending',
+};
+
+function PersonalBillDialog({
+  form,
+  onChange,
+  onClose,
+  onSave,
+  open,
+  saving,
+}: {
+  form: PersonalBillFormState;
+  onChange: (patch: Partial<PersonalBillFormState>) => void;
+  onClose: () => void;
+  onSave: () => void;
+  open: boolean;
+  saving: boolean;
+}) {
+  const { data: catalogs } = useAccountingCatalogs();
+  const saveDisabled = saving || !form.bill_name.trim() || !parseMoney(form.amount);
+
+  return (
+    <Dialog open={open} onOpenChange={value => !value && onClose()}>
+      <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Add personal bill</DialogTitle>
+          <DialogDescription>
+            Create a manual personal bill row for tracking payments outside invoices.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_240px]">
+          <div className="space-y-1.5">
+            <Label>Concept</Label>
+            <Input value={form.bill_name} onChange={event => onChange({ bill_name: event.target.value })} placeholder="Directv, rent, utility..." />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Amount</Label>
+            <Input inputMode="decimal" value={form.amount} onChange={event => onChange({ amount: event.target.value })} placeholder="0.00" />
+          </div>
+        </div>
+
+        <div className="grid gap-4 lg:grid-cols-3">
+          <div className="space-y-1.5">
+            <Label>Payment date</Label>
+            <Input type="date" value={form.payment_date} onChange={event => onChange({ payment_date: event.target.value })} />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Payment method</Label>
+            <Select value={form.payment_method_id} onValueChange={value => onChange({ payment_method_id: value })}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">No method</SelectItem>
+                {catalogs?.paymentMethods.map(method => (
+                  <SelectItem key={method.id} value={method.id}>{method.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label>Status</Label>
+            <Select value={form.status} onValueChange={value => onChange({ status: value })}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="Pending">Pending</SelectItem>
+                <SelectItem value="Paid">Paid</SelectItem>
+                <SelectItem value="Cancelled">Cancelled</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+
+        <div className="space-y-1.5">
+          <Label>Notes</Label>
+          <Textarea value={form.notes} onChange={event => onChange({ notes: event.target.value })} className="min-h-[100px]" />
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={onSave} disabled={saveDisabled} className="gap-1.5">
+            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+            Save personal bill
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export function AccountingPersonalBillsPage() {
   const { data = [], isLoading } = useAccountingPersonalBills();
+  const { createPersonalBill } = useAccountingPersonalBillMutations();
   const [search, setSearch] = useState('');
-  const rows = useSearch(data, search, row => [row.bill_name, row.accounting_vendors?.name, row.payer, row.accounting_payment_methods?.name, row.status, row.notes]);
+  const [form, setForm] = useState<PersonalBillFormState>(EMPTY_PERSONAL_BILL_FORM);
+  const [open, setOpen] = useState(false);
+  const rows = useSearch(data, search, row => [row.bill_name, row.accounting_vendors?.name, row.accounting_payment_methods?.name, row.status, row.notes]);
 
   if (isLoading) return <LoadingState />;
+
+  const savePersonalBill = async () => {
+    const amount = parseMoney(form.amount);
+    if (!amount) {
+      toast.error('Enter a valid amount');
+      return;
+    }
+    try {
+      await createPersonalBill.mutateAsync({
+        amount,
+        bill_name: form.bill_name.trim(),
+        notes: form.notes.trim() || null,
+        payment_date: form.payment_date || null,
+        payment_method_id: form.payment_method_id === 'none' ? null : form.payment_method_id,
+        status: form.status,
+      });
+      toast.success('Personal bill added');
+      setForm(EMPTY_PERSONAL_BILL_FORM);
+      setOpen(false);
+    } catch (error) {
+      toast.error(getErrorMessage(error, 'Could not add personal bill'));
+    }
+  };
 
   return (
     <div className="space-y-6">
       <AccountingPageHeader
         title="Personal bills"
         description="Personal bills tracked from the Modern State workbook."
+        actions={
+          <Button onClick={() => setOpen(true)} className="gap-1.5">
+            <Plus className="h-4 w-4" />
+            Add personal bill
+          </Button>
+        }
       />
       <Card>
         <CardContent className="space-y-4 p-4">
@@ -940,8 +1078,7 @@ export function AccountingPersonalBillsPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Bill/vendor</TableHead>
-                  <TableHead>Payer</TableHead>
+                  <TableHead>Concept</TableHead>
                   <TableHead>Payment type</TableHead>
                   <TableHead>Payment date</TableHead>
                   <TableHead className="text-right">Amount</TableHead>
@@ -953,7 +1090,6 @@ export function AccountingPersonalBillsPage() {
                 {rows.map(row => (
                   <TableRow key={row.id}>
                     <TableCell className="font-medium">{row.bill_name || row.accounting_vendors?.name || '-'}</TableCell>
-                    <TableCell>{row.payer || '-'}</TableCell>
                     <TableCell>{row.accounting_payment_methods?.name || '-'}</TableCell>
                     <TableCell>{row.payment_date || '-'}</TableCell>
                     <TableCell className="text-right font-medium"><MoneyText value={row.amount} /></TableCell>
@@ -968,22 +1104,175 @@ export function AccountingPersonalBillsPage() {
           )}
         </CardContent>
       </Card>
+      <PersonalBillDialog
+        form={form}
+        onChange={patch => setForm(current => ({ ...current, ...patch }))}
+        onClose={() => setOpen(false)}
+        onSave={() => void savePersonalBill()}
+        open={open}
+        saving={createPersonalBill.isPending}
+      />
     </div>
+  );
+}
+
+type TruckFormState = {
+  amount: string;
+  description: string;
+  notes: string;
+  paid_amount: string;
+  payment_date: string;
+  payment_method: string;
+  receipt_number: string;
+  violation_date: string;
+  violation_number: string;
+};
+
+const EMPTY_TRUCK_FORM: TruckFormState = {
+  amount: '',
+  description: '',
+  notes: '',
+  paid_amount: '',
+  payment_date: '',
+  payment_method: '',
+  receipt_number: '',
+  violation_date: new Date().toISOString().slice(0, 10),
+  violation_number: '',
+};
+
+function TruckDialog({
+  form,
+  onChange,
+  onClose,
+  onSave,
+  open,
+  saving,
+}: {
+  form: TruckFormState;
+  onChange: (patch: Partial<TruckFormState>) => void;
+  onClose: () => void;
+  onSave: () => void;
+  open: boolean;
+  saving: boolean;
+}) {
+  const saveDisabled = saving || !form.description.trim() || !parseMoney(form.amount);
+
+  return (
+    <Dialog open={open} onOpenChange={value => !value && onClose()}>
+      <DialogContent className="max-h-[90vh] max-w-4xl overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Add truck row</DialogTitle>
+          <DialogDescription>
+            Create a manual truck ticket, violation, or payment row.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_220px]">
+          <div className="space-y-1.5">
+            <Label>Concept</Label>
+            <Input value={form.description} onChange={event => onChange({ description: event.target.value })} placeholder="Parking ticket, toll, inspection..." />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Amount</Label>
+            <Input inputMode="decimal" value={form.amount} onChange={event => onChange({ amount: event.target.value })} placeholder="0.00" />
+          </div>
+        </div>
+
+        <div className="grid gap-4 lg:grid-cols-3">
+          <div className="space-y-1.5">
+            <Label>Ticket / violation #</Label>
+            <Input value={form.violation_number} onChange={event => onChange({ violation_number: event.target.value })} />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Violation date</Label>
+            <Input type="date" value={form.violation_date} onChange={event => onChange({ violation_date: event.target.value })} />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Receipt / reference</Label>
+            <Input value={form.receipt_number} onChange={event => onChange({ receipt_number: event.target.value })} />
+          </div>
+        </div>
+
+        <div className="grid gap-4 lg:grid-cols-3">
+          <div className="space-y-1.5">
+            <Label>Paid amount</Label>
+            <Input inputMode="decimal" value={form.paid_amount} onChange={event => onChange({ paid_amount: event.target.value })} placeholder="0.00" />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Payment date</Label>
+            <Input type="date" value={form.payment_date} onChange={event => onChange({ payment_date: event.target.value })} />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Payment method</Label>
+            <Input value={form.payment_method} onChange={event => onChange({ payment_method: event.target.value })} placeholder="eCheck, card, cash..." />
+          </div>
+        </div>
+
+        <div className="space-y-1.5">
+          <Label>Notes</Label>
+          <Textarea value={form.notes} onChange={event => onChange({ notes: event.target.value })} className="min-h-[100px]" />
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={onSave} disabled={saveDisabled} className="gap-1.5">
+            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+            Save truck row
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
 export function AccountingTruckPage() {
   const { data = [], isLoading } = useAccountingTruckViolations();
+  const { createTruckViolation } = useAccountingTruckViolationMutations();
   const [search, setSearch] = useState('');
+  const [form, setForm] = useState<TruckFormState>(EMPTY_TRUCK_FORM);
+  const [open, setOpen] = useState(false);
   const rows = useSearch(data, search, row => [row.violation_number, row.description, row.receipt_number, row.payment_method, row.notes]);
 
   if (isLoading) return <LoadingState />;
+
+  const saveTruckRow = async () => {
+    const amount = parseMoney(form.amount);
+    const paidAmount = parseMoney(form.paid_amount);
+    if (!amount) {
+      toast.error('Enter a valid amount');
+      return;
+    }
+    try {
+      await createTruckViolation.mutateAsync({
+        amount,
+        description: form.description.trim(),
+        notes: form.notes.trim() || null,
+        paid_amount: paidAmount,
+        payment_date: form.payment_date || null,
+        payment_method: form.payment_method.trim() || null,
+        receipt_number: form.receipt_number.trim() || null,
+        violation_date: form.violation_date || null,
+        violation_number: form.violation_number.trim() || null,
+      });
+      toast.success('Truck row added');
+      setForm(EMPTY_TRUCK_FORM);
+      setOpen(false);
+    } catch (error) {
+      toast.error(getErrorMessage(error, 'Could not add truck row'));
+    }
+  };
 
   return (
     <div className="space-y-6">
       <AccountingPageHeader
         title="Truck"
         description="Truck violations and possible duplicate infractions from the import."
+        actions={
+          <Button onClick={() => setOpen(true)} className="gap-1.5">
+            <Plus className="h-4 w-4" />
+            Add truck row
+          </Button>
+        }
       />
       <Card>
         <CardContent className="space-y-4 p-4">
@@ -994,7 +1283,7 @@ export function AccountingTruckPage() {
                 <TableRow>
                   <TableHead>Violation/ticket</TableHead>
                   <TableHead>Date</TableHead>
-                  <TableHead>Description</TableHead>
+                  <TableHead>Concept</TableHead>
                   <TableHead className="text-right">Amount</TableHead>
                   <TableHead>Receipt/reference</TableHead>
                   <TableHead className="text-right">Paid</TableHead>
@@ -1031,6 +1320,14 @@ export function AccountingTruckPage() {
           )}
         </CardContent>
       </Card>
+      <TruckDialog
+        form={form}
+        onChange={patch => setForm(current => ({ ...current, ...patch }))}
+        onClose={() => setOpen(false)}
+        onSave={() => void saveTruckRow()}
+        open={open}
+        saving={createTruckViolation.isPending}
+      />
     </div>
   );
 }

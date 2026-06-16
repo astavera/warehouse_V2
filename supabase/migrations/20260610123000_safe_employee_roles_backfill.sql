@@ -30,7 +30,8 @@ update public.employees
 set
   role = 'admin',
   permissions = array['receiving', 'expected_boxes', 'prices', 'audit', 'accounting', 'settings']::text[]
-where passcode = '0315';
+where id = '77f47458-3aa1-4fdb-a08a-8e7924671ec1'::uuid
+   or auth_user_id = 'e7bb5b60-b264-49b2-8358-81d0f3c37b09'::uuid;
 
 grant select (id, name, active, created_at, updated_at, auth_user_id, role, store_number, permissions)
 on public.employees to authenticated;

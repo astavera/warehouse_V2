@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { CreditCard, Loader2, Pencil, Plus, Store, Tags } from 'lucide-react';
+import { Building2, CreditCard, Loader2, Pencil, Plus, Store, Tags } from 'lucide-react';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -15,13 +15,15 @@ import {
   useAccountingAccountMutations,
   useAccountingCatalogs,
   useAccountingCategoryMutations,
+  useAccountingPaymentMethodMutations,
   useAccountingStoreMutations,
+  useAccountingVendorMutations,
 } from '@/hooks/useAccountingData';
-import { normalizeText, type AccountingAccount, type AccountingCategory, type AccountingStore } from '@/lib/accounting';
+import { normalizeText, paymentTermsLabel, type AccountingAccount, type AccountingCategory, type AccountingPaymentMethod, type AccountingStore, type AccountingVendor } from '@/lib/accounting';
 import { AccountingPageHeader, EmptyState, LoadingState } from './AccountingComponents';
 
-type EditableCatalog = 'stores' | 'accounts' | 'categories';
-type CatalogTab = 'vendors' | EditableCatalog | 'methods';
+type EditableCatalog = 'vendors' | 'stores' | 'accounts' | 'methods' | 'categories';
+type CatalogTab = EditableCatalog;
 type CatalogRow = Record<string, unknown> & {
   id: string;
   name: string;
@@ -34,6 +36,14 @@ const NO_STORE = 'none';
 
 type StoreFormState = { id?: string; name: string };
 type CategoryFormState = { id?: string; name: string };
+type PaymentMethodFormState = { id?: string; name: string };
+type VendorCatalogFormState = {
+  account_number: string;
+  default_payment_method_id: string;
+  id?: string;
+  name: string;
+  payment_terms_days: string;
+};
 type AccountFormState = {
   account_type: string;
   active: boolean;
@@ -51,6 +61,8 @@ function getErrorMessage(error: unknown, fallback: string) {
 function catalogSingular(kind: EditableCatalog) {
   if (kind === 'accounts') return 'account';
   if (kind === 'categories') return 'category';
+  if (kind === 'methods') return 'payment method';
+  if (kind === 'vendors') return 'vendor';
   return 'store';
 }
 
@@ -62,6 +74,7 @@ function rowSearchText(row: CatalogRow) {
     row.brand,
     row.last_four,
     row.source,
+    row.payment_terms_days,
     row.accounting_stores?.name,
   ]
     .filter(Boolean)
@@ -97,6 +110,8 @@ function CatalogTable({
           {type === 'accounts' && <TableHead>Brand</TableHead>}
           {type === 'accounts' && <TableHead>Last four</TableHead>}
           {type === 'accounts' && <TableHead>Status</TableHead>}
+          {type === 'vendors' && <TableHead>Account #</TableHead>}
+          {type === 'vendors' && <TableHead>Terms</TableHead>}
           {type === 'vendors' && <TableHead>Source</TableHead>}
           <TableHead>Updated</TableHead>
           {onEdit && <TableHead className="w-[80px] text-right">Edit</TableHead>}
@@ -116,6 +131,12 @@ function CatalogTable({
             {type === 'accounts' && (
               <TableCell>
                 <Badge variant={row.active === false ? 'secondary' : 'outline'}>{row.active === false ? 'Inactive' : 'Active'}</Badge>
+              </TableCell>
+            )}
+            {type === 'vendors' && <TableCell>{String(row.account_number || '-')}</TableCell>}
+            {type === 'vendors' && (
+              <TableCell>
+                {row.payment_terms_days == null ? '-' : <Badge variant="secondary">{paymentTermsLabel(row.payment_terms_days as number)}</Badge>}
               </TableCell>
             )}
             {type === 'vendors' && <TableCell>{String(row.source || '-')}</TableCell>}
@@ -149,6 +170,23 @@ function categoryFormFromRow(row?: Partial<AccountingCategory>): CategoryFormSta
   };
 }
 
+function paymentMethodFormFromRow(row?: Partial<AccountingPaymentMethod>): PaymentMethodFormState {
+  return {
+    id: row?.id,
+    name: row?.name || '',
+  };
+}
+
+function vendorCatalogFormFromRow(row?: Partial<AccountingVendor>): VendorCatalogFormState {
+  return {
+    account_number: row?.account_number || '',
+    default_payment_method_id: row?.default_payment_method_id || 'none',
+    id: row?.id,
+    name: row?.name || '',
+    payment_terms_days: row?.payment_terms_days == null ? '' : String(row.payment_terms_days),
+  };
+}
+
 function accountFormFromRow(row?: Partial<AccountingAccount>): AccountFormState {
   return {
     account_type: row?.account_type || 'credit_card',
@@ -161,33 +199,59 @@ function accountFormFromRow(row?: Partial<AccountingAccount>): AccountFormState 
   };
 }
 
+function parseTermsDays(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const parsed = Number(trimmed);
+  if (!Number.isFinite(parsed) || parsed < 0 || parsed > 365) return undefined;
+  return Math.round(parsed);
+}
+
 export default function AccountingCatalogsPage() {
   const { data, isLoading } = useAccountingCatalogs();
   const { createAccount, updateAccount } = useAccountingAccountMutations();
   const { createCategory, updateCategory } = useAccountingCategoryMutations();
+  const { createPaymentMethod, updatePaymentMethod } = useAccountingPaymentMethodMutations();
   const { createStore, updateStore } = useAccountingStoreMutations();
+  const { createVendor, updateVendor } = useAccountingVendorMutations();
   const [activeTab, setActiveTab] = useState<CatalogTab>('vendors');
   const [editor, setEditor] = useState<{ kind: EditableCatalog; mode: 'create' | 'edit' } | null>(null);
   const [search, setSearch] = useState('');
   const [storeForm, setStoreForm] = useState<StoreFormState>(() => storeFormFromRow());
   const [categoryForm, setCategoryForm] = useState<CategoryFormState>(() => categoryFormFromRow());
+  const [paymentMethodForm, setPaymentMethodForm] = useState<PaymentMethodFormState>(() => paymentMethodFormFromRow());
+  const [vendorForm, setVendorForm] = useState<VendorCatalogFormState>(() => vendorCatalogFormFromRow());
   const [accountForm, setAccountForm] = useState<AccountFormState>(() => accountFormFromRow());
 
   if (isLoading) return <LoadingState />;
 
   const stores = data?.stores || [];
-  const isSaving = createStore.isPending || updateStore.isPending || createAccount.isPending || updateAccount.isPending || createCategory.isPending || updateCategory.isPending;
+  const isSaving =
+    createStore.isPending ||
+    updateStore.isPending ||
+    createAccount.isPending ||
+    updateAccount.isPending ||
+    createCategory.isPending ||
+    updateCategory.isPending ||
+    createPaymentMethod.isPending ||
+    updatePaymentMethod.isPending ||
+    createVendor.isPending ||
+    updateVendor.isPending;
 
   const openCreate = (kind: EditableCatalog) => {
+    if (kind === 'vendors') setVendorForm(vendorCatalogFormFromRow());
     if (kind === 'stores') setStoreForm(storeFormFromRow());
     if (kind === 'accounts') setAccountForm(accountFormFromRow());
+    if (kind === 'methods') setPaymentMethodForm(paymentMethodFormFromRow());
     if (kind === 'categories') setCategoryForm(categoryFormFromRow());
     setEditor({ kind, mode: 'create' });
   };
 
   const openEdit = (kind: EditableCatalog, row: CatalogRow) => {
+    if (kind === 'vendors') setVendorForm(vendorCatalogFormFromRow(row as AccountingVendor));
     if (kind === 'stores') setStoreForm(storeFormFromRow(row as AccountingStore));
     if (kind === 'accounts') setAccountForm(accountFormFromRow(row as AccountingAccount));
+    if (kind === 'methods') setPaymentMethodForm(paymentMethodFormFromRow(row as AccountingPaymentMethod));
     if (kind === 'categories') setCategoryForm(categoryFormFromRow(row as AccountingCategory));
     setEditor({ kind, mode: 'edit' });
   };
@@ -199,6 +263,26 @@ export default function AccountingCatalogsPage() {
   const saveEditor = async () => {
     if (!editor) return;
     try {
+      if (editor.kind === 'vendors') {
+        const termsDays = parseTermsDays(vendorForm.payment_terms_days);
+        if (termsDays === undefined) {
+          toast.error('Payment terms must be a number between 0 and 365 days');
+          return;
+        }
+        const payload = {
+          account_number: vendorForm.account_number || null,
+          default_payment_method_id: vendorForm.default_payment_method_id === 'none' ? null : vendorForm.default_payment_method_id,
+          name: vendorForm.name,
+          payment_terms_days: termsDays,
+        };
+        if (vendorForm.id) {
+          await updateVendor.mutateAsync({ id: vendorForm.id, patch: payload });
+          toast.success('Vendor updated');
+        } else {
+          await createVendor.mutateAsync(payload);
+          toast.success('Vendor created');
+        }
+      }
       if (editor.kind === 'stores') {
         if (storeForm.id) {
           await updateStore.mutateAsync({ id: storeForm.id, patch: { name: storeForm.name } });
@@ -225,6 +309,15 @@ export default function AccountingCatalogsPage() {
           toast.success('Account created');
         }
       }
+      if (editor.kind === 'methods') {
+        if (paymentMethodForm.id) {
+          await updatePaymentMethod.mutateAsync({ id: paymentMethodForm.id, patch: { name: paymentMethodForm.name } });
+          toast.success('Payment method updated');
+        } else {
+          await createPaymentMethod.mutateAsync({ name: paymentMethodForm.name });
+          toast.success('Payment method created');
+        }
+      }
       if (editor.kind === 'categories') {
         if (categoryForm.id) {
           await updateCategory.mutateAsync({ id: categoryForm.id, patch: { name: categoryForm.name } });
@@ -240,13 +333,13 @@ export default function AccountingCatalogsPage() {
     }
   };
 
-  const activeEditable = activeTab === 'stores' || activeTab === 'accounts' || activeTab === 'categories' ? activeTab : null;
+  const activeEditable = activeTab;
 
   return (
     <div className="space-y-6">
       <AccountingPageHeader
         title="Catalogs"
-        description="Manage stores, store-linked accounts/cards, and invoice categories used by accounting."
+        description="Manage vendors, stores, accounts/cards, payment methods, categories, and invoice terms."
       />
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
@@ -282,7 +375,7 @@ export default function AccountingCatalogsPage() {
               <TabsTrigger value="categories">Categories</TabsTrigger>
             </TabsList>
             <TabsContent value="vendors">
-              <CatalogTable rows={(data?.vendors || []) as CatalogRow[]} search={search} type="vendors" />
+              <CatalogTable rows={(data?.vendors || []) as CatalogRow[]} search={search} type="vendors" onEdit={row => openEdit('vendors', row)} />
             </TabsContent>
             <TabsContent value="stores">
               <CatalogTable rows={(data?.stores || []) as CatalogRow[]} search={search} type="stores" onEdit={row => openEdit('stores', row)} />
@@ -291,7 +384,7 @@ export default function AccountingCatalogsPage() {
               <CatalogTable rows={(data?.accounts || []) as CatalogRow[]} search={search} type="accounts" onEdit={row => openEdit('accounts', row)} />
             </TabsContent>
             <TabsContent value="methods">
-              <CatalogTable rows={(data?.paymentMethods || []) as CatalogRow[]} search={search} type="methods" />
+              <CatalogTable rows={(data?.paymentMethods || []) as CatalogRow[]} search={search} type="methods" onEdit={row => openEdit('methods', row)} />
             </TabsContent>
             <TabsContent value="categories">
               <CatalogTable rows={(data?.categories || []) as CatalogRow[]} search={search} type="categories" onEdit={row => openEdit('categories', row)} />
@@ -304,17 +397,59 @@ export default function AccountingCatalogsPage() {
         <DialogContent className="max-w-xl">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
+              {editor?.kind === 'vendors' && <Building2 className="h-4 w-4 text-primary" />}
               {editor?.kind === 'stores' && <Store className="h-4 w-4 text-primary" />}
               {editor?.kind === 'accounts' && <CreditCard className="h-4 w-4 text-primary" />}
+              {editor?.kind === 'methods' && <CreditCard className="h-4 w-4 text-primary" />}
               {editor?.kind === 'categories' && <Tags className="h-4 w-4 text-primary" />}
               {editor?.mode === 'edit' ? 'Edit' : 'Add'} {editor ? catalogSingular(editor.kind) : 'catalog'}
             </DialogTitle>
             <DialogDescription>
               {editor?.kind === 'accounts'
                 ? 'Assign each account/card to the store it belongs to when applicable.'
+                : editor?.kind === 'vendors'
+                  ? 'Set the vendor name, default payment method, account number, and payment terms used by invoices.'
                 : 'Keep catalog names clean so invoices and reports stay consistent.'}
             </DialogDescription>
           </DialogHeader>
+
+          {editor?.kind === 'vendors' && (
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2 sm:col-span-2">
+                <Label htmlFor="catalog-vendor-name">Vendor name</Label>
+                <Input id="catalog-vendor-name" value={vendorForm.name} onChange={event => setVendorForm(form => ({ ...form, name: event.target.value }))} autoFocus />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="catalog-vendor-account">Account #</Label>
+                <Input id="catalog-vendor-account" value={vendorForm.account_number} onChange={event => setVendorForm(form => ({ ...form, account_number: event.target.value }))} />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="catalog-vendor-terms">Payment terms</Label>
+                <Input
+                  id="catalog-vendor-terms"
+                  inputMode="numeric"
+                  value={vendorForm.payment_terms_days}
+                  onChange={event => setVendorForm(form => ({ ...form, payment_terms_days: event.target.value }))}
+                  placeholder="30, 60, 90"
+                />
+                <div className="text-xs text-muted-foreground">
+                  {vendorForm.payment_terms_days.trim() ? paymentTermsLabel(vendorForm.payment_terms_days) : 'Used to calculate due dates.'}
+                </div>
+              </div>
+              <div className="space-y-2 sm:col-span-2">
+                <Label htmlFor="catalog-vendor-method">Default payment method</Label>
+                <Select value={vendorForm.default_payment_method_id} onValueChange={value => setVendorForm(form => ({ ...form, default_payment_method_id: value }))}>
+                  <SelectTrigger id="catalog-vendor-method"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">No default</SelectItem>
+                    {data?.paymentMethods.map(method => (
+                      <SelectItem key={method.id} value={method.id}>{method.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          )}
 
           {editor?.kind === 'stores' && (
             <div className="space-y-2">
@@ -327,6 +462,13 @@ export default function AccountingCatalogsPage() {
             <div className="space-y-2">
               <Label htmlFor="catalog-category-name">Category name</Label>
               <Input id="catalog-category-name" value={categoryForm.name} onChange={event => setCategoryForm(form => ({ ...form, name: event.target.value }))} autoFocus />
+            </div>
+          )}
+
+          {editor?.kind === 'methods' && (
+            <div className="space-y-2">
+              <Label htmlFor="catalog-method-name">Payment method name</Label>
+              <Input id="catalog-method-name" value={paymentMethodForm.name} onChange={event => setPaymentMethodForm(form => ({ ...form, name: event.target.value }))} autoFocus />
             </div>
           )}
 

@@ -1,9 +1,10 @@
 import { useRef, useState } from 'react';
-import { AlertTriangle, Download, FileSpreadsheet, Loader2, Upload } from 'lucide-react';
+import { AlertTriangle, ChevronDown, Download, FileSpreadsheet, ListChecks, Loader2, Upload } from 'lucide-react';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useAccountingImportMutations, useAccountingImports } from '@/hooks/useAccountingData';
 import {
@@ -18,12 +19,84 @@ function getErrorMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
 }
 
+const IMPORT_FLOW_STEPS = [
+  {
+    title: 'Download template',
+    detail: 'Creates the current .xlsx with the sheets and example rows the importer expects.',
+  },
+  {
+    title: 'Fill the sheets',
+    detail: 'Catalog tabs can be filled first, then invoices, payments, personal bills, and truck rows.',
+  },
+  {
+    title: 'Upload Excel',
+    detail: 'The importer reads each non-empty row, normalizes dates and money, then reports warnings by sheet and row.',
+  },
+  {
+    title: 'Refresh Accounting',
+    detail: 'Rows are saved with source metadata so repeat imports update the same source row instead of duplicating it.',
+  },
+] as const;
+
+const IMPORT_SHEET_MAP = [
+  {
+    sheet: 'Vendors',
+    fills: 'Vendor catalog',
+    fields: 'Vendor Name, address, contact, account #, default payment method, terms days',
+    note: 'Matched by vendor name and reused by invoice and payment rows.',
+  },
+  {
+    sheet: 'Credit Cards',
+    fills: 'Cards/accounts catalog',
+    fields: 'Card Name, Store, Brand / Bank, Last 4, Active',
+    note: 'Creates selectable cards/accounts for paid invoices and card payments.',
+  },
+  {
+    sheet: 'Pending Invoices',
+    fills: 'Invoices',
+    fields: 'Vendor, Store, Invoice #, Due Date, Issue Date, Amount, Credit, Category, Status',
+    note: 'Credit Amount reduces the final amount to pay.',
+  },
+  {
+    sheet: 'Paid Invoices',
+    fills: 'Paid invoice rows',
+    fields: 'Vendor, Invoice Number(s), Payment Date, Amount Paid, Method, Account, Check/Reference',
+    note: 'One payment row can include multiple invoice numbers separated by new lines.',
+  },
+  {
+    sheet: 'Credit Card Payments',
+    fills: 'Card payment ledger',
+    fields: 'Credit Card, Payment Date, Amount, Confirmation, Status, Notes',
+    note: 'Tracks statement/card payments separately from vendor invoice payments.',
+  },
+  {
+    sheet: 'Personal Bills',
+    fills: 'Personal bills',
+    fields: 'Concept, Payment Method, Payment Date, Amount, Status, Notes',
+    note: 'Uses Concept as the bill name. Older Bill Name files still import.',
+  },
+  {
+    sheet: 'Truck',
+    fills: 'Truck ledger',
+    fields: 'Violation #, Violation Date, Description, Amount, Receipt, Method, Paid Amount',
+    note: 'Repeated violation numbers are flagged as possible duplicates.',
+  },
+] as const;
+
+const IMPORT_RULES = [
+  'Dates should use YYYY-MM-DD.',
+  'Money should be plain numbers, like 1250.50.',
+  'Rows match by file hash, sheet, and row number.',
+  'Every imported row keeps source file, row hash, import batch, and raw payload.',
+] as const;
+
 export default function AccountingImportsPage() {
   const { data, isLoading } = useAccountingImports();
   const { importTemplate } = useAccountingImportMutations();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [lastParsed, setLastParsed] = useState<AccountingTemplateImport | null>(null);
   const [downloadingTemplate, setDownloadingTemplate] = useState(false);
+  const [showTemplateGuide, setShowTemplateGuide] = useState(false);
   const batches = data?.batches || [];
   const warnings = data?.warnings || [];
 
@@ -83,7 +156,7 @@ export default function AccountingImportsPage() {
                 Use the generated template to keep vendor names, cards, invoices, payments, personal bills, and truck rows consistent.
               </p>
               <p className="mt-1 text-xs text-muted-foreground">
-                Upload accepts .xlsx files from this template. Rows are matched by file name, sheet, and row number.
+                Upload accepts .xlsx files from this template. Rows are matched by file hash, sheet, and row number.
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -121,6 +194,67 @@ export default function AccountingImportsPage() {
           )}
         </CardContent>
       </Card>
+
+      <Collapsible open={showTemplateGuide} onOpenChange={setShowTemplateGuide}>
+        <Card>
+          <CardHeader>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <ListChecks className="h-4 w-4 text-primary" />
+                What the template fills
+              </CardTitle>
+              <CollapsibleTrigger asChild>
+                <Button variant="outline" size="sm" className="gap-1.5">
+                  <ChevronDown className={`h-4 w-4 transition-transform ${showTemplateGuide ? 'rotate-180' : ''}`} />
+                  {showTemplateGuide ? 'Hide guide' : 'Open guide'}
+                </Button>
+              </CollapsibleTrigger>
+            </div>
+          </CardHeader>
+          <CollapsibleContent>
+            <CardContent className="space-y-5 pt-0">
+              <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-4">
+                {IMPORT_FLOW_STEPS.map((step, index) => (
+                  <div key={step.title} className="border-l pl-3">
+                    <div className="mb-1 text-xs font-semibold uppercase text-muted-foreground">Step {index + 1}</div>
+                    <div className="font-medium">{step.title}</div>
+                    <div className="mt-1 text-sm text-muted-foreground">{step.detail}</div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="overflow-hidden rounded-md border">
+                <Table className="min-w-[1040px]">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Template sheet</TableHead>
+                      <TableHead>Fills</TableHead>
+                      <TableHead>Main columns</TableHead>
+                      <TableHead>Import behavior</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {IMPORT_SHEET_MAP.map(row => (
+                      <TableRow key={row.sheet}>
+                        <TableCell className="font-medium">{row.sheet}</TableCell>
+                        <TableCell>{row.fills}</TableCell>
+                        <TableCell className="text-muted-foreground">{row.fields}</TableCell>
+                        <TableCell className="text-muted-foreground">{row.note}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+
+              <div className="grid gap-2 text-sm text-muted-foreground md:grid-cols-2 2xl:grid-cols-4">
+                {IMPORT_RULES.map(rule => (
+                  <div key={rule} className="border-l border-primary/40 pl-3">{rule}</div>
+                ))}
+              </div>
+            </CardContent>
+          </CollapsibleContent>
+        </Card>
+      </Collapsible>
 
       <Card>
         <CardHeader>
