@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { Camera, CreditCard, Edit, Loader2, MapPin, Plus, RotateCcw, Save, Search, SlidersHorizontal, Trash2, Users } from 'lucide-react';
 import { toast } from 'sonner';
@@ -12,6 +13,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import {
+  ACCOUNTING_INITIAL_LIST_LIMIT,
+  fetchAccountingInvoiceById,
   uploadAccountingCheckPhoto,
   useAccountingCatalogs,
   useAccountingInvoiceMutations,
@@ -1265,11 +1268,13 @@ function PayInvoiceDialog({
 }
 
 export default function AccountingInvoicesPage() {
-  const { data: invoices = [], isLoading } = useAccountingInvoices();
+  const [includeAllInvoices, setIncludeAllInvoices] = useState(false);
+  const { data: invoices = [], isLoading, isFetching } = useAccountingInvoices({ includeAll: includeAllInvoices });
   const { data: catalogs } = useAccountingCatalogs();
   const { createInvoice, updateInvoice } = useAccountingInvoiceMutations();
   const { createInvoicePayment } = useAccountingPaymentMutations();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | AccountingStatus>('all');
   const [flagFilter, setFlagFilter] = useState('all');
@@ -1293,10 +1298,24 @@ export default function AccountingInvoicesPage() {
     reference_number: '',
   });
   const [payDialogOpen, setPayDialogOpen] = useState(false);
+  const [loadingInvoiceAction, setLoadingInvoiceAction] = useState<{ action: 'edit' | 'pay'; id: string } | null>(null);
+
+  const displayInvoices = useMemo(() => {
+    if (!catalogs) return invoices;
+    const vendorsById = new Map(catalogs.vendors.map(vendor => [vendor.id, vendor]));
+    const storesById = new Map(catalogs.stores.map(store => [store.id, store]));
+    const categoriesById = new Map(catalogs.categories.map(category => [category.id, category]));
+    return invoices.map(invoice => ({
+      ...invoice,
+      accounting_vendors: invoice.vendor_id ? vendorsById.get(invoice.vendor_id) || null : null,
+      accounting_stores: invoice.store_id ? storesById.get(invoice.store_id) || null : null,
+      accounting_invoice_categories: invoice.category_id ? categoriesById.get(invoice.category_id) || null : null,
+    }));
+  }, [catalogs, invoices]);
 
   const filtered = useMemo(() => {
     const query = normalizeText(search);
-    return invoices.filter(invoice => {
+    return displayInvoices.filter(invoice => {
       if (statusFilter !== 'all' && invoice.status !== statusFilter) return false;
       if (vendorFilter !== 'all' && (invoice.vendor_id || 'none') !== vendorFilter) return false;
       if (flagFilter === 'overdue' && !isOverdue(invoice)) return false;
@@ -1314,9 +1333,9 @@ export default function AccountingInvoicesPage() {
       ].filter(Boolean).join(' '));
       return haystack.includes(query);
     });
-  }, [flagFilter, invoices, search, statusFilter, vendorFilter]);
+  }, [displayInvoices, flagFilter, search, statusFilter, vendorFilter]);
 
-  const vendorBalances = useMemo(() => summarizeVendorBalances(invoices), [invoices]);
+  const vendorBalances = useMemo(() => summarizeVendorBalances(displayInvoices), [displayInvoices]);
   const visibleVendorBalances = useMemo(() => {
     const query = normalizeText(balanceSearch);
     const dueWithin15Rows = vendorBalances.filter(row => decimalStringToCents(row.dueNext15Amount) > 0n);
@@ -1350,16 +1369,34 @@ export default function AccountingInvoicesPage() {
     setVendorFilter('all');
   };
 
+  const loadInvoiceDetail = async (invoice: AccountingInvoice) => {
+    const rawPayload = invoice.raw_payload && typeof invoice.raw_payload === 'object' ? invoice.raw_payload : {};
+    if (invoice.source_file_sha256 || Object.keys(rawPayload).length) return invoice;
+    return queryClient.fetchQuery({
+      queryKey: ['accounting', 'invoice-detail', invoice.id],
+      queryFn: () => fetchAccountingInvoiceById(invoice.id),
+      staleTime: 5 * 60_000,
+    });
+  };
+
   const openCreate = () => {
     setEditing(null);
     setForm(EMPTY_FORM);
     setDialogOpen(true);
   };
 
-  const openEdit = (invoice: AccountingInvoice) => {
-    setEditing(invoice);
-    setForm(formFromInvoice(invoice));
-    setDialogOpen(true);
+  const openEdit = async (invoice: AccountingInvoice) => {
+    setLoadingInvoiceAction({ action: 'edit', id: invoice.id });
+    try {
+      const detailedInvoice = await loadInvoiceDetail(invoice);
+      setEditing(detailedInvoice);
+      setForm(formFromInvoice(detailedInvoice));
+      setDialogOpen(true);
+    } catch (error) {
+      toast.error(getErrorMessage(error, 'Could not load invoice details'));
+    } finally {
+      setLoadingInvoiceAction(null);
+    }
   };
 
   const save = async () => {
@@ -1406,35 +1443,44 @@ export default function AccountingInvoicesPage() {
     }
   };
 
-  const openPay = (invoice: AccountingInvoice) => {
-    const vendor = catalogs?.vendors.find(item => item.id === invoice.vendor_id);
-    const defaultMethod = catalogs?.paymentMethods.find(item => item.id === vendor?.default_payment_method_id);
-    const kind = paymentKindFromMethodName(defaultMethod?.name);
-    const activeAccounts = (catalogs?.accounts || []).filter(account => account.active !== false);
-    const creditCards = activeAccounts.filter(isCreditCardAccount);
-    const bankAccounts = activeAccounts.filter(account => !isCreditCardAccount(account));
-    const accountOptions = kind === 'credit_card' ? creditCards : bankAccounts.length ? bankAccounts : activeAccounts;
-    const locationAccount = bestLocationAccountForInvoice(invoice);
-    const locationAccountIsValid = Boolean(locationAccount?.account_id && accountOptions.some(account => account.id === locationAccount.account_id));
-    setPayingInvoice(invoice);
-    setPayForm({
-      account_id: locationAccountIsValid
-        ? locationAccount?.account_id || 'none'
-        : kind === 'credit_card' && creditCards.length === 1
-          ? creditCards[0].id
-          : 'none',
-      account_number: locationAccount?.account_number || vendorAccountNumberForStore(vendor, invoice.store_id),
-      amount_paid: invoiceFinalAmount(invoice),
-      category_id: invoice.category_id || 'none',
-      checkLines: [createCheckPaymentLine(invoiceFinalAmount(invoice))],
-      check_number: '',
-      notes: '',
-      payment_date: new Date().toISOString().slice(0, 10),
-      payment_method_kind: kind,
-      payment_method_id: methodIdForKind(kind, catalogs?.paymentMethods || []),
-      reference_number: '',
-    });
-    setPayDialogOpen(true);
+  const openPay = async (invoice: AccountingInvoice) => {
+    setLoadingInvoiceAction({ action: 'pay', id: invoice.id });
+    try {
+      const detailedInvoice = await loadInvoiceDetail(invoice);
+      const vendor = catalogs?.vendors.find(item => item.id === detailedInvoice.vendor_id);
+      const defaultMethod = catalogs?.paymentMethods.find(item => item.id === vendor?.default_payment_method_id);
+      const kind = paymentKindFromMethodName(defaultMethod?.name);
+      const activeAccounts = (catalogs?.accounts || []).filter(account => account.active !== false);
+      const creditCards = activeAccounts.filter(isCreditCardAccount);
+      const bankAccounts = activeAccounts.filter(account => !isCreditCardAccount(account));
+      const accountOptions = kind === 'credit_card' ? creditCards : bankAccounts.length ? bankAccounts : activeAccounts;
+      const locationAccount = bestLocationAccountForInvoice(detailedInvoice);
+      const locationAccountIsValid = Boolean(locationAccount?.account_id && accountOptions.some(account => account.id === locationAccount.account_id));
+      const amountToPay = invoiceFinalAmount(detailedInvoice);
+      setPayingInvoice(detailedInvoice);
+      setPayForm({
+        account_id: locationAccountIsValid
+          ? locationAccount?.account_id || 'none'
+          : kind === 'credit_card' && creditCards.length === 1
+            ? creditCards[0].id
+            : 'none',
+        account_number: locationAccount?.account_number || vendorAccountNumberForStore(vendor, detailedInvoice.store_id),
+        amount_paid: amountToPay,
+        category_id: detailedInvoice.category_id || 'none',
+        checkLines: [createCheckPaymentLine(amountToPay)],
+        check_number: '',
+        notes: '',
+        payment_date: new Date().toISOString().slice(0, 10),
+        payment_method_kind: kind,
+        payment_method_id: methodIdForKind(kind, catalogs?.paymentMethods || []),
+        reference_number: '',
+      });
+      setPayDialogOpen(true);
+    } catch (error) {
+      toast.error(getErrorMessage(error, 'Could not load invoice details'));
+    } finally {
+      setLoadingInvoiceAction(null);
+    }
   };
 
   const payInvoice = async () => {
@@ -1490,8 +1536,6 @@ export default function AccountingInvoicesPage() {
     }
   };
 
-  if (isLoading) return <LoadingState />;
-
   return (
     <div className="space-y-6">
       <AccountingPageHeader
@@ -1513,11 +1557,28 @@ export default function AccountingInvoicesPage() {
                 <SlidersHorizontal className="h-4 w-4 text-primary" />
                 <h2 className="text-sm font-semibold">Filters</h2>
                 <Badge variant="outline">{filtered.length} of {invoices.length}</Badge>
+                {!includeAllInvoices && (
+                  <Badge variant="secondary">First {ACCOUNTING_INITIAL_LIST_LIMIT}</Badge>
+                )}
               </div>
-              <Button variant="outline" size="sm" onClick={resetFilters} disabled={!filtersActive} className="w-full gap-1.5 sm:w-auto">
-                <RotateCcw className="h-4 w-4" />
-                Reset
-              </Button>
+              <div className="flex flex-wrap gap-2">
+                {!includeAllInvoices && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setIncludeAllInvoices(true)}
+                    disabled={isFetching}
+                    className="w-full gap-1.5 sm:w-auto"
+                  >
+                    {isFetching ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                    Load all
+                  </Button>
+                )}
+                <Button variant="outline" size="sm" onClick={resetFilters} disabled={!filtersActive} className="w-full gap-1.5 sm:w-auto">
+                  <RotateCcw className="h-4 w-4" />
+                  Reset
+                </Button>
+              </div>
             </div>
             <div className="grid gap-2 md:grid-cols-2 lg:grid-cols-[minmax(280px,1fr)_240px_170px_170px]">
               <div className="relative md:col-span-2 lg:col-span-1">
@@ -1585,7 +1646,9 @@ export default function AccountingInvoicesPage() {
                   />
                 </div>
               </div>
-              {visibleVendorBalances.length ? (
+              {isLoading ? (
+                <LoadingState label="Loading vendor balances..." />
+              ) : visibleVendorBalances.length ? (
                 <div className="max-h-[340px] overflow-auto rounded-md border">
                   <Table>
                     <TableHeader className="sticky top-0 z-10 bg-white">
@@ -1623,7 +1686,9 @@ export default function AccountingInvoicesPage() {
             </div>
           </div>
 
-          {filtered.length ? (
+          {isLoading ? (
+            <LoadingState label="Loading invoices..." />
+          ) : filtered.length ? (
             <div className="overflow-x-auto rounded-md border">
               <Table>
                 <TableHeader className="bg-white">
@@ -1641,40 +1706,58 @@ export default function AccountingInvoicesPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filtered.map(invoice => (
-                    <TableRow key={invoice.id} className={dueRowClass(invoice)}>
-                      <TableCell className="min-w-[160px] font-medium">{invoice.accounting_vendors?.name || '-'}</TableCell>
-                      <TableCell>{invoice.accounting_stores?.name || '-'}</TableCell>
-                      <TableCell className="max-w-[220px] whitespace-normal">{compactMultiLine(invoice.invoice_number) || '-'}</TableCell>
-                      <TableCell>{invoice.due_date || '-'}</TableCell>
-                      <TableCell>
-                        {invoice.accounting_vendors?.payment_terms_days == null
-                          ? '-'
-                          : <Badge variant="outline">{paymentTermsLabel(invoice.accounting_vendors.payment_terms_days)}</Badge>}
-                      </TableCell>
-                      <TableCell className="text-right"><MoneyText value={invoice.amount} /></TableCell>
-                      <TableCell className="text-right">
-                        <div><MoneyText value={invoice.credit} /></div>
-                        {hasCreditApplied(invoice) && (
-                          <div className="text-xs text-muted-foreground">{creditSummary(invoice)}</div>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-right font-medium"><MoneyText value={invoice.final_amount_to_pay || finalAmountToPay(invoice.amount, invoice.credit)} /></TableCell>
-                      <TableCell><InvoiceStatusBadges invoice={invoice} /></TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex justify-end gap-1">
-                          {!isInvoicePaid(invoice) && (
-                            <Button variant="outline" size="sm" onClick={() => openPay(invoice)}>
-                              Pay
-                            </Button>
+                  {filtered.map(invoice => {
+                    const isPayLoading = loadingInvoiceAction?.id === invoice.id && loadingInvoiceAction.action === 'pay';
+                    const isEditLoading = loadingInvoiceAction?.id === invoice.id && loadingInvoiceAction.action === 'edit';
+                    const actionDisabled = Boolean(loadingInvoiceAction);
+                    return (
+                      <TableRow key={invoice.id} className={dueRowClass(invoice)}>
+                        <TableCell className="min-w-[160px] font-medium">{invoice.accounting_vendors?.name || '-'}</TableCell>
+                        <TableCell>{invoice.accounting_stores?.name || '-'}</TableCell>
+                        <TableCell className="max-w-[220px] whitespace-normal">{compactMultiLine(invoice.invoice_number) || '-'}</TableCell>
+                        <TableCell>{invoice.due_date || '-'}</TableCell>
+                        <TableCell>
+                          {invoice.accounting_vendors?.payment_terms_days == null
+                            ? '-'
+                            : <Badge variant="outline">{paymentTermsLabel(invoice.accounting_vendors.payment_terms_days)}</Badge>}
+                        </TableCell>
+                        <TableCell className="text-right"><MoneyText value={invoice.amount} /></TableCell>
+                        <TableCell className="text-right">
+                          <div><MoneyText value={invoice.credit} /></div>
+                          {hasCreditApplied(invoice) && (
+                            <div className="text-xs text-muted-foreground">{creditSummary(invoice)}</div>
                           )}
-                          <Button variant="ghost" size="icon" onClick={() => openEdit(invoice)} aria-label="Edit invoice">
-                            <Edit className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                        </TableCell>
+                        <TableCell className="text-right font-medium"><MoneyText value={invoice.final_amount_to_pay || finalAmountToPay(invoice.amount, invoice.credit)} /></TableCell>
+                        <TableCell><InvoiceStatusBadges invoice={invoice} /></TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-1">
+                            {!isInvoicePaid(invoice) && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => void openPay(invoice)}
+                                disabled={actionDisabled}
+                                className="gap-1.5"
+                              >
+                                {isPayLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                                Pay
+                              </Button>
+                            )}
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => void openEdit(invoice)}
+                              disabled={actionDisabled}
+                              aria-label="Edit invoice"
+                            >
+                              {isEditLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Edit className="h-4 w-4" />}
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
                 </TableBody>
               </Table>
             </div>

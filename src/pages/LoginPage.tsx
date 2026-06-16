@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent } from '@/components/ui/card';
+import { GridBackground } from '@/components/ui/grid-background';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/hooks/useAuth';
 import { getDefaultLandingPath } from '@/lib/permissions';
@@ -129,28 +130,26 @@ export default function LoginPage() {
   }, [handleKeypad, showSuccess, submit]);
 
   return (
-    <div className="app-surface min-h-screen px-5 py-6 sm:px-6 sm:py-6">
-      <div className="mx-auto flex min-h-screen max-w-6xl items-center justify-center">
+    <div className="relative min-h-screen overflow-hidden bg-white px-5 py-6 sm:px-6 sm:py-6">
+      <GridBackground />
+      <div className="relative z-10 mx-auto flex min-h-screen max-w-6xl items-center justify-center">
         <div className="grid w-full items-center gap-8 lg:grid-cols-[1.08fr_0.92fr] lg:gap-12">
           <div className="hidden lg:flex flex-col justify-center">
             <div className="max-w-xl">
-              <div className="mb-8 flex h-52 items-center px-1">
+              <div className="mb-8 flex h-52 items-center px-1 drop-shadow-[0_18px_48px_rgba(15,23,42,0.10)]">
                 <img
                   src="/all-zentro-logo.png"
                   alt="All Zentro Solutions"
                   className="h-[13rem] w-full max-w-[34rem] object-contain"
                 />
               </div>
-              <h1 className="mt-5 text-5xl font-semibold tracking-[-0.05em] text-foreground xl:text-6xl">
-                All Zentro Solutions
-              </h1>
               <p className="mt-5 max-w-lg text-base leading-7 text-muted-foreground xl:text-lg xl:leading-8">
                 Use this app to receive incoming boxes and pallets before processing. Questions about the app? Contact Sebastian.
               </p>
             </div>
           </div>
 
-          <Card className="relative mx-auto w-full max-w-[24rem] overflow-hidden border-0 bg-transparent shadow-none sm:max-w-[30rem] sm:rounded-xl sm:border sm:border-white/90 sm:bg-white/96 sm:panel-shadow sm:backdrop-blur">
+          <Card className="relative mx-auto w-full max-w-[24rem] overflow-hidden border-0 bg-white/94 shadow-[0_24px_80px_rgba(15,23,42,0.12)] backdrop-blur-xl sm:max-w-[30rem] sm:rounded-xl sm:border sm:border-white/80">
             <CardContent className="relative px-0 py-0 sm:p-7">
               <div
                 className={cn(

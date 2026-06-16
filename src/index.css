@@ -109,6 +109,10 @@
   }
 }
 
+.pac-container {
+  z-index: 9999 !important;
+}
+
 @layer utilities {
   .touch-target {
     @apply min-h-[44px] min-w-[44px];

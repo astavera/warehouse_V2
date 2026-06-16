@@ -1,41 +1,54 @@
+import { lazy, Suspense, type ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import AppLayout from "@/components/AppLayout";
-import DashboardPage from "@/pages/DashboardPage";
-import ReceivePage from "@/pages/ReceivePage";
-import HistoryPage from "@/pages/HistoryPage";
-import ExpectedBoxesPage from "@/pages/ExpectedBoxesPage";
-import SuppliersPage from "@/pages/SuppliersPage";
-import CarriersPage from "@/pages/CarriersPage";
-import PricesPage from "@/pages/PricesPage";
-import PricesPrintPage from "@/pages/PricesPrintPage";
-import InventoryAuditPage from "@/pages/InventoryAuditPage";
-import SettingsPage from "@/pages/SettingsPage";
-import AccountingDashboardPage from "@/pages/accounting/AccountingDashboardPage";
-import AccountingInvoicesPage from "@/pages/accounting/AccountingInvoicesPage";
-import AccountingImportsPage from "@/pages/accounting/AccountingImportsPage";
-import AccountingCatalogsPage from "@/pages/accounting/AccountingCatalogsPage";
-import AccountingVendorsPage from "@/pages/accounting/AccountingVendorsPage";
-import {
-  AccountingCreditCardPaymentsPage,
-  AccountingPaidInvoicesPage,
-  AccountingPersonalBillsPage,
-  AccountingTruckPage,
-} from "@/pages/accounting/AccountingLedgerPages";
-import LoginPage from "@/pages/LoginPage";
 import { AuthProvider, useAuth } from "@/hooks/useAuth";
 import { canAccessModule, getDefaultLandingPath, type AppModule } from "@/lib/permissions";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
 
+const DashboardPage = lazy(() => import("@/pages/DashboardPage"));
+const ReceivePage = lazy(() => import("@/pages/ReceivePage"));
+const HistoryPage = lazy(() => import("@/pages/HistoryPage"));
+const ExpectedBoxesPage = lazy(() => import("@/pages/ExpectedBoxesPage"));
+const SuppliersPage = lazy(() => import("@/pages/SuppliersPage"));
+const CarriersPage = lazy(() => import("@/pages/CarriersPage"));
+const PricesPage = lazy(() => import("@/pages/PricesPage"));
+const PricesPrintPage = lazy(() => import("@/pages/PricesPrintPage"));
+const InventoryAuditPage = lazy(() => import("@/pages/InventoryAuditPage"));
+const SettingsPage = lazy(() => import("@/pages/SettingsPage"));
+const AccountingDashboardPage = lazy(() => import("@/pages/accounting/AccountingDashboardPage"));
+const AccountingInvoicesPage = lazy(() => import("@/pages/accounting/AccountingInvoicesPage"));
+const AccountingImportsPage = lazy(() => import("@/pages/accounting/AccountingImportsPage"));
+const AccountingCatalogsPage = lazy(() => import("@/pages/accounting/AccountingCatalogsPage"));
+const AccountingVendorsPage = lazy(() => import("@/pages/accounting/AccountingVendorsPage"));
+const AccountingPaidInvoicesPage = lazy(() =>
+  import("@/pages/accounting/AccountingLedgerPages").then(module => ({ default: module.AccountingPaidInvoicesPage }))
+);
+const AccountingCreditCardPaymentsPage = lazy(() =>
+  import("@/pages/accounting/AccountingLedgerPages").then(module => ({ default: module.AccountingCreditCardPaymentsPage }))
+);
+const AccountingPersonalBillsPage = lazy(() =>
+  import("@/pages/accounting/AccountingLedgerPages").then(module => ({ default: module.AccountingPersonalBillsPage }))
+);
+const AccountingTruckPage = lazy(() =>
+  import("@/pages/accounting/AccountingLedgerPages").then(module => ({ default: module.AccountingTruckPage }))
+);
+const LoginPage = lazy(() => import("@/pages/LoginPage"));
+const PreviewDashboardPage = lazy(() => import("@/pages/PreviewDashboardPage"));
+
+function PageLoadingFallback() {
+  return <div className="flex min-h-screen items-center justify-center text-muted-foreground">Loading...</div>;
+}
+
 function LoginRoute() {
   const { user, loading } = useAuth();
 
   if (loading) {
-    return <div className="flex min-h-screen items-center justify-center text-muted-foreground">Loading...</div>;
+    return <PageLoadingFallback />;
   }
 
   if (user) {
@@ -45,7 +58,7 @@ function LoginRoute() {
   return <LoginPage />;
 }
 
-function RequireModule({ children, module }: { children: React.ReactNode; module: AppModule }) {
+function RequireModule({ children, module }: { children: ReactNode; module: AppModule }) {
   const { user } = useAuth();
 
   if (!canAccessModule(user, module)) {
@@ -60,7 +73,7 @@ function ProtectedApp() {
   const location = useLocation();
 
   if (loading) {
-    return <div className="flex min-h-screen items-center justify-center text-muted-foreground">Loading...</div>;
+    return <PageLoadingFallback />;
   }
 
   if (!user) {
@@ -109,10 +122,14 @@ const App = () => (
       <Sonner />
       <AuthProvider>
         <BrowserRouter>
-          <Routes>
-            <Route path="/login" element={<LoginRoute />} />
-            <Route path="/*" element={<ProtectedApp />} />
-          </Routes>
+          <Suspense fallback={<PageLoadingFallback />}>
+            <Routes>
+              <Route path="/login" element={<LoginRoute />} />
+              {/* TEMPORAL: preview publico del dashboard de 21st.dev - eliminar tras revision */}
+              <Route path="/preview-dashboard" element={<PreviewDashboardPage />} />
+              <Route path="/*" element={<ProtectedApp />} />
+            </Routes>
+          </Suspense>
         </BrowserRouter>
       </AuthProvider>
     </TooltipProvider>

@@ -35,6 +35,13 @@ const KEYS = {
   warnings: 'accounting_mock_import_warnings_v1',
 };
 
+type LocalAccountingListOptions = {
+  limit?: number;
+};
+
+let seeded = false;
+const readCache = new Map<string, unknown>();
+
 function nowIso() {
   return new Date().toISOString();
 }
@@ -46,9 +53,12 @@ function createId(prefix: string) {
 
 function read<T>(key: string, fallback: T): T {
   if (typeof localStorage === 'undefined') return fallback;
+  if (readCache.has(key)) return readCache.get(key) as T;
   try {
     const raw = localStorage.getItem(key);
-    return raw ? (JSON.parse(raw) as T) : fallback;
+    const value = raw ? (JSON.parse(raw) as T) : fallback;
+    readCache.set(key, value);
+    return value;
   } catch {
     return fallback;
   }
@@ -56,7 +66,20 @@ function read<T>(key: string, fallback: T): T {
 
 function write<T>(key: string, value: T) {
   if (typeof localStorage === 'undefined') return;
+  readCache.set(key, value);
   localStorage.setItem(key, JSON.stringify(value));
+}
+
+function applyListLimit<T>(rows: T[], options?: LocalAccountingListOptions) {
+  return typeof options?.limit === 'number' ? rows.slice(0, options.limit) : rows;
+}
+
+function compareDateAsc(a: string | null | undefined, b: string | null | undefined) {
+  return String(a || '').localeCompare(String(b || ''));
+}
+
+function compareDateDesc(a: string | null | undefined, b: string | null | undefined) {
+  return String(b || '').localeCompare(String(a || ''));
 }
 
 function catalogBase(id: string, name: string) {
@@ -483,6 +506,7 @@ function backfillVendorPaymentTerms(vendors: AccountingVendor[]) {
 
 function ensureSeeded() {
   if (typeof localStorage === 'undefined') return;
+  if (seeded) return;
   if (!localStorage.getItem(KEYS.vendors)) write(KEYS.vendors, defaultVendors());
   else {
     const vendors = read<AccountingVendor[]>(KEYS.vendors, []);
@@ -506,44 +530,67 @@ function ensureSeeded() {
   if (!localStorage.getItem(KEYS.truckViolations)) write(KEYS.truckViolations, defaultTruckViolations());
   if (!localStorage.getItem(KEYS.imports)) write(KEYS.imports, defaultImports());
   if (!localStorage.getItem(KEYS.warnings)) write(KEYS.warnings, defaultWarnings());
+  seeded = true;
+}
+
+function localRelationMaps() {
+  ensureSeeded();
+  const vendors = read<AccountingVendor[]>(KEYS.vendors, defaultVendors());
+  const stores = read<AccountingStore[]>(KEYS.stores, defaultStores());
+  const accounts = read<AccountingAccount[]>(KEYS.accounts, defaultAccounts());
+  const methods = read<AccountingPaymentMethod[]>(KEYS.paymentMethods, defaultPaymentMethods());
+  const categories = read<AccountingCategory[]>(KEYS.categories, defaultCategories());
+  return {
+    accounts: new Map(accounts.map(row => [row.id, row])),
+    categories: new Map(categories.map(row => [row.id, row])),
+    methods: new Map(methods.map(row => [row.id, row])),
+    stores: new Map(stores.map(row => [row.id, row])),
+    vendors: new Map(vendors.map(row => [row.id, row])),
+  };
 }
 
 function withInvoiceRelations(invoices: AccountingInvoice[]) {
-  const vendors = listLocalAccountingVendors();
-  const stores = listLocalAccountingStores();
-  const categories = listLocalAccountingCategories();
+  const maps = localRelationMaps();
   return invoices.map(invoice => ({
     ...invoice,
-    accounting_vendors: vendors.find(row => row.id === invoice.vendor_id) || null,
-    accounting_stores: stores.find(row => row.id === invoice.store_id) || null,
-    accounting_invoice_categories: categories.find(row => row.id === invoice.category_id) || null,
+    accounting_vendors: invoice.vendor_id ? maps.vendors.get(invoice.vendor_id) || null : null,
+    accounting_stores: invoice.store_id ? maps.stores.get(invoice.store_id) || null : null,
+    accounting_invoice_categories: invoice.category_id ? maps.categories.get(invoice.category_id) || null : null,
   }));
 }
 
 function withPaymentRelations(payments: AccountingInvoicePayment[]) {
-  const vendors = listLocalAccountingVendors();
-  const stores = listLocalAccountingStores();
-  const accounts = listLocalAccountingAccounts();
-  const methods = listLocalAccountingPaymentMethods();
-  const invoices = listLocalAccountingInvoices();
+  const maps = localRelationMaps();
+  const invoiceMap = new Map(
+    read<AccountingInvoice[]>(KEYS.invoices, defaultInvoices()).map(invoice => [
+      invoice.id,
+      {
+        id: invoice.id,
+        invoice_number: invoice.invoice_number,
+        status: invoice.status,
+      },
+    ])
+  );
   return payments.map(payment => ({
     ...payment,
-    accounting_vendors: vendors.find(row => row.id === payment.vendor_id) || null,
-    accounting_stores: stores.find(row => row.id === payment.store_id) || null,
-    accounting_accounts: accounts.find(row => row.id === payment.account_id) || null,
-    accounting_payment_methods: methods.find(row => row.id === payment.payment_method_id) || null,
-    accounting_invoices: invoices.find(row => row.id === payment.invoice_id) || null,
+    accounting_vendors: payment.vendor_id ? maps.vendors.get(payment.vendor_id) || null : null,
+    accounting_stores: payment.store_id ? maps.stores.get(payment.store_id) || null : null,
+    accounting_accounts: payment.account_id ? maps.accounts.get(payment.account_id) || null : null,
+    accounting_payment_methods: payment.payment_method_id ? maps.methods.get(payment.payment_method_id) || null : null,
+    accounting_invoices: payment.invoice_id ? invoiceMap.get(payment.invoice_id) || null : null,
   }));
 }
 
 export function clearLocalAccountingData() {
   if (typeof localStorage === 'undefined') return;
   Object.values(KEYS).forEach(key => localStorage.removeItem(key));
+  readCache.clear();
+  seeded = false;
 }
 
 export function listLocalAccountingVendors() {
   ensureSeeded();
-  return read<AccountingVendor[]>(KEYS.vendors, defaultVendors()).sort((a, b) => a.name.localeCompare(b.name));
+  return [...read<AccountingVendor[]>(KEYS.vendors, defaultVendors())].sort((a, b) => a.name.localeCompare(b.name));
 }
 
 export function createLocalAccountingVendor(input: Partial<AccountingVendor> & { name: string }) {
@@ -625,11 +672,11 @@ export function updateLocalAccountingStore(id: string, patch: Partial<Accounting
 
 export function listLocalAccountingAccounts() {
   ensureSeeded();
-  const stores = listLocalAccountingStores();
-  return read<AccountingAccount[]>(KEYS.accounts, defaultAccounts())
+  const stores = new Map(read<AccountingStore[]>(KEYS.stores, defaultStores()).map(store => [store.id, store]));
+  return [...read<AccountingAccount[]>(KEYS.accounts, defaultAccounts())]
     .map(account => ({
       ...account,
-      accounting_stores: stores.find(store => store.id === account.store_id) || null,
+      accounting_stores: account.store_id ? stores.get(account.store_id) || null : null,
     }))
     .sort((a, b) => a.name.localeCompare(b.name));
 }
@@ -673,7 +720,7 @@ export function updateLocalAccountingAccount(id: string, patch: Partial<Accounti
 
 export function listLocalAccountingPaymentMethods() {
   ensureSeeded();
-  return read<AccountingPaymentMethod[]>(KEYS.paymentMethods, defaultPaymentMethods()).sort((a, b) => a.name.localeCompare(b.name));
+  return [...read<AccountingPaymentMethod[]>(KEYS.paymentMethods, defaultPaymentMethods())].sort((a, b) => a.name.localeCompare(b.name));
 }
 
 export function createLocalAccountingPaymentMethod(input: Partial<AccountingPaymentMethod> & { name: string }) {
@@ -709,7 +756,7 @@ export function updateLocalAccountingPaymentMethod(id: string, patch: Partial<Ac
 
 export function listLocalAccountingCategories() {
   ensureSeeded();
-  return read<AccountingCategory[]>(KEYS.categories, defaultCategories()).sort((a, b) => a.name.localeCompare(b.name));
+  return [...read<AccountingCategory[]>(KEYS.categories, defaultCategories())].sort((a, b) => a.name.localeCompare(b.name));
 }
 
 export function createLocalAccountingCategory(input: Partial<AccountingCategory> & { name: string }) {
@@ -743,14 +790,24 @@ export function updateLocalAccountingCategory(id: string, patch: Partial<Account
   );
 }
 
-export function listLocalAccountingInvoices() {
+export function listLocalAccountingInvoices(options?: LocalAccountingListOptions) {
   ensureSeeded();
-  return withInvoiceRelations(read<AccountingInvoice[]>(KEYS.invoices, defaultInvoices()));
+  const invoices = [...read<AccountingInvoice[]>(KEYS.invoices, defaultInvoices())]
+    .sort((a, b) => compareDateAsc(a.due_date, b.due_date));
+  return withInvoiceRelations(applyListLimit(invoices, options));
 }
 
-export function listLocalAccountingInvoicePayments() {
+export function getLocalAccountingInvoice(id: string) {
   ensureSeeded();
-  return withPaymentRelations(read<AccountingInvoicePayment[]>(KEYS.payments, defaultPayments()));
+  const invoice = read<AccountingInvoice[]>(KEYS.invoices, defaultInvoices()).find(row => row.id === id);
+  return invoice ? withInvoiceRelations([invoice])[0] : null;
+}
+
+export function listLocalAccountingInvoicePayments(options?: LocalAccountingListOptions) {
+  ensureSeeded();
+  const payments = [...read<AccountingInvoicePayment[]>(KEYS.payments, defaultPayments())]
+    .sort((a, b) => compareDateDesc(a.payment_date, b.payment_date));
+  return withPaymentRelations(applyListLimit(payments, options));
 }
 
 export function createLocalAccountingInvoicePayment(input: Partial<AccountingInvoicePayment>) {
@@ -793,23 +850,26 @@ export function createLocalAccountingInvoicePayment(input: Partial<AccountingInv
   return payment;
 }
 
-export function listLocalAccountingCreditCardPayments() {
+export function listLocalAccountingCreditCardPayments(options?: LocalAccountingListOptions) {
   ensureSeeded();
-  const accounts = listLocalAccountingAccounts();
-  return read<AccountingCreditCardPayment[]>(KEYS.creditCardPayments, defaultCreditCardPayments()).map(payment => ({
+  const accounts = new Map(read<AccountingAccount[]>(KEYS.accounts, defaultAccounts()).map(row => [row.id, row]));
+  const payments = [...read<AccountingCreditCardPayment[]>(KEYS.creditCardPayments, defaultCreditCardPayments())]
+    .sort((a, b) => compareDateDesc(a.payment_date, b.payment_date));
+  return applyListLimit(payments, options).map(payment => ({
     ...payment,
-    accounting_accounts: accounts.find(row => row.id === payment.account_id) || null,
+    accounting_accounts: payment.account_id ? accounts.get(payment.account_id) || null : null,
   }));
 }
 
-export function listLocalAccountingPersonalBills() {
+export function listLocalAccountingPersonalBills(options?: LocalAccountingListOptions) {
   ensureSeeded();
-  const vendors = listLocalAccountingVendors();
-  const methods = listLocalAccountingPaymentMethods();
-  return read<AccountingPersonalBill[]>(KEYS.personalBills, defaultPersonalBills()).map(bill => ({
+  const maps = localRelationMaps();
+  const bills = [...read<AccountingPersonalBill[]>(KEYS.personalBills, defaultPersonalBills())]
+    .sort((a, b) => compareDateDesc(a.payment_date, b.payment_date));
+  return applyListLimit(bills, options).map(bill => ({
     ...bill,
-    accounting_vendors: vendors.find(row => row.id === bill.vendor_id) || null,
-    accounting_payment_methods: methods.find(row => row.id === bill.payment_method_id) || null,
+    accounting_vendors: bill.vendor_id ? maps.vendors.get(bill.vendor_id) || null : null,
+    accounting_payment_methods: bill.payment_method_id ? maps.methods.get(bill.payment_method_id) || null : null,
   }));
 }
 
@@ -847,9 +907,11 @@ export function createLocalAccountingPersonalBill(input: Partial<AccountingPerso
   return listLocalAccountingPersonalBills().find(row => row.id === bill.id) || bill;
 }
 
-export function listLocalAccountingTruckViolations() {
+export function listLocalAccountingTruckViolations(options?: LocalAccountingListOptions) {
   ensureSeeded();
-  return read<AccountingTruckViolation[]>(KEYS.truckViolations, defaultTruckViolations());
+  const rows = [...read<AccountingTruckViolation[]>(KEYS.truckViolations, defaultTruckViolations())]
+    .sort((a, b) => compareDateDesc(a.violation_date, b.violation_date));
+  return applyListLimit(rows, options);
 }
 
 export function createLocalAccountingTruckViolation(input: Partial<AccountingTruckViolation>) {
@@ -892,12 +954,12 @@ export function createLocalAccountingTruckViolation(input: Partial<AccountingTru
 
 export function listLocalAccountingImportBatches() {
   ensureSeeded();
-  return read<AccountingImportBatch[]>(KEYS.imports, defaultImports()).sort((a, b) => b.imported_at.localeCompare(a.imported_at));
+  return [...read<AccountingImportBatch[]>(KEYS.imports, defaultImports())].sort((a, b) => b.imported_at.localeCompare(a.imported_at));
 }
 
 export function listLocalAccountingImportWarnings() {
   ensureSeeded();
-  return read<AccountingImportWarning[]>(KEYS.warnings, defaultWarnings()).sort((a, b) => b.created_at.localeCompare(a.created_at));
+  return [...read<AccountingImportWarning[]>(KEYS.warnings, defaultWarnings())].sort((a, b) => b.created_at.localeCompare(a.created_at));
 }
 
 export function updateLocalAccountingInvoice(id: string, patch: Partial<AccountingInvoice>) {

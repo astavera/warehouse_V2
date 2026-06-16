@@ -12,6 +12,7 @@ import { Switch } from '@/components/ui/switch';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
 import {
+  ACCOUNTING_INITIAL_LIST_LIMIT,
   useAccountingAccountMutations,
   useAccountingCatalogs,
   useAccountingCreditCardPayments,
@@ -35,6 +36,60 @@ function SearchBox({ value, onChange }: { value: string; onChange: (value: strin
       placeholder="Search records"
       className="max-w-xl"
     />
+  );
+}
+
+function ListScopeControl({
+  includeAll,
+  isFetching,
+  loadedCount,
+  onLoadAll,
+}: {
+  includeAll: boolean;
+  isFetching: boolean;
+  loadedCount: number;
+  onLoadAll: () => void;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <Badge variant={includeAll ? 'outline' : 'secondary'}>
+        {includeAll ? `${loadedCount} loaded` : `Latest ${ACCOUNTING_INITIAL_LIST_LIMIT}`}
+      </Badge>
+      {!includeAll && (
+        <Button variant="outline" size="sm" onClick={onLoadAll} disabled={isFetching} className="gap-1.5">
+          {isFetching ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+          Load all
+        </Button>
+      )}
+    </div>
+  );
+}
+
+function SearchAndScope({
+  includeAll,
+  isFetching,
+  loadedCount,
+  onLoadAll,
+  onSearchChange,
+  search,
+}: {
+  includeAll: boolean;
+  isFetching: boolean;
+  loadedCount: number;
+  onLoadAll: () => void;
+  onSearchChange: (value: string) => void;
+  search: string;
+}) {
+  return (
+    <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+      <SearchBox value={search} onChange={onSearchChange} />
+      <ListScopeControl
+        includeAll={includeAll}
+        isFetching={isFetching}
+        loadedCount={loadedCount}
+        onLoadAll={onLoadAll}
+      />
+    </div>
   );
 }
 
@@ -462,7 +517,8 @@ function CombinedPaymentDialog({
 }
 
 export function AccountingPaidInvoicesPage() {
-  const { data = [], isLoading } = useAccountingInvoicePayments();
+  const [includeAllPayments, setIncludeAllPayments] = useState(false);
+  const { data = [], isLoading, isFetching } = useAccountingInvoicePayments({ includeAll: includeAllPayments });
   const { data: catalogs } = useAccountingCatalogs();
   const { createInvoicePayment } = useAccountingPaymentMutations();
   const { updateVendor } = useAccountingVendorMutations();
@@ -564,7 +620,14 @@ export function AccountingPaidInvoicesPage() {
       />
       <Card>
         <CardContent className="space-y-4 p-4">
-          <SearchBox value={search} onChange={setSearch} />
+          <SearchAndScope
+            includeAll={includeAllPayments}
+            isFetching={isFetching}
+            loadedCount={data.length}
+            onLoadAll={() => setIncludeAllPayments(true)}
+            onSearchChange={setSearch}
+            search={search}
+          />
           {rows.length ? (
             <Table>
               <TableHeader>
@@ -767,7 +830,8 @@ function CreditCardDialog({
 }
 
 export function AccountingCreditCardPaymentsPage() {
-  const { data = [], isLoading } = useAccountingCreditCardPayments();
+  const [includeAllCardPayments, setIncludeAllCardPayments] = useState(false);
+  const { data = [], isLoading, isFetching } = useAccountingCreditCardPayments({ includeAll: includeAllCardPayments });
   const { data: catalogs } = useAccountingCatalogs();
   const { createAccount, updateAccount } = useAccountingAccountMutations();
   const [search, setSearch] = useState('');
@@ -879,7 +943,14 @@ export function AccountingCreditCardPaymentsPage() {
           <CardTitle className="text-base">Payment history</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4 p-4">
-          <SearchBox value={search} onChange={setSearch} />
+          <SearchAndScope
+            includeAll={includeAllCardPayments}
+            isFetching={isFetching}
+            loadedCount={data.length}
+            onLoadAll={() => setIncludeAllCardPayments(true)}
+            onSearchChange={setSearch}
+            search={search}
+          />
           {rows.length ? (
             <Table>
               <TableHeader>
@@ -1027,7 +1098,8 @@ function PersonalBillDialog({
 }
 
 export function AccountingPersonalBillsPage() {
-  const { data = [], isLoading } = useAccountingPersonalBills();
+  const [includeAllPersonalBills, setIncludeAllPersonalBills] = useState(false);
+  const { data = [], isLoading, isFetching } = useAccountingPersonalBills({ includeAll: includeAllPersonalBills });
   const { createPersonalBill } = useAccountingPersonalBillMutations();
   const [search, setSearch] = useState('');
   const [form, setForm] = useState<PersonalBillFormState>(EMPTY_PERSONAL_BILL_FORM);
@@ -1073,7 +1145,14 @@ export function AccountingPersonalBillsPage() {
       />
       <Card>
         <CardContent className="space-y-4 p-4">
-          <SearchBox value={search} onChange={setSearch} />
+          <SearchAndScope
+            includeAll={includeAllPersonalBills}
+            isFetching={isFetching}
+            loadedCount={data.length}
+            onLoadAll={() => setIncludeAllPersonalBills(true)}
+            onSearchChange={setSearch}
+            search={search}
+          />
           {rows.length ? (
             <Table>
               <TableHeader>
@@ -1226,7 +1305,8 @@ function TruckDialog({
 }
 
 export function AccountingTruckPage() {
-  const { data = [], isLoading } = useAccountingTruckViolations();
+  const [includeAllTruckRows, setIncludeAllTruckRows] = useState(false);
+  const { data = [], isLoading, isFetching } = useAccountingTruckViolations({ includeAll: includeAllTruckRows });
   const { createTruckViolation } = useAccountingTruckViolationMutations();
   const [search, setSearch] = useState('');
   const [form, setForm] = useState<TruckFormState>(EMPTY_TRUCK_FORM);
@@ -1276,7 +1356,14 @@ export function AccountingTruckPage() {
       />
       <Card>
         <CardContent className="space-y-4 p-4">
-          <SearchBox value={search} onChange={setSearch} />
+          <SearchAndScope
+            includeAll={includeAllTruckRows}
+            isFetching={isFetching}
+            loadedCount={data.length}
+            onLoadAll={() => setIncludeAllTruckRows(true)}
+            onSearchChange={setSearch}
+            search={search}
+          />
           {rows.length ? (
             <Table>
               <TableHeader>

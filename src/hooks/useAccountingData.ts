@@ -35,6 +35,7 @@ import {
   createLocalAccountingStore,
   createLocalAccountingTruckViolation,
   createLocalAccountingVendor,
+  getLocalAccountingInvoice,
   importLocalAccountingTemplate,
   listLocalAccountingAccounts,
   listLocalAccountingCategories,
@@ -67,13 +68,33 @@ const accountingDb = supabase as unknown as {
   };
 };
 
+const accountingRpc = supabase as unknown as {
+  rpc: (fn: 'get_accounting_dashboard') => PromiseLike<{ data: unknown | null; error: Error | null }>;
+};
+
 const ACCOUNTING_CHECK_PHOTOS_BUCKET = 'accounting-check-photos';
+export const ACCOUNTING_INITIAL_LIST_LIMIT = 500;
+const DASHBOARD_RPC_TIMEOUT_MS = 900;
+let skipSlowDashboardRpc = false;
+
+const ACCOUNTING_QUERY_SETTINGS = {
+  gcTime: 30 * 60_000,
+  refetchOnWindowFocus: false,
+  staleTime: 5 * 60_000,
+};
 
 type QueryLike<T> = PromiseLike<{ data: T | null; error: Error | null }> & {
   order: (column: string, options?: { ascending?: boolean; nullsFirst?: boolean }) => QueryLike<T>;
+  limit: (count: number) => QueryLike<T>;
+  gte: (column: string, value: unknown) => QueryLike<T>;
+  lt: (column: string, value: unknown) => QueryLike<T>;
   eq: (column: string, value: unknown) => QueryLike<T>;
   select: (columns?: string) => QueryLike<T>;
   single: () => QueryLike<T>;
+};
+
+type AccountingListOptions = {
+  includeAll?: boolean;
 };
 
 type InvoicePatch = Partial<
@@ -200,12 +221,50 @@ function asQuery<T>(value: unknown) {
   return value as QueryLike<T>;
 }
 
-async function queryRows<T>(table: string, select = '*', order?: { column: string; ascending?: boolean }) {
+async function queryRows<T>(
+  table: string,
+  select = '*',
+  order?: { column: string; ascending?: boolean },
+  options: { limit?: number } = {}
+) {
   const base = asQuery<T[]>(accountingDb.from(table).select(select));
-  const query = order ? base.order(order.column, { ascending: order.ascending ?? true }) : base;
+  const orderedQuery = order ? base.order(order.column, { ascending: order.ascending ?? true }) : base;
+  const query = options.limit ? orderedQuery.limit(options.limit) : orderedQuery;
   const { data, error } = await query;
   if (error) throw error;
   return data || [];
+}
+
+async function queryRowById<T>(table: string, select: string, id: string) {
+  const { data, error } = await asQuery<T>(accountingDb.from(table).select(select))
+    .eq('id', id)
+    .single();
+  if (error) throw error;
+  if (!data) throw new Error('Row not found');
+  return data;
+}
+
+function listLimit(options?: AccountingListOptions) {
+  return options?.includeAll ? undefined : ACCOUNTING_INITIAL_LIST_LIMIT;
+}
+
+function normalizeInvoiceListRows(rows: AccountingInvoice[]): AccountingInvoice[] {
+  return rows.map(invoice => ({
+    ...invoice,
+    order_number: invoice.order_number ?? null,
+    issue_date: invoice.issue_date ?? null,
+    batch_number: invoice.batch_number ?? null,
+    cloud: invoice.cloud ?? null,
+    source_file_name: '',
+    source_file_sha256: '',
+    source_sheet: '',
+    source_row: 0,
+    source_row_hash: '',
+    import_batch_id: null,
+    raw_payload: {},
+    created_at: '',
+    updated_at: '',
+  }));
 }
 
 function ensureOnlineMutation() {
@@ -260,6 +319,272 @@ function uniqueCatalogRows<T extends { name: string; normalized_name: string }>(
   return [...new Map(rows.filter(row => row.name.trim()).map(row => [row.normalized_name, row])).values()];
 }
 
+const DASHBOARD_INVOICE_SELECT = [
+  'id',
+  'vendor_id',
+  'invoice_number',
+  'due_date',
+  'amount',
+  'credit',
+  'final_amount_to_pay',
+  'status',
+  'paid',
+].join(',');
+
+const DASHBOARD_PAYMENT_SELECT = [
+  'id',
+  'vendor_id',
+  'payment_date',
+  'payment_method_id',
+  'amount_paid',
+  'status',
+  'accounting_vendors(id,name,normalized_name)',
+  'accounting_payment_methods(id,name,normalized_name)',
+].join(',');
+
+const DASHBOARD_SUMMARY_PAYMENT_SELECT = [
+  'id',
+  'payment_date',
+  'amount_paid',
+].join(',');
+
+const DASHBOARD_IMPORT_SELECT = [
+  'id',
+  'source_file_name',
+  'imported_at',
+  'rows_processed',
+  'rows_inserted',
+  'warnings_count',
+].join(',');
+
+const ACCOUNTING_INVOICE_LIST_SELECT = [
+  'id',
+  'vendor_id',
+  'store_id',
+  'invoice_number',
+  'due_date',
+  'amount',
+  'credit',
+  'final_amount_to_pay',
+  'status',
+  'paid',
+  'category_id',
+  'notes',
+].join(',');
+
+const ACCOUNTING_INVOICE_DETAIL_SELECT = [
+  'id',
+  'vendor_id',
+  'store_id',
+  'invoice_number',
+  'order_number',
+  'issue_date',
+  'due_date',
+  'amount',
+  'credit',
+  'final_amount_to_pay',
+  'status',
+  'paid',
+  'category_id',
+  'batch_number',
+  'cloud',
+  'notes',
+  'source_file_name',
+  'source_file_sha256',
+  'source_sheet',
+  'source_row',
+  'source_row_hash',
+  'import_batch_id',
+  'raw_payload',
+  'created_at',
+  'updated_at',
+  'accounting_vendors(id,name,normalized_name,payment_terms_days)',
+  'accounting_stores(id,name,normalized_name)',
+  'accounting_invoice_categories(id,name,normalized_name)',
+].join(',');
+
+const ACCOUNTING_PAYMENT_LIST_SELECT = [
+  'id',
+  'invoice_id',
+  'vendor_id',
+  'store_id',
+  'invoice_number',
+  'payment_date',
+  'payment_method_id',
+  'account_id',
+  'account_number',
+  'check_number',
+  'reference_number',
+  'amount_paid',
+  'status',
+  'category_id',
+  'notes',
+  'raw_payload',
+  'accounting_vendors(id,name,normalized_name)',
+  'accounting_stores(id,name,normalized_name)',
+  'accounting_accounts(id,name,normalized_name)',
+  'accounting_payment_methods(id,name,normalized_name)',
+  'accounting_invoices(id,invoice_number,status)',
+].join(',');
+
+const ACCOUNTING_CREDIT_CARD_PAYMENT_LIST_SELECT = [
+  'id',
+  'account_id',
+  'payment_date',
+  'amount',
+  'confirmation_number',
+  'status',
+  'notes',
+  'accounting_accounts(id,name,normalized_name)',
+].join(',');
+
+const ACCOUNTING_PERSONAL_BILL_LIST_SELECT = [
+  'id',
+  'bill_name',
+  'vendor_id',
+  'payer',
+  'payment_method_id',
+  'payment_date',
+  'amount',
+  'status',
+  'notes',
+  'accounting_vendors(id,name,normalized_name)',
+  'accounting_payment_methods(id,name,normalized_name)',
+].join(',');
+
+const ACCOUNTING_TRUCK_VIOLATION_LIST_SELECT = [
+  'id',
+  'violation_number',
+  'violation_date',
+  'description',
+  'amount',
+  'receipt_number',
+  'payment_method',
+  'paid_amount',
+  'payment_date',
+  'is_possible_duplicate',
+  'duplicate_group_key',
+  'notes',
+].join(',');
+
+const ACCOUNTING_IMPORT_BATCH_LIST_SELECT = [
+  'id',
+  'source_file_name',
+  'source_file_sha256',
+  'imported_at',
+  'rows_processed',
+  'rows_inserted',
+  'rows_updated',
+  'rows_skipped',
+  'warnings_count',
+  'errors_count',
+].join(',');
+
+const ACCOUNTING_IMPORT_WARNING_LIST_SELECT = [
+  'id',
+  'import_batch_id',
+  'source_file_name',
+  'source_sheet',
+  'source_row',
+  'severity',
+  'code',
+  'message',
+  'created_at',
+].join(',');
+
+function currentMonthRange(today = new Date()) {
+  const start = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 1));
+  const next = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() + 1, 1));
+  return {
+    monthKey: today.toISOString().slice(0, 7),
+    nextMonthStart: next.toISOString().slice(0, 10),
+    start: start.toISOString().slice(0, 10),
+  };
+}
+
+function sortPaymentsNewestFirst(payments: AccountingInvoicePayment[]) {
+  return [...payments].sort((a, b) => String(b.payment_date || '').localeCompare(String(a.payment_date || '')));
+}
+
+function buildAccountingDashboardData(
+  invoices: AccountingInvoice[],
+  summaryPayments: AccountingInvoicePayment[],
+  recentPayments: AccountingInvoicePayment[],
+  imports: AccountingImportBatch[]
+) {
+  return {
+    invoices,
+    payments: recentPayments,
+    latestImport: imports[0] || null,
+    highAmountDue30Invoices: invoices
+      .filter(invoice => isDueWithin(invoice, 30))
+      .sort((a, b) => Number(invoiceFinalAmount(b)) - Number(invoiceFinalAmount(a)))
+      .slice(0, 8),
+    highAmountDue90Invoices: invoices
+      .filter(invoice => isDueWithin(invoice, 90))
+      .sort((a, b) => Number(invoiceFinalAmount(b)) - Number(invoiceFinalAmount(a)))
+      .slice(0, 8),
+    summary: summarizeAccountingDashboard(invoices, summaryPayments),
+    vendorBalances: summarizeVendorBalances(invoices).slice(0, 8),
+    recentPayments,
+    highAmountInvoices: invoices
+      .filter(invoice => !isInvoicePaid(invoice))
+      .filter(invoice => Number(invoice.final_amount_to_pay || finalAmountToPay(invoice.amount, invoice.credit)) >= 7000)
+      .slice(0, 8),
+  };
+}
+
+function attachDashboardInvoiceVendors(invoices: AccountingInvoice[], vendors: AccountingVendor[]) {
+  const vendorsById = new Map(vendors.map(vendor => [vendor.id, vendor]));
+  return invoices.map(invoice => ({
+    ...invoice,
+    accounting_vendors: invoice.vendor_id ? vendorsById.get(invoice.vendor_id) || null : null,
+  }));
+}
+
+const EMPTY_ACCOUNTING_DASHBOARD = buildAccountingDashboardData([], [], [], []);
+
+type AccountingDashboardData = ReturnType<typeof buildAccountingDashboardData>;
+
+function isAccountingDashboardData(value: unknown): value is AccountingDashboardData {
+  if (!value || typeof value !== 'object') return false;
+  const row = value as Partial<Record<keyof AccountingDashboardData, unknown>>;
+  return Boolean(
+    row.summary &&
+      typeof row.summary === 'object' &&
+      Array.isArray(row.vendorBalances) &&
+      Array.isArray(row.recentPayments) &&
+      Array.isArray(row.highAmountDue30Invoices) &&
+      Array.isArray(row.highAmountDue90Invoices) &&
+      Array.isArray(row.highAmountInvoices)
+  );
+}
+
+async function queryAccountingDashboardRpc() {
+  const { data, error } = await accountingRpc.rpc('get_accounting_dashboard');
+  if (error) throw error;
+  if (!isAccountingDashboardData(data)) throw new Error('Invalid accounting dashboard response');
+  return data;
+}
+
+async function queryAccountingDashboardRpcWithBudget() {
+  if (skipSlowDashboardRpc) throw new Error('Accounting dashboard RPC skipped after previous slow response');
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      queryAccountingDashboardRpc(),
+      new Promise<never>((_, reject) => {
+        timeoutId = setTimeout(() => reject(new Error('Accounting dashboard RPC timed out')), DASHBOARD_RPC_TIMEOUT_MS);
+      }),
+    ]);
+  } catch (error) {
+    skipSlowDashboardRpc = true;
+    throw error;
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
+}
+
 async function upsertCatalogRows<T extends { id: string; name: string; normalized_name: string }>(
   table: string,
   rows: Array<Record<string, unknown> & { name: string; normalized_name: string }>
@@ -294,69 +619,94 @@ function catalogRow(name: string | null | undefined, extra: Record<string, unkno
   };
 }
 
-export function useAccountingInvoices() {
+export function useAccountingInvoices(options?: AccountingListOptions) {
   return useQuery({
-    queryKey: ['accounting', 'invoices'],
+    queryKey: ['accounting', 'invoices', { includeAll: Boolean(options?.includeAll) }],
     queryFn: async () => {
-      if (shouldUseLocalData()) return listLocalAccountingInvoices();
-      return queryRows<AccountingInvoice>(
-        'accounting_invoices',
-        '*, accounting_vendors(id,name,normalized_name,payment_terms_days), accounting_stores(id,name,normalized_name), accounting_invoice_categories(id,name,normalized_name)',
-        { column: 'due_date', ascending: true }
-      );
+      const rows = shouldUseLocalData()
+        ? listLocalAccountingInvoices({ limit: listLimit(options) })
+        : await queryRows<AccountingInvoice>(
+            'accounting_invoices',
+            ACCOUNTING_INVOICE_LIST_SELECT,
+            { column: 'due_date', ascending: true },
+            { limit: listLimit(options) }
+          );
+      return normalizeInvoiceListRows(rows);
     },
+    ...ACCOUNTING_QUERY_SETTINGS,
   });
 }
 
-export function useAccountingInvoicePayments() {
+export async function fetchAccountingInvoiceById(id: string) {
+  if (shouldUseLocalData()) {
+    const invoice = getLocalAccountingInvoice(id);
+    if (!invoice) throw new Error('Invoice not found');
+    return invoice;
+  }
+  return queryRowById<AccountingInvoice>('accounting_invoices', ACCOUNTING_INVOICE_DETAIL_SELECT, id);
+}
+
+export function useAccountingInvoicePayments(options?: AccountingListOptions) {
   return useQuery({
-    queryKey: ['accounting', 'invoice-payments'],
+    queryKey: ['accounting', 'invoice-payments', { includeAll: Boolean(options?.includeAll) }],
     queryFn: async () => {
-      if (shouldUseLocalData()) return listLocalAccountingInvoicePayments();
+      if (shouldUseLocalData()) return listLocalAccountingInvoicePayments({ limit: listLimit(options) });
       return queryRows<AccountingInvoicePayment>(
         'accounting_invoice_payments',
-        '*, accounting_vendors(id,name,normalized_name), accounting_stores(id,name,normalized_name), accounting_accounts(id,name,normalized_name), accounting_payment_methods(id,name,normalized_name), accounting_invoices(id,invoice_number,status)',
-        { column: 'payment_date', ascending: false }
+        ACCOUNTING_PAYMENT_LIST_SELECT,
+        { column: 'payment_date', ascending: false },
+        { limit: listLimit(options) }
       );
     },
+    ...ACCOUNTING_QUERY_SETTINGS,
   });
 }
 
-export function useAccountingCreditCardPayments() {
+export function useAccountingCreditCardPayments(options?: AccountingListOptions) {
   return useQuery({
-    queryKey: ['accounting', 'credit-card-payments'],
+    queryKey: ['accounting', 'credit-card-payments', { includeAll: Boolean(options?.includeAll) }],
     queryFn: async () => {
-      if (shouldUseLocalData()) return listLocalAccountingCreditCardPayments();
+      if (shouldUseLocalData()) return listLocalAccountingCreditCardPayments({ limit: listLimit(options) });
       return queryRows<AccountingCreditCardPayment>(
         'accounting_credit_card_payments',
-        '*, accounting_accounts(id,name,normalized_name)',
-        { column: 'payment_date', ascending: false }
+        ACCOUNTING_CREDIT_CARD_PAYMENT_LIST_SELECT,
+        { column: 'payment_date', ascending: false },
+        { limit: listLimit(options) }
       );
     },
+    ...ACCOUNTING_QUERY_SETTINGS,
   });
 }
 
-export function useAccountingPersonalBills() {
+export function useAccountingPersonalBills(options?: AccountingListOptions) {
   return useQuery({
-    queryKey: ['accounting', 'personal-bills'],
+    queryKey: ['accounting', 'personal-bills', { includeAll: Boolean(options?.includeAll) }],
     queryFn: async () => {
-      if (shouldUseLocalData()) return listLocalAccountingPersonalBills();
+      if (shouldUseLocalData()) return listLocalAccountingPersonalBills({ limit: listLimit(options) });
       return queryRows<AccountingPersonalBill>(
         'accounting_personal_bills',
-        '*, accounting_vendors(id,name,normalized_name), accounting_payment_methods(id,name,normalized_name)',
-        { column: 'payment_date', ascending: false }
+        ACCOUNTING_PERSONAL_BILL_LIST_SELECT,
+        { column: 'payment_date', ascending: false },
+        { limit: listLimit(options) }
       );
     },
+    ...ACCOUNTING_QUERY_SETTINGS,
   });
 }
 
-export function useAccountingTruckViolations() {
+export function useAccountingTruckViolations(options?: AccountingListOptions) {
   return useQuery({
-    queryKey: ['accounting', 'truck-violations'],
+    queryKey: ['accounting', 'truck-violations', { includeAll: Boolean(options?.includeAll) }],
     queryFn: async () => {
-      if (shouldUseLocalData()) return listLocalAccountingTruckViolations();
-      return queryRows<AccountingTruckViolation>('accounting_truck_violations', '*', { column: 'violation_date', ascending: false });
+      if (shouldUseLocalData()) return listLocalAccountingTruckViolations({ limit: listLimit(options) });
+      return queryRows<AccountingTruckViolation>(
+        'accounting_truck_violations',
+        ACCOUNTING_TRUCK_VIOLATION_LIST_SELECT,
+        { column: 'violation_date', ascending: false },
+        { limit: listLimit(options) }
+      );
     },
+    ...ACCOUNTING_QUERY_SETTINGS,
   });
 }
 
@@ -371,11 +721,22 @@ export function useAccountingImports() {
         };
       }
       const [batches, warnings] = await Promise.all([
-        queryRows<AccountingImportBatch>('accounting_import_batches', '*', { column: 'imported_at', ascending: false }),
-        queryRows<AccountingImportWarning>('accounting_import_warnings', '*', { column: 'created_at', ascending: false }),
+        queryRows<AccountingImportBatch>(
+          'accounting_import_batches',
+          ACCOUNTING_IMPORT_BATCH_LIST_SELECT,
+          { column: 'imported_at', ascending: false },
+          { limit: 100 }
+        ),
+        queryRows<AccountingImportWarning>(
+          'accounting_import_warnings',
+          ACCOUNTING_IMPORT_WARNING_LIST_SELECT,
+          { column: 'created_at', ascending: false },
+          { limit: 200 }
+        ),
       ]);
       return { batches, warnings };
     },
+    ...ACCOUNTING_QUERY_SETTINGS,
   });
 }
 
@@ -401,6 +762,7 @@ export function useAccountingCatalogs() {
       ]);
       return { vendors, stores: sortAccountingStores(stores), accounts, paymentMethods, categories };
     },
+    ...ACCOUNTING_QUERY_SETTINGS,
   });
 }
 
@@ -408,46 +770,68 @@ export function useAccountingDashboard() {
   return useQuery({
     queryKey: ['accounting-dashboard'],
     queryFn: async () => {
-      const [invoices, payments, imports] = await Promise.all([
-        shouldUseLocalData()
-          ? Promise.resolve(listLocalAccountingInvoices())
-          : queryRows<AccountingInvoice>(
-              'accounting_invoices',
-              '*, accounting_vendors(id,name,normalized_name,payment_terms_days), accounting_stores(id,name,normalized_name), accounting_invoice_categories(id,name,normalized_name)',
-              { column: 'due_date' }
-            ),
-        shouldUseLocalData()
-          ? Promise.resolve(listLocalAccountingInvoicePayments())
-          : queryRows<AccountingInvoicePayment>(
-              'accounting_invoice_payments',
-              '*, accounting_vendors(id,name,normalized_name), accounting_stores(id,name,normalized_name), accounting_accounts(id,name,normalized_name), accounting_payment_methods(id,name,normalized_name), accounting_invoices(id,invoice_number,status)',
-              { column: 'payment_date', ascending: false }
-            ),
-        shouldUseLocalData()
-          ? Promise.resolve(listLocalAccountingImportBatches())
-          : queryRows<AccountingImportBatch>('accounting_import_batches', '*', { column: 'imported_at', ascending: false }),
+      const monthRange = currentMonthRange();
+
+      if (shouldUseLocalData()) {
+        const invoices = listLocalAccountingInvoices({ limit: ACCOUNTING_INITIAL_LIST_LIMIT });
+        const payments = sortPaymentsNewestFirst(listLocalAccountingInvoicePayments({ limit: ACCOUNTING_INITIAL_LIST_LIMIT }));
+        const currentMonthPayments = payments.filter(payment => payment.payment_date?.startsWith(monthRange.monthKey));
+        const imports = listLocalAccountingImportBatches();
+        return buildAccountingDashboardData(invoices, currentMonthPayments, payments.slice(0, 8), imports);
+      }
+
+      try {
+        return await queryAccountingDashboardRpcWithBudget();
+      } catch {
+        // Fallback keeps production usable until the dashboard RPC migration has been deployed.
+      }
+
+      const [invoices, vendors, currentMonthPayments, recentPayments, imports] = await Promise.all([
+        queryRows<AccountingInvoice>(
+          'accounting_invoices',
+          DASHBOARD_INVOICE_SELECT,
+          { column: 'due_date' },
+          { limit: ACCOUNTING_INITIAL_LIST_LIMIT }
+        ),
+        queryRows<AccountingVendor>(
+          'accounting_vendors',
+          'id,name,normalized_name,payment_terms_days',
+          { column: 'name' }
+        ),
+        asQuery<AccountingInvoicePayment[]>(
+          accountingDb.from('accounting_invoice_payments').select(DASHBOARD_SUMMARY_PAYMENT_SELECT)
+        )
+          .gte('payment_date', monthRange.start)
+          .lt('payment_date', monthRange.nextMonthStart)
+          .limit(ACCOUNTING_INITIAL_LIST_LIMIT)
+          .then(({ data, error }) => {
+            if (error) throw error;
+            return data || [];
+          }),
+        asQuery<AccountingInvoicePayment[]>(
+          accountingDb.from('accounting_invoice_payments').select(DASHBOARD_PAYMENT_SELECT)
+        )
+          .order('payment_date', { ascending: false })
+          .limit(8)
+          .then(({ data, error }) => {
+            if (error) throw error;
+            return data || [];
+          }),
+        asQuery<AccountingImportBatch[]>(
+          accountingDb.from('accounting_import_batches').select(DASHBOARD_IMPORT_SELECT)
+        )
+          .order('imported_at', { ascending: false })
+          .limit(1)
+          .then(({ data, error }) => {
+            if (error) throw error;
+            return data || [];
+          }),
       ]);
-      return {
-        invoices,
-        payments,
-        latestImport: imports[0] || null,
-        highAmountDue30Invoices: invoices
-          .filter(invoice => isDueWithin(invoice, 30))
-          .sort((a, b) => Number(invoiceFinalAmount(b)) - Number(invoiceFinalAmount(a)))
-          .slice(0, 8),
-        highAmountDue90Invoices: invoices
-          .filter(invoice => isDueWithin(invoice, 90))
-          .sort((a, b) => Number(invoiceFinalAmount(b)) - Number(invoiceFinalAmount(a)))
-          .slice(0, 8),
-        summary: summarizeAccountingDashboard(invoices, payments),
-        vendorBalances: summarizeVendorBalances(invoices).slice(0, 8),
-        recentPayments: payments.slice(0, 8),
-        highAmountInvoices: invoices
-          .filter(invoice => !isInvoicePaid(invoice))
-          .filter(invoice => Number(invoice.final_amount_to_pay || finalAmountToPay(invoice.amount, invoice.credit)) >= 7000)
-          .slice(0, 8),
-      };
+
+      return buildAccountingDashboardData(attachDashboardInvoiceVendors(invoices, vendors), currentMonthPayments, recentPayments, imports);
     },
+    placeholderData: EMPTY_ACCOUNTING_DASHBOARD,
+    ...ACCOUNTING_QUERY_SETTINGS,
   });
 }
 

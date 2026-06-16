@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom';
-import type { ReactNode } from 'react';
+import { useEffect, type ReactNode } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
@@ -25,14 +25,42 @@ const ACCOUNTING_NAV = [
   { to: '/accounting/catalogs', label: 'Catalogs' },
 ];
 
+const ACCOUNTING_ROUTE_PRELOADERS: Record<string, () => Promise<unknown>> = {
+  '/accounting': () => import('@/pages/accounting/AccountingDashboardPage'),
+  '/accounting/catalogs': () => import('@/pages/accounting/AccountingCatalogsPage'),
+  '/accounting/credit-card-payments': () => import('@/pages/accounting/AccountingLedgerPages'),
+  '/accounting/imports': () => import('@/pages/accounting/AccountingImportsPage'),
+  '/accounting/invoices': () => import('@/pages/accounting/AccountingInvoicesPage'),
+  '/accounting/paid-invoices': () => import('@/pages/accounting/AccountingLedgerPages'),
+  '/accounting/personal-bills': () => import('@/pages/accounting/AccountingLedgerPages'),
+  '/accounting/truck': () => import('@/pages/accounting/AccountingLedgerPages'),
+  '/accounting/vendors': () => import('@/pages/accounting/AccountingVendorsPage'),
+};
+
+function preloadAccountingRoute(path: string) {
+  void ACCOUNTING_ROUTE_PRELOADERS[path]?.();
+}
+
 export function AccountingTabs() {
   const { pathname } = useLocation();
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      ACCOUNTING_NAV
+        .filter(item => item.to !== pathname)
+        .forEach(item => preloadAccountingRoute(item.to));
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [pathname]);
+
   return (
     <nav className="flex gap-1 overflow-x-auto rounded-lg border bg-muted/30 p-1">
       {ACCOUNTING_NAV.map(item => (
         <Link
           key={item.to}
           to={item.to}
+          onFocus={() => preloadAccountingRoute(item.to)}
+          onMouseEnter={() => preloadAccountingRoute(item.to)}
           className={cn(
             'whitespace-nowrap rounded-md px-3 py-2 text-sm font-medium transition-colors',
             pathname === item.to

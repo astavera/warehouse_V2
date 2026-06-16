@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react';
-import { Edit, Loader2, Plus, Save, Trash2 } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { CheckCircle2, Edit, Loader2, MapPin, Plus, Save, Search, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -18,6 +18,7 @@ type VendorForm = {
   account_number_mode: 'single' | 'by_location';
   account_number: string;
   address: string;
+  city: string;
   contact_name: string;
   default_payment_method_id: string;
   email: string;
@@ -31,12 +32,19 @@ type VendorForm = {
   notes: string;
   payment_terms_days: string;
   phone: string;
+  po_box: string;
+  state: string;
+  street: string;
+  zip_code: string;
+  google_formatted_address: string;
+  google_place_id: string;
 };
 
 const EMPTY_VENDOR_FORM: VendorForm = {
   account_number_mode: 'single',
   account_number: '',
   address: '',
+  city: '',
   contact_name: '',
   default_payment_method_id: 'none',
   email: '',
@@ -45,6 +53,12 @@ const EMPTY_VENDOR_FORM: VendorForm = {
   notes: '',
   payment_terms_days: '',
   phone: '',
+  po_box: '',
+  state: '',
+  street: '',
+  zip_code: '',
+  google_formatted_address: '',
+  google_place_id: '',
 };
 
 function getErrorMessage(error: unknown, fallback: string) {
@@ -56,7 +70,206 @@ function createLocalId(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string | undefined;
+const GOOGLE_MAPS_SCRIPT_ID = 'google-maps-places-script';
+let googlePlacesScriptPromise: Promise<void> | null = null;
+
+type GoogleAddressComponent = {
+  long_name: string;
+  short_name: string;
+  types: string[];
+};
+
+type GooglePlace = {
+  address_components?: GoogleAddressComponent[];
+  formatted_address?: string;
+  name?: string;
+  place_id?: string;
+};
+
+type GoogleGeocoderResult = GooglePlace & {
+  types?: string[];
+};
+
+type GoogleAutocomplete = {
+  addListener: (eventName: 'place_changed', handler: () => void) => { remove: () => void };
+  getPlace: () => GooglePlace;
+};
+
+type GoogleGeocoder = {
+  geocode: (
+    request: { address: string; componentRestrictions?: { country: string } },
+    callback: (results: GoogleGeocoderResult[] | null, status: string) => void
+  ) => void;
+};
+
+type GoogleMapsWindow = Window & {
+  google?: {
+    maps?: {
+      Geocoder: new () => GoogleGeocoder;
+      places?: {
+        Autocomplete: new (input: HTMLInputElement, options: Record<string, unknown>) => GoogleAutocomplete;
+      };
+    };
+  };
+};
+
+function googlePlacesAutocomplete() {
+  return (window as GoogleMapsWindow).google?.maps?.places?.Autocomplete;
+}
+
+function googleGeocoder() {
+  return (window as GoogleMapsWindow).google?.maps?.Geocoder;
+}
+
+function loadGooglePlacesScript() {
+  if (!GOOGLE_MAPS_API_KEY) {
+    return Promise.reject(new Error('Missing Google Maps API key'));
+  }
+  if (googlePlacesAutocomplete()) return Promise.resolve();
+  if (googlePlacesScriptPromise) return googlePlacesScriptPromise;
+
+  googlePlacesScriptPromise = new Promise((resolve, reject) => {
+    const existingScript = document.getElementById(GOOGLE_MAPS_SCRIPT_ID) as HTMLScriptElement | null;
+    if (existingScript) {
+      existingScript.addEventListener('load', () => resolve(), { once: true });
+      existingScript.addEventListener('error', () => reject(new Error('Google Places failed to load')), { once: true });
+      return;
+    }
+
+    const script = document.createElement('script');
+    script.id = GOOGLE_MAPS_SCRIPT_ID;
+    script.async = true;
+    script.defer = true;
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(GOOGLE_MAPS_API_KEY)}&libraries=places`;
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error('Google Places failed to load'));
+    document.head.appendChild(script);
+  });
+
+  return googlePlacesScriptPromise;
+}
+
+function readRawString(value: unknown) {
+  return typeof value === 'string' ? value : '';
+}
+
+function cleanPoBox(value: string) {
+  return value.replace(/^p\.?\s*o\.?\s*box\s*/i, '').trim();
+}
+
+function formatPoBox(value: string) {
+  const clean = cleanPoBox(value);
+  return clean ? `P.O. Box ${clean}` : '';
+}
+
+function parseVendorAddress(address: string) {
+  const parts = address
+    .replace(/\r?\n/g, ',')
+    .split(',')
+    .map(part => part.trim())
+    .filter(Boolean);
+  const parsed = {
+    city: '',
+    po_box: '',
+    state: '',
+    street: '',
+    zip_code: '',
+  };
+  const consumed = new Set<number>();
+  const lastIndex = parts.length - 1;
+  const last = parts[lastIndex] || '';
+  const cityStateZip = last.match(/^(.+?)\s+([a-z]{2})\s+(\d{5}(?:-\d{4})?)$/i);
+  const stateZip = last.match(/^([a-z]{2})\s+(\d{5}(?:-\d{4})?)$/i);
+  if (cityStateZip) {
+    parsed.city = cityStateZip[1].trim();
+    parsed.state = cityStateZip[2].toUpperCase();
+    parsed.zip_code = cityStateZip[3];
+    consumed.add(lastIndex);
+  } else if (stateZip && parts[lastIndex - 1]) {
+    parsed.city = parts[lastIndex - 1];
+    parsed.state = stateZip[1].toUpperCase();
+    parsed.zip_code = stateZip[2];
+    consumed.add(lastIndex);
+    consumed.add(lastIndex - 1);
+  }
+
+  parts.forEach((part, index) => {
+    if (consumed.has(index)) return;
+    if (/^p\.?\s*o\.?\s*box\b/i.test(part)) {
+      parsed.po_box = cleanPoBox(part);
+      return;
+    }
+    if (!parsed.street) {
+      parsed.street = part;
+      return;
+    }
+    if (!parsed.city) parsed.city = part;
+  });
+  return parsed;
+}
+
+function googleComponent(place: GooglePlace, type: string, name: 'long_name' | 'short_name' = 'long_name') {
+  return place.address_components?.find(component => component.types.includes(type))?.[name] || '';
+}
+
+function addressFieldsFromGooglePlace(place: GooglePlace, currentPoBox = '') {
+  const streetNumber = googleComponent(place, 'street_number');
+  const route = googleComponent(place, 'route');
+  const street = [streetNumber, route].filter(Boolean).join(' ') || place.name || '';
+  const city =
+    googleComponent(place, 'locality') ||
+    googleComponent(place, 'postal_town') ||
+    googleComponent(place, 'sublocality') ||
+    googleComponent(place, 'administrative_area_level_3');
+  const state = googleComponent(place, 'administrative_area_level_1', 'short_name').toUpperCase();
+  const postalCode = googleComponent(place, 'postal_code');
+  const postalSuffix = googleComponent(place, 'postal_code_suffix');
+  const zip_code = postalSuffix ? `${postalCode}-${postalSuffix}` : postalCode;
+  return {
+    city,
+    google_formatted_address: place.formatted_address || '',
+    google_place_id: place.place_id || '',
+    po_box: currentPoBox,
+    state,
+    street,
+    zip_code,
+  };
+}
+
+type GoogleSuggestedAddress = ReturnType<typeof addressFieldsFromGooglePlace>;
+
+function vendorAddressFields(vendor: AccountingVendor) {
+  const rawPayload = vendor.raw_payload && typeof vendor.raw_payload === 'object' ? vendor.raw_payload : {};
+  const stored = (rawPayload as Record<string, unknown>).vendor_address_fields;
+  const row = stored && typeof stored === 'object' ? stored as Record<string, unknown> : {};
+  const parsed = parseVendorAddress(vendor.address || '');
+  return {
+    city: readRawString(row.city) || parsed.city,
+    po_box: readRawString(row.po_box) || readRawString(row.poBox) || parsed.po_box,
+    state: (readRawString(row.state) || parsed.state).toUpperCase(),
+    street: readRawString(row.street) || parsed.street,
+    zip_code: readRawString(row.zip_code) || readRawString(row.zip) || parsed.zip_code,
+    google_formatted_address: readRawString(row.google_formatted_address),
+    google_place_id: readRawString(row.google_place_id),
+  };
+}
+
+function formatVendorAddress(form: Pick<VendorForm, 'city' | 'po_box' | 'state' | 'street' | 'zip_code'>) {
+  const street = form.street.trim();
+  const poBox = formatPoBox(form.po_box);
+  const city = form.city.trim();
+  const state = form.state.trim().toUpperCase();
+  const zip = form.zip_code.trim();
+  const cityLine = [
+    city,
+    [state, zip].filter(Boolean).join(' '),
+  ].filter(Boolean).join(', ');
+  return [street, poBox, cityLine].filter(Boolean).join('\n');
+}
+
 function formFromVendor(vendor: AccountingVendor): VendorForm {
+  const addressFields = vendorAddressFields(vendor);
   const locationAccounts = vendorLocationAccountRows(vendor).map(row => ({
     account_number: row.account_number || '',
     id: createLocalId('vendor-location-account'),
@@ -67,6 +280,7 @@ function formFromVendor(vendor: AccountingVendor): VendorForm {
     account_number_mode: locationAccounts.length ? 'by_location' : 'single',
     account_number: vendor.account_number || '',
     address: vendor.address || '',
+    city: addressFields.city,
     contact_name: vendor.contact_name || '',
     default_payment_method_id: vendor.default_payment_method_id || 'none',
     email: vendor.email || '',
@@ -75,6 +289,12 @@ function formFromVendor(vendor: AccountingVendor): VendorForm {
     notes: vendor.notes || '',
     payment_terms_days: vendor.payment_terms_days == null ? '' : String(vendor.payment_terms_days),
     phone: vendor.phone || '',
+    po_box: addressFields.po_box,
+    state: addressFields.state,
+    street: addressFields.street,
+    zip_code: addressFields.zip_code,
+    google_formatted_address: addressFields.google_formatted_address,
+    google_place_id: addressFields.google_place_id,
   };
 }
 
@@ -105,6 +325,109 @@ function VendorDialog({
 }) {
   const { data: catalogs } = useAccountingCatalogs();
   const stores = catalogs?.stores || [];
+  const streetInputRef = useRef<HTMLInputElement | null>(null);
+  const formRef = useRef(form);
+  const onChangeRef = useRef(onChange);
+  const [googleStatus, setGoogleStatus] = useState<'idle' | 'loading' | 'ready' | 'verifying' | 'suggested' | 'confirmed' | 'missing-key' | 'error'>('idle');
+  const [googleSuggestion, setGoogleSuggestion] = useState<GoogleSuggestedAddress | null>(null);
+
+  useEffect(() => {
+    formRef.current = form;
+    onChangeRef.current = onChange;
+  }, [form, onChange]);
+
+  useEffect(() => {
+    if (!open) return;
+    if (!GOOGLE_MAPS_API_KEY) {
+      setGoogleStatus('missing-key');
+      return;
+    }
+
+    let cancelled = false;
+    let listener: { remove: () => void } | undefined;
+    setGoogleStatus(formRef.current.google_place_id ? 'confirmed' : 'loading');
+
+    loadGooglePlacesScript()
+      .then(() => {
+        if (cancelled || !streetInputRef.current) return;
+        const Autocomplete = googlePlacesAutocomplete();
+        if (!Autocomplete) throw new Error('Google Places autocomplete is unavailable');
+        const autocomplete = new Autocomplete(streetInputRef.current, {
+          componentRestrictions: { country: 'us' },
+          fields: ['address_components', 'formatted_address', 'name', 'place_id'],
+          types: ['address'],
+        });
+        listener = autocomplete.addListener('place_changed', () => {
+          const currentForm = formRef.current;
+          const place = autocomplete.getPlace();
+          const googleFields = addressFieldsFromGooglePlace(place, currentForm.po_box);
+          const nextForm = { ...currentForm, ...googleFields };
+          setGoogleSuggestion(null);
+          onChangeRef.current({
+            ...googleFields,
+            address: formatVendorAddress(nextForm),
+          });
+          setGoogleStatus(googleFields.google_place_id ? 'confirmed' : 'ready');
+        });
+        if (!formRef.current.google_place_id) setGoogleStatus('ready');
+      })
+      .catch(() => {
+        if (!cancelled) setGoogleStatus('error');
+      });
+
+    return () => {
+      cancelled = true;
+      listener?.remove();
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (!open || !GOOGLE_MAPS_API_KEY || form.google_place_id) return;
+    const query = formatVendorAddress({
+      city: form.city,
+      po_box: form.po_box,
+      state: form.state,
+      street: form.street,
+      zip_code: form.zip_code,
+    }).replace(/\s+/g, ' ').trim();
+    if (!form.street.trim() || (!form.city.trim() && !form.zip_code.trim()) || query.length < 8) {
+      setGoogleSuggestion(null);
+      setGoogleStatus('ready');
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      setGoogleStatus('verifying');
+      loadGooglePlacesScript()
+        .then(() => {
+          const Geocoder = googleGeocoder();
+          if (!Geocoder) throw new Error('Google Geocoder is unavailable');
+          new Geocoder().geocode(
+            {
+              address: query,
+              componentRestrictions: { country: 'US' },
+            },
+            (results, status) => {
+              const firstResult = results?.find(result => result.place_id && result.address_components?.length);
+              if (status === 'OK' && firstResult) {
+                setGoogleSuggestion(addressFieldsFromGooglePlace(firstResult, formRef.current.po_box));
+                setGoogleStatus('suggested');
+              } else {
+                setGoogleSuggestion(null);
+                setGoogleStatus('ready');
+              }
+            }
+          );
+        })
+        .catch(() => {
+          setGoogleSuggestion(null);
+          setGoogleStatus('error');
+        });
+    }, 700);
+
+    return () => window.clearTimeout(timer);
+  }, [form.city, form.google_place_id, form.po_box, form.state, form.street, form.zip_code, open]);
+
   const addLocationAccount = () => {
     const used = new Set(form.locationAccounts.map(row => row.store_id));
     const nextStore = stores.find(store => !used.has(store.id));
@@ -136,6 +459,46 @@ function VendorDialog({
   const removeLocationAccount = (id: string) => {
     onChange({ locationAccounts: form.locationAccounts.filter(row => row.id !== id) });
   };
+  const updateAddress = (patch: Partial<Pick<VendorForm, 'city' | 'po_box' | 'state' | 'street' | 'zip_code'>>) => {
+    setGoogleSuggestion(null);
+    const nextForm = {
+      ...form,
+      ...patch,
+      google_formatted_address: '',
+      google_place_id: '',
+    };
+    onChange({
+      ...patch,
+      google_formatted_address: '',
+      google_place_id: '',
+      address: formatVendorAddress(nextForm),
+    });
+    if (GOOGLE_MAPS_API_KEY) setGoogleStatus('ready');
+  };
+  const useGoogleSuggestion = () => {
+    if (!googleSuggestion) return;
+    const nextForm = { ...form, ...googleSuggestion };
+    setGoogleSuggestion(null);
+    onChange({
+      ...googleSuggestion,
+      address: formatVendorAddress(nextForm),
+    });
+    setGoogleStatus(googleSuggestion.google_place_id ? 'confirmed' : 'ready');
+  };
+  const addressPreview = formatVendorAddress(form) || form.address.trim();
+  const googleStatusLabel = form.google_place_id
+    ? 'Confirmed by Google'
+    : googleStatus === 'missing-key'
+      ? 'Google key missing'
+      : googleStatus === 'loading'
+        ? 'Connecting to Google'
+        : googleStatus === 'verifying'
+          ? 'Checking address'
+          : googleStatus === 'suggested'
+            ? 'Suggested address found'
+            : googleStatus === 'error'
+              ? 'Google unavailable'
+              : 'Type address or select suggestion';
   return (
     <Dialog open={open} onOpenChange={value => !value && onClose()}>
       <DialogContent className="max-h-[90vh] max-w-4xl overflow-y-auto">
@@ -256,9 +619,105 @@ function VendorDialog({
             )}
           </div>
         )}
-        <div className="space-y-1.5">
-          <Label>Address</Label>
-          <Textarea value={form.address} onChange={event => onChange({ address: event.target.value })} />
+        <div className="space-y-3 rounded-lg border bg-muted/10 p-3">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-2">
+              <MapPin className="h-4 w-4 text-primary" />
+              <Label>Address</Label>
+            </div>
+            <Badge
+              variant={form.google_place_id ? 'default' : googleStatus === 'suggested' ? 'secondary' : 'outline'}
+              className="w-fit gap-1.5"
+            >
+              {form.google_place_id ? (
+                <CheckCircle2 className="h-3.5 w-3.5" />
+              ) : googleStatus === 'loading' || googleStatus === 'verifying' ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Search className="h-3.5 w-3.5" />
+              )}
+              {googleStatusLabel}
+            </Badge>
+          </div>
+          <div className="grid gap-3 lg:grid-cols-[minmax(0,1.4fr)_minmax(180px,0.6fr)]">
+            <div className="space-y-1.5">
+              <Label>Street</Label>
+              <Input
+                autoComplete="street-address"
+                ref={streetInputRef}
+                value={form.street}
+                onChange={event => updateAddress({ street: event.target.value })}
+                placeholder="Start typing address"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>P.O. Box</Label>
+              <Input
+                autoComplete="address-line2"
+                value={form.po_box}
+                onChange={event => updateAddress({ po_box: event.target.value })}
+                placeholder="456"
+              />
+            </div>
+          </div>
+          <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_110px_150px]">
+            <div className="space-y-1.5">
+              <Label>City</Label>
+              <Input
+                autoComplete="address-level2"
+                value={form.city}
+                onChange={event => updateAddress({ city: event.target.value })}
+                placeholder="Brooklyn"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>State</Label>
+              <Input
+                autoComplete="address-level1"
+                maxLength={2}
+                value={form.state}
+                onChange={event => updateAddress({ state: event.target.value.toUpperCase() })}
+                placeholder="NY"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>ZIP Code</Label>
+              <Input
+                autoComplete="postal-code"
+                inputMode="numeric"
+                value={form.zip_code}
+                onChange={event => updateAddress({ zip_code: event.target.value })}
+                placeholder="11201"
+              />
+            </div>
+          </div>
+          {googleSuggestion && !form.google_place_id && (
+            <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <div className="flex items-center gap-1.5 font-medium text-emerald-800">
+                    <CheckCircle2 className="h-4 w-4" />
+                    Suggested address
+                  </div>
+                  <div className="mt-1 text-emerald-700">{googleSuggestion.google_formatted_address}</div>
+                </div>
+                <Button type="button" size="sm" variant="outline" onClick={useGoogleSuggestion} className="w-full bg-white sm:w-auto">
+                  Use suggested
+                </Button>
+              </div>
+            </div>
+          )}
+          {addressPreview && (
+            <div className="rounded-md border bg-white px-3 py-2 text-sm text-muted-foreground">
+              <div className="whitespace-pre-line">{addressPreview}</div>
+              {form.google_formatted_address && (
+                <div className="mt-2 flex items-center gap-1.5 text-xs font-medium text-emerald-700">
+                  <CheckCircle2 className="h-3.5 w-3.5" />
+                  Confirmed: {form.google_formatted_address}
+                </div>
+              )}
+            </div>
+          )}
         </div>
         <div className="space-y-1.5">
           <Label>Notes</Label>
@@ -332,9 +791,10 @@ export default function AccountingVendorsPage() {
           }))
           .filter(row => row.account_number || row.store_id || row.store_name)
       : [];
+    const formattedAddress = formatVendorAddress(form);
     const payload = {
       account_number: form.account_number_mode === 'single' ? form.account_number || null : null,
-      address: form.address || null,
+      address: formattedAddress || form.address.trim() || null,
       contact_name: form.contact_name || null,
       default_payment_method_id: form.default_payment_method_id === 'none' ? null : form.default_payment_method_id,
       email: form.email || null,
@@ -345,6 +805,16 @@ export default function AccountingVendorsPage() {
       raw_payload: {
         ...(editing?.raw_payload || {}),
         vendor_account_number_mode: form.account_number_mode,
+        vendor_address_fields: {
+          city: form.city.trim() || null,
+          google_confirmed: Boolean(form.google_place_id),
+          google_formatted_address: form.google_formatted_address || null,
+          google_place_id: form.google_place_id || null,
+          po_box: cleanPoBox(form.po_box) || null,
+          state: form.state.trim().toUpperCase() || null,
+          street: form.street.trim() || null,
+          zip_code: form.zip_code.trim() || null,
+        },
         vendor_location_account_rows: locationAccountRows,
       },
     };

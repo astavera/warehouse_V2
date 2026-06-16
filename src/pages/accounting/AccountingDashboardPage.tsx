@@ -138,8 +138,6 @@ function TopInvoiceChartCard({
 export default function AccountingDashboardPage() {
   const { data, isLoading, refetch, isFetching } = useAccountingDashboard();
 
-  if (isLoading) return <LoadingState />;
-
   const summary = data?.summary;
   const statusChart = [
     { status: 'Pending', count: summary?.pendingCount || 0 },
@@ -170,7 +168,9 @@ export default function AccountingDashboardPage() {
         }
       />
 
-      {summary ? (
+      {isLoading ? (
+        <LoadingState />
+      ) : summary ? (
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <SummaryCard label="pending amount" value={<MoneyText value={summary.pendingAmount} />} tone="warning" />
           <SummaryCard label="overdue amount" value={<MoneyText value={summary.overdueAmount} />} tone="danger" />
@@ -196,7 +196,9 @@ export default function AccountingDashboardPage() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
-            {data?.latestImport ? (
+            {isLoading ? (
+              <LoadingState label="Loading latest import..." />
+            ) : data?.latestImport ? (
               <>
                 <div>
                   <div className="font-medium">{data.latestImport.source_file_name}</div>
