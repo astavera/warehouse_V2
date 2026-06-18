@@ -338,7 +338,7 @@ const DASHBOARD_PAYMENT_SELECT = [
   'payment_method_id',
   'amount_paid',
   'status',
-  'accounting_vendors(id,name,normalized_name)',
+  'accounting_vendors(id,name,normalized_name,payment_terms_days)',
   'accounting_payment_methods(id,name,normalized_name)',
 ].join(',');
 
@@ -370,6 +370,7 @@ const ACCOUNTING_INVOICE_LIST_SELECT = [
   'paid',
   'category_id',
   'notes',
+  'accounting_vendors(id,name,normalized_name)',
 ].join(',');
 
 const ACCOUNTING_INVOICE_DETAIL_SELECT = [

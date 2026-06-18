@@ -26,7 +26,7 @@ const ACCOUNTING_NAV = [
 ];
 
 const ACCOUNTING_ROUTE_PRELOADERS: Record<string, () => Promise<unknown>> = {
-  '/accounting': () => import('@/pages/accounting/AccountingDashboardPage'),
+  '/accounting': () => import('@/pages/accounting/AccountingDashboardPreviewPage'),
   '/accounting/catalogs': () => import('@/pages/accounting/AccountingCatalogsPage'),
   '/accounting/credit-card-payments': () => import('@/pages/accounting/AccountingLedgerPages'),
   '/accounting/imports': () => import('@/pages/accounting/AccountingImportsPage'),

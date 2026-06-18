@@ -1,7 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { useNavigate } from 'react-router-dom';
-import { Camera, CreditCard, Edit, ListChecks, Loader2, MapPin, Plus, RotateCcw, Save, Search, SlidersHorizontal, Trash2, Users } from 'lucide-react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Camera, Check, CreditCard, Edit, ListChecks, Loader2, MapPin, Plus, RotateCcw, Save, Search, SlidersHorizontal, Trash2, Users } from 'lucide-react';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -41,6 +41,7 @@ import {
   summarizeVendorBalances,
   vendorAccountNumberForStore,
   type AccountingAccount,
+  type AccountingCategory,
   type AccountingInvoice,
   type AccountingStatus,
   type AccountingVendor,
@@ -143,6 +144,189 @@ type CombinedInvoicePaymentFormState = {
 
 function getErrorMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
+}
+
+type SearchableComboboxOption = {
+  description?: string;
+  id: string;
+  label: string;
+  searchText?: string;
+};
+
+function SearchableCombobox({
+  noneLabel = 'No vendor',
+  onValueChange,
+  placeholder = 'Search vendor...',
+  options,
+  value,
+}: {
+  noneLabel?: string;
+  onValueChange: (vendorId: string) => void;
+  options: SearchableComboboxOption[];
+  placeholder?: string;
+  value: string;
+}) {
+  const [focused, setFocused] = useState(false);
+  const [query, setQuery] = useState('');
+  const selectedOption = options.find(option => option.id === value) || null;
+  const visibleOptions = useMemo(() => {
+    const normalizedQuery = normalizeText(query);
+    const rows = normalizedQuery
+      ? options.filter(option =>
+          normalizeText([option.label, option.description, option.searchText].filter(Boolean).join(' ')).includes(normalizedQuery)
+        )
+      : options;
+    return rows.slice(0, 30);
+  }, [options, query]);
+
+  const selectValue = (vendorId: string) => {
+    onValueChange(vendorId);
+    setQuery('');
+    setFocused(false);
+  };
+
+  return (
+    <div className="relative">
+      <Search className="pointer-events-none absolute left-3 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+      <Input
+        role="combobox"
+        aria-expanded={focused}
+        value={focused ? query : selectedOption?.label || ''}
+        placeholder={focused ? placeholder : noneLabel}
+        className="h-11 bg-background pl-9"
+        onFocus={() => {
+          setFocused(true);
+          setQuery('');
+        }}
+        onBlur={() => {
+          window.setTimeout(() => {
+            setFocused(false);
+            setQuery('');
+          }, 120);
+        }}
+        onChange={event => setQuery(event.target.value)}
+        onKeyDown={event => {
+          if (event.key === 'Escape') {
+            event.currentTarget.blur();
+            return;
+          }
+          if (event.key === 'Enter') {
+            event.preventDefault();
+            if (visibleOptions[0]) selectValue(visibleOptions[0].id);
+          }
+        }}
+      />
+      {focused && (
+        <div className="absolute left-0 right-0 top-[calc(100%+0.25rem)] z-[80] max-h-72 overflow-auto rounded-md border bg-popover p-1 text-popover-foreground shadow-lg">
+          <button
+            type="button"
+            className={cn(
+              'flex w-full items-center rounded-sm px-2 py-2 text-left text-sm hover:bg-accent hover:text-accent-foreground',
+              value === 'none' && 'bg-accent text-accent-foreground'
+            )}
+            onMouseDown={event => event.preventDefault()}
+            onClick={() => selectValue('none')}
+          >
+            <Check className={cn('mr-2 h-4 w-4', value === 'none' ? 'opacity-100' : 'opacity-0')} />
+            {noneLabel}
+          </button>
+          {visibleOptions.length ? (
+            visibleOptions.map(option => (
+              <button
+                key={option.id}
+                type="button"
+                className={cn(
+                  'flex w-full items-center rounded-sm px-2 py-2 text-left text-sm hover:bg-accent hover:text-accent-foreground',
+                  value === option.id && 'bg-accent text-accent-foreground'
+                )}
+                onMouseDown={event => event.preventDefault()}
+                onClick={() => selectValue(option.id)}
+              >
+                <Check className={cn('mr-2 h-4 w-4 shrink-0', value === option.id ? 'opacity-100' : 'opacity-0')} />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate font-medium">{option.label}</span>
+                  {option.description && (
+                    <span className="block truncate text-xs text-muted-foreground">{option.description}</span>
+                  )}
+                </span>
+              </button>
+            ))
+          ) : (
+            <div className="px-2 py-4 text-center text-sm text-muted-foreground">No matches found.</div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function VendorCombobox({
+  noneLabel = 'No vendor',
+  onValueChange,
+  placeholder = 'Search vendor...',
+  value,
+  vendors,
+}: {
+  noneLabel?: string;
+  onValueChange: (vendorId: string) => void;
+  placeholder?: string;
+  value: string;
+  vendors: AccountingVendor[];
+}) {
+  const options = useMemo(
+    () =>
+      vendors.map(vendor => ({
+        description: [vendor.account_number ? `Acct ${vendor.account_number}` : null, vendor.contact_name].filter(Boolean).join(' - '),
+        id: vendor.id,
+        label: vendor.name,
+        searchText: [vendor.account_number, vendor.contact_name, vendor.email].filter(Boolean).join(' '),
+      })),
+    [vendors]
+  );
+
+  return (
+    <SearchableCombobox
+      noneLabel={noneLabel}
+      onValueChange={onValueChange}
+      options={options}
+      placeholder={placeholder}
+      value={value}
+    />
+  );
+}
+
+function CategoryCombobox({
+  noneLabel = 'No category',
+  onValueChange,
+  placeholder = 'Search category...',
+  value,
+  categories,
+}: {
+  categories: AccountingCategory[];
+  noneLabel?: string;
+  onValueChange: (categoryId: string) => void;
+  placeholder?: string;
+  value: string;
+}) {
+  const options = useMemo(
+    () =>
+      categories.map(category => ({
+        id: category.id,
+        label: category.name,
+        searchText: category.normalized_name,
+      })),
+    [categories]
+  );
+
+  return (
+    <SearchableCombobox
+      noneLabel={noneLabel}
+      onValueChange={onValueChange}
+      options={options}
+      placeholder={placeholder}
+      value={value}
+    />
+  );
 }
 
 function compactMultiLine(value: string | null | undefined) {
@@ -706,15 +890,13 @@ function InvoiceFormDialog({
         <div className="grid gap-4 lg:grid-cols-3">
           <div className="space-y-1.5">
             <Label>Vendor</Label>
-            <Select value={form.vendor_id} onValueChange={selectVendor}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">No vendor</SelectItem>
-                {catalogs?.vendors.map(vendor => (
-                  <SelectItem key={vendor.id} value={vendor.id}>{vendor.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <VendorCombobox
+              value={form.vendor_id}
+              vendors={catalogs?.vendors || []}
+              onValueChange={selectVendor}
+              noneLabel="No vendor"
+              placeholder="Search vendor..."
+            />
           </div>
           <div className="space-y-1.5">
             <Label>Store</Label>
@@ -730,15 +912,13 @@ function InvoiceFormDialog({
           </div>
           <div className="space-y-1.5">
             <Label>Category</Label>
-            <Select value={form.category_id} onValueChange={value => onChange({ category_id: value })}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">No category</SelectItem>
-                {catalogs?.categories.map(category => (
-                  <SelectItem key={category.id} value={category.id}>{category.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <CategoryCombobox
+              value={form.category_id}
+              categories={catalogs?.categories || []}
+              onValueChange={value => onChange({ category_id: value })}
+              noneLabel="No category"
+              placeholder="Search category..."
+            />
           </div>
         </div>
 
@@ -1099,15 +1279,13 @@ function PayInvoiceDialog({
           </div>
           <div className="space-y-1.5">
             <Label>Category</Label>
-            <Select value={form.category_id} onValueChange={value => onChange({ category_id: value })}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">No category</SelectItem>
-                {catalogs?.categories.map(category => (
-                  <SelectItem key={category.id} value={category.id}>{category.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <CategoryCombobox
+              value={form.category_id}
+              categories={catalogs?.categories || []}
+              onValueChange={value => onChange({ category_id: value })}
+              noneLabel="No category"
+              placeholder="Search category..."
+            />
           </div>
         </div>
 
@@ -1445,15 +1623,13 @@ function CombinedInvoicePaymentDialog({
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_220px_260px]">
           <div className="space-y-1.5">
             <Label>Vendor</Label>
-            <Select value={form.vendor_id} onValueChange={selectVendor}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">Choose vendor</SelectItem>
-                {catalogs?.vendors.map(vendor => (
-                  <SelectItem key={vendor.id} value={vendor.id}>{vendor.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <VendorCombobox
+              value={form.vendor_id}
+              vendors={catalogs?.vendors || []}
+              onValueChange={selectVendor}
+              noneLabel="Choose vendor"
+              placeholder="Search vendor..."
+            />
           </div>
           <div className="space-y-1.5">
             <Label>Payment date</Label>
@@ -1480,15 +1656,13 @@ function CombinedInvoicePaymentDialog({
           </div>
           <div className="space-y-1.5">
             <Label>Category</Label>
-            <Select value={form.category_id} onValueChange={value => onChange({ category_id: value })}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">Keep invoice categories</SelectItem>
-                {catalogs?.categories.map(category => (
-                  <SelectItem key={category.id} value={category.id}>{category.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <CategoryCombobox
+              value={form.category_id}
+              categories={catalogs?.categories || []}
+              onValueChange={value => onChange({ category_id: value })}
+              noneLabel="Keep invoice categories"
+              placeholder="Search category..."
+            />
           </div>
           <div className="grid gap-2 sm:grid-cols-3">
             <div className="rounded-lg border bg-muted/20 px-3 py-2">
@@ -1692,6 +1866,7 @@ export default function AccountingInvoicesPage() {
   const { createInvoice, updateInvoice } = useAccountingInvoiceMutations();
   const { createInvoicePayment } = useAccountingPaymentMutations();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | AccountingStatus>('all');
@@ -1720,6 +1895,7 @@ export default function AccountingInvoicesPage() {
   const [combinedPayDialogOpen, setCombinedPayDialogOpen] = useState(false);
   const [combinedPaySaving, setCombinedPaySaving] = useState(false);
   const [loadingInvoiceAction, setLoadingInvoiceAction] = useState<{ action: 'edit' | 'pay'; id: string } | null>(null);
+  const focusedInvoiceId = searchParams.get('invoiceId') || '';
 
   const displayInvoices = useMemo(() => {
     if (!catalogs) return invoices;
@@ -1734,7 +1910,13 @@ export default function AccountingInvoicesPage() {
     }));
   }, [catalogs, invoices]);
 
+  const focusedInvoice = useMemo(
+    () => focusedInvoiceId ? displayInvoices.find(invoice => invoice.id === focusedInvoiceId) || null : null,
+    [displayInvoices, focusedInvoiceId]
+  );
+
   const filtered = useMemo(() => {
+    if (focusedInvoice) return [focusedInvoice];
     const query = normalizeText(search);
     return displayInvoices.filter(invoice => {
       if (statusFilter !== 'all' && invoice.status !== statusFilter) return false;
@@ -1754,7 +1936,7 @@ export default function AccountingInvoicesPage() {
       ].filter(Boolean).join(' '));
       return haystack.includes(query);
     });
-  }, [displayInvoices, flagFilter, search, statusFilter, vendorFilter]);
+  }, [displayInvoices, flagFilter, focusedInvoice, search, statusFilter, vendorFilter]);
 
   const vendorBalances = useMemo(() => summarizeVendorBalances(displayInvoices), [displayInvoices]);
   const visibleVendorBalances = useMemo(() => {
@@ -1762,7 +1944,7 @@ export default function AccountingInvoicesPage() {
     const dueWithin15Rows = vendorBalances.filter(row => decimalStringToCents(row.dueNext15Amount) > 0n);
     const rows = vendorFilter === 'all'
       ? dueWithin15Rows
-      : dueWithin15Rows.filter(row => (row.vendorId || 'none') === vendorFilter);
+      : vendorBalances.filter(row => (row.vendorId || 'none') === vendorFilter);
     const searchedRows = query ? rows.filter(row => normalizeText(row.vendorName).includes(query)) : rows;
     return [...searchedRows].sort((a, b) => {
       const amountA = decimalStringToCents(a.dueNext15Amount);
@@ -1775,6 +1957,24 @@ export default function AccountingInvoicesPage() {
     () => addMoney(visibleVendorBalances.map(row => row.dueNext15Amount)),
     [visibleVendorBalances]
   );
+  const selectedVendorBalance = useMemo(() => {
+    if (vendorFilter === 'all') return null;
+    const existingBalance = vendorBalances.find(row => (row.vendorId || 'none') === vendorFilter);
+    if (existingBalance) return existingBalance;
+    const vendorName = vendorFilter === 'none'
+      ? 'No vendor'
+      : catalogs?.vendors.find(vendor => vendor.id === vendorFilter)?.name || 'Selected vendor';
+    return {
+      dueNext15Amount: '0.00',
+      dueNext15Count: 0,
+      dueNext30Amount: '0.00',
+      invoiceCount: 0,
+      overdueAmount: '0.00',
+      totalAmount: '0.00',
+      vendorId: vendorFilter === 'none' ? null : vendorFilter,
+      vendorName,
+    };
+  }, [catalogs?.vendors, vendorBalances, vendorFilter]);
   const filtersActive =
     Boolean(search.trim()) ||
     Boolean(balanceSearch.trim()) ||
@@ -1788,6 +1988,12 @@ export default function AccountingInvoicesPage() {
     setStatusFilter('all');
     setFlagFilter('all');
     setVendorFilter('all');
+  };
+
+  const clearFocusedInvoice = () => {
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.delete('invoiceId');
+    setSearchParams(nextParams, { replace: true });
   };
 
   const loadInvoiceDetail = async (invoice: AccountingInvoice) => {
@@ -1805,6 +2011,64 @@ export default function AccountingInvoicesPage() {
     setForm(EMPTY_FORM);
     setDialogOpen(true);
   };
+
+  useEffect(() => {
+    if (!focusedInvoiceId) return;
+    setSearch('');
+    setBalanceSearch('');
+    setStatusFilter('all');
+    setFlagFilter('all');
+    setVendorFilter('all');
+  }, [focusedInvoiceId]);
+
+  useEffect(() => {
+    if (!focusedInvoiceId || isLoading || typeof window === 'undefined') return;
+    const frame = window.requestAnimationFrame(() => {
+      document.getElementById(`accounting-invoice-row-${focusedInvoiceId}`)?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'center',
+      });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [filtered.length, focusedInvoiceId, isLoading]);
+
+  useEffect(() => {
+    if (searchParams.get('create') !== '1' || !catalogs) return;
+
+    const vendorName = searchParams.get('vendorName') || '';
+    const matchedVendor = vendorName
+      ? catalogs.vendors.find(vendor => normalizeText(vendor.name) === normalizeText(vendorName)) ||
+        catalogs.vendors.find(vendor => {
+          const vendorKey = normalizeText(vendor.name);
+          const supplierKey = normalizeText(vendorName);
+          return vendorKey.length >= 4 && supplierKey.length >= 4 && (vendorKey.includes(supplierKey) || supplierKey.includes(vendorKey));
+        })
+      : null;
+
+    setEditing(null);
+    setForm({
+      ...EMPTY_FORM,
+      locationAccounts: matchedVendor
+        ? buildLocationAccountRows({
+            accounts: catalogs.accounts || [],
+            existingRows: EMPTY_FORM.locationAccounts,
+            preferExistingAccountNumber: false,
+            storeId: EMPTY_FORM.store_id,
+            stores: catalogs.stores || [],
+            vendor: matchedVendor,
+          })
+        : EMPTY_FORM.locationAccounts,
+      notes: vendorName && !matchedVendor ? `Warehouse supplier: ${vendorName}` : '',
+      vendor_id: matchedVendor ? matchedVendor.id : 'none',
+    });
+    setDialogOpen(true);
+
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.delete('create');
+    nextParams.delete('source');
+    nextParams.delete('vendorName');
+    setSearchParams(nextParams, { replace: true });
+  }, [catalogs, searchParams, setSearchParams]);
 
   const openCombinedPay = () => {
     const initialVendorId = vendorFilter !== 'all' ? vendorFilter : 'none';
@@ -2171,6 +2435,53 @@ export default function AccountingInvoicesPage() {
             </div>
           </div>
 
+          {focusedInvoiceId && (
+            <div className="flex flex-col gap-3 rounded-lg border border-sky-200 bg-sky-50/80 p-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
+                <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-sky-700">Linked invoice</div>
+                <div className="truncate font-semibold text-slate-950">
+                  {focusedInvoice
+                    ? `${focusedInvoice.accounting_vendors?.name || 'No vendor'} / ${compactMultiLine(focusedInvoice.invoice_number) || 'No invoice #'}`
+                    : 'Looking for the selected invoice...'}
+                </div>
+              </div>
+              <Button variant="outline" size="sm" onClick={clearFocusedInvoice} className="shrink-0">
+                Show all invoices
+              </Button>
+            </div>
+          )}
+
+          {selectedVendorBalance && (
+            <div className="grid gap-3 rounded-lg border border-primary/20 bg-primary/5 p-3 md:grid-cols-[minmax(0,1.2fr)_repeat(4,minmax(120px,0.65fr))] md:items-center">
+              <div className="min-w-0">
+                <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-primary">Vendor total owed</div>
+                <div className="truncate text-base font-semibold text-foreground">{selectedVendorBalance.vendorName}</div>
+              </div>
+              <div className="rounded-md border border-primary/15 bg-white px-3 py-2">
+                <div className="text-xs text-muted-foreground">Total owed</div>
+                <div className="text-lg font-semibold tabular-nums text-foreground">
+                  <MoneyText value={selectedVendorBalance.totalAmount} />
+                </div>
+              </div>
+              <div className="rounded-md border border-primary/15 bg-white px-3 py-2">
+                <div className="text-xs text-muted-foreground">Open invoices</div>
+                <div className="text-lg font-semibold tabular-nums text-foreground">{selectedVendorBalance.invoiceCount}</div>
+              </div>
+              <div className="rounded-md border border-primary/15 bg-white px-3 py-2">
+                <div className="text-xs text-muted-foreground">Overdue</div>
+                <div className="text-lg font-semibold tabular-nums text-foreground">
+                  <MoneyText value={selectedVendorBalance.overdueAmount} />
+                </div>
+              </div>
+              <div className="rounded-md border border-primary/15 bg-white px-3 py-2">
+                <div className="text-xs text-muted-foreground">Due 15d</div>
+                <div className="text-lg font-semibold tabular-nums text-foreground">
+                  <MoneyText value={selectedVendorBalance.dueNext15Amount} />
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_300px]">
             <div className="rounded-lg border bg-white p-3">
               <div className="mb-3 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
@@ -2259,7 +2570,14 @@ export default function AccountingInvoicesPage() {
                     const isEditLoading = loadingInvoiceAction?.id === invoice.id && loadingInvoiceAction.action === 'edit';
                     const actionDisabled = Boolean(loadingInvoiceAction);
                     return (
-                      <TableRow key={invoice.id} className={dueRowClass(invoice)}>
+                      <TableRow
+                        id={`accounting-invoice-row-${invoice.id}`}
+                        key={invoice.id}
+                        className={cn(
+                          dueRowClass(invoice),
+                          focusedInvoiceId === invoice.id && 'bg-sky-50/95 ring-2 ring-inset ring-sky-300/80'
+                        )}
+                      >
                         <TableCell className="min-w-[160px] font-medium">{invoice.accounting_vendors?.name || '-'}</TableCell>
                         <TableCell>{invoice.accounting_stores?.name || '-'}</TableCell>
                         <TableCell className="max-w-[220px] whitespace-normal">{compactMultiLine(invoice.invoice_number) || '-'}</TableCell>

@@ -20,7 +20,7 @@ const PricesPage = lazy(() => import("@/pages/PricesPage"));
 const PricesPrintPage = lazy(() => import("@/pages/PricesPrintPage"));
 const InventoryAuditPage = lazy(() => import("@/pages/InventoryAuditPage"));
 const SettingsPage = lazy(() => import("@/pages/SettingsPage"));
-const AccountingDashboardPage = lazy(() => import("@/pages/accounting/AccountingDashboardPage"));
+const AccountingDashboardPreviewPage = lazy(() => import("@/pages/accounting/AccountingDashboardPreviewPage"));
 const AccountingInvoicesPage = lazy(() => import("@/pages/accounting/AccountingInvoicesPage"));
 const AccountingImportsPage = lazy(() => import("@/pages/accounting/AccountingImportsPage"));
 const AccountingCatalogsPage = lazy(() => import("@/pages/accounting/AccountingCatalogsPage"));
@@ -97,7 +97,8 @@ function ProtectedApp() {
               <Route path="/carriers" element={<RequireModule module="receiving"><CarriersPage /></RequireModule>} />
               <Route path="/prices" element={<RequireModule module="prices"><PricesPage /></RequireModule>} />
               <Route path="/inventory-audit" element={<RequireModule module="audit"><InventoryAuditPage /></RequireModule>} />
-              <Route path="/accounting" element={<RequireModule module="accounting"><AccountingDashboardPage /></RequireModule>} />
+              <Route path="/accounting" element={<RequireModule module="accounting"><AccountingDashboardPreviewPage /></RequireModule>} />
+              <Route path="/accounting/preview" element={<Navigate to="/accounting" replace />} />
               <Route path="/accounting/invoices" element={<RequireModule module="accounting"><AccountingInvoicesPage /></RequireModule>} />
               <Route path="/accounting/paid-invoices" element={<RequireModule module="accounting"><AccountingPaidInvoicesPage /></RequireModule>} />
               <Route path="/accounting/vendors" element={<RequireModule module="accounting"><AccountingVendorsPage /></RequireModule>} />

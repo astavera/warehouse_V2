@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { CheckCircle2, Edit, Loader2, MapPin, Plus, Save, Search, Trash2 } from 'lucide-react';
+import { Building2, CheckCircle2, CreditCard, Edit, Loader2, MapPin, Plus, Save, Search, StickyNote, Store, Trash2, UserRound } from 'lucide-react';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -501,231 +501,301 @@ function VendorDialog({
               : 'Type address or select suggestion';
   return (
     <Dialog open={open} onOpenChange={value => !value && onClose()}>
-      <DialogContent className="max-h-[90vh] max-w-4xl overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>{mode === 'create' ? 'Create vendor' : 'Edit vendor'}</DialogTitle>
-        </DialogHeader>
-        <div className="grid gap-4 lg:grid-cols-2">
-          <div className="space-y-1.5">
-            <Label>Vendor Name</Label>
-            <Input value={form.name} onChange={event => onChange({ name: event.target.value })} />
-          </div>
-          <div className="space-y-1.5">
-            <Label>Account number setup</Label>
-            <Select
-              value={form.account_number_mode}
-              onValueChange={value => onChange({ account_number_mode: value as VendorForm['account_number_mode'] })}
-            >
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="single">One account number</SelectItem>
-                <SelectItem value="by_location">Different by store/location</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          {form.account_number_mode === 'single' && (
-            <div className="space-y-1.5 lg:col-span-2">
-              <Label>Account Number</Label>
-              <Input value={form.account_number} onChange={event => onChange({ account_number: event.target.value })} />
-            </div>
-          )}
-          <div className="space-y-1.5">
-            <Label>Contact Name</Label>
-            <Input value={form.contact_name} onChange={event => onChange({ contact_name: event.target.value })} />
-          </div>
-          <div className="space-y-1.5">
-            <Label>Phone Number</Label>
-            <Input value={form.phone} onChange={event => onChange({ phone: event.target.value })} />
-          </div>
-          <div className="space-y-1.5">
-            <Label>Email</Label>
-            <Input type="email" value={form.email} onChange={event => onChange({ email: event.target.value })} />
-          </div>
-          <div className="space-y-1.5">
-            <Label>Default Payment Method</Label>
-            <Select
-              value={form.default_payment_method_id}
-              onValueChange={value => onChange({ default_payment_method_id: value })}
-            >
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">No default</SelectItem>
-                {catalogs?.paymentMethods.map(method => (
-                  <SelectItem key={method.id} value={method.id}>{method.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-1.5">
-            <Label>Payment terms</Label>
-            <Input
-              inputMode="numeric"
-              value={form.payment_terms_days}
-              onChange={event => onChange({ payment_terms_days: event.target.value })}
-              placeholder="30, 60, 90"
-            />
-            <div className="text-xs text-muted-foreground">
-              {form.payment_terms_days.trim() ? paymentTermsLabel(form.payment_terms_days) : 'Used to calculate invoice due dates.'}
-            </div>
-          </div>
-        </div>
-        {form.account_number_mode === 'by_location' && (
-          <div className="space-y-3 rounded-lg border bg-muted/10 p-3">
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <Label>Account numbers by store/location</Label>
-                <p className="text-xs text-muted-foreground">
-                  Use this when the same vendor has a different account number per store or warehouse.
-                </p>
+      <DialogContent className="max-h-[92vh] max-w-[1180px] overflow-hidden p-0 sm:w-[calc(100vw-2rem)] [&>button]:text-slate-500">
+        <DialogHeader className="border-b bg-white px-4 py-3 text-left sm:px-5">
+          <div className="flex flex-col gap-3 pr-7 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex min-w-0 items-center gap-2.5">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-slate-950 text-white">
+                <Building2 className="h-4 w-4" />
               </div>
-              <Button type="button" variant="outline" onClick={addLocationAccount} className="gap-1.5">
-                <Plus className="h-4 w-4" />
-                Add location
-              </Button>
+              <div className="min-w-0">
+                <DialogTitle className="text-lg font-semibold tracking-normal text-slate-950">
+                  {mode === 'create' ? 'Create Vendor' : 'Edit Vendor'}
+                </DialogTitle>
+              </div>
             </div>
-            {form.locationAccounts.length ? (
-              <div className="space-y-2">
-                <div className="hidden grid-cols-[minmax(160px,0.8fr)_minmax(180px,1fr)_40px] gap-2 px-1 text-xs font-medium text-muted-foreground md:grid">
-                  <span>Store/location</span>
-                  <span>Account number</span>
-                  <span />
+            <Badge
+              variant="outline"
+              className={
+                form.name.trim()
+                  ? 'w-fit border-emerald-200 bg-emerald-50 text-emerald-700'
+                  : 'w-fit border-amber-200 bg-amber-50 text-amber-700'
+              }
+            >
+              {form.name.trim() ? 'Ready to save' : 'Name required'}
+            </Badge>
+          </div>
+        </DialogHeader>
+        <div className="max-h-[calc(92vh-112px)] overflow-y-auto bg-slate-50 p-3 sm:p-4">
+          <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(300px,0.9fr)] xl:grid-cols-[minmax(0,1.08fr)_minmax(340px,0.92fr)]">
+            <div className="space-y-3">
+              <section className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
+                <div className="mb-3 flex items-center gap-2 border-b pb-2">
+                  <div className="flex h-7 w-7 items-center justify-center rounded-md bg-slate-100 text-slate-700">
+                    <UserRound className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-semibold text-slate-950">Vendor profile</h3>
+                  </div>
                 </div>
-                {form.locationAccounts.map(row => (
-                  <div key={row.id} className="grid gap-2 md:grid-cols-[minmax(160px,0.8fr)_minmax(180px,1fr)_40px] md:items-center">
-                    <Select value={row.store_id} onValueChange={value => updateLocationAccount(row.id, { store_id: value })}>
+                <div className="grid gap-2 md:grid-cols-2">
+                  <div className="space-y-1 md:col-span-2">
+                    <Label>Vendor name</Label>
+                    <Input value={form.name} onChange={event => onChange({ name: event.target.value })} />
+                  </div>
+                  <div className="space-y-1">
+                    <Label>Contact name</Label>
+                    <Input value={form.contact_name} onChange={event => onChange({ contact_name: event.target.value })} />
+                  </div>
+                  <div className="space-y-1">
+                    <Label>Phone number</Label>
+                    <Input value={form.phone} onChange={event => onChange({ phone: event.target.value })} />
+                  </div>
+                  <div className="space-y-1 md:col-span-2">
+                    <Label>Email</Label>
+                    <Input type="email" value={form.email} onChange={event => onChange({ email: event.target.value })} />
+                  </div>
+                </div>
+              </section>
+
+              <section className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
+                <div className="mb-3 flex items-center gap-2 border-b pb-2">
+                  <div className="flex h-7 w-7 items-center justify-center rounded-md bg-blue-50 text-blue-700">
+                    <CreditCard className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-semibold text-slate-950">Payment setup</h3>
+                  </div>
+                </div>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <div className="space-y-1.5">
+                    <Label>Account number setup</Label>
+                    <Select
+                      value={form.account_number_mode}
+                      onValueChange={value => onChange({ account_number_mode: value as VendorForm['account_number_mode'] })}
+                    >
                       <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="none">No location</SelectItem>
-                        {stores.map(store => (
-                          <SelectItem key={store.id} value={store.id}>{store.name}</SelectItem>
+                        <SelectItem value="single">One account number</SelectItem>
+                        <SelectItem value="by_location">Different by store/location</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Default payment method</Label>
+                    <Select
+                      value={form.default_payment_method_id}
+                      onValueChange={value => onChange({ default_payment_method_id: value })}
+                    >
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">No default</SelectItem>
+                        {catalogs?.paymentMethods.map(method => (
+                          <SelectItem key={method.id} value={method.id}>{method.name}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Payment terms</Label>
                     <Input
-                      value={row.account_number}
-                      onChange={event => updateLocationAccount(row.id, { account_number: event.target.value })}
-                      placeholder="Account number for this location"
+                      inputMode="numeric"
+                      value={form.payment_terms_days}
+                      onChange={event => onChange({ payment_terms_days: event.target.value })}
+                      placeholder="30, 60, 90"
                     />
-                    <Button type="button" variant="ghost" size="icon" onClick={() => removeLocationAccount(row.id)} aria-label="Remove location account">
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
+                    <div className="text-xs text-muted-foreground">
+                      {form.payment_terms_days.trim() ? paymentTermsLabel(form.payment_terms_days) : 'Used to calculate invoice due dates.'}
+                    </div>
                   </div>
-                ))}
-              </div>
-            ) : (
-              <div className="rounded-lg border border-dashed bg-white px-3 py-4 text-center text-sm text-muted-foreground">
-                No location account numbers yet.
-              </div>
-            )}
-          </div>
-        )}
-        <div className="space-y-3 rounded-lg border bg-muted/10 p-3">
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-2">
-              <MapPin className="h-4 w-4 text-primary" />
-              <Label>Address</Label>
-            </div>
-            <Badge
-              variant={form.google_place_id ? 'default' : googleStatus === 'suggested' ? 'secondary' : 'outline'}
-              className="w-fit gap-1.5"
-            >
-              {form.google_place_id ? (
-                <CheckCircle2 className="h-3.5 w-3.5" />
-              ) : googleStatus === 'loading' || googleStatus === 'verifying' ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <Search className="h-3.5 w-3.5" />
-              )}
-              {googleStatusLabel}
-            </Badge>
-          </div>
-          <div className="grid gap-3 lg:grid-cols-[minmax(0,1.4fr)_minmax(180px,0.6fr)]">
-            <div className="space-y-1.5">
-              <Label>Street</Label>
-              <Input
-                autoComplete="street-address"
-                ref={streetInputRef}
-                value={form.street}
-                onChange={event => updateAddress({ street: event.target.value })}
-                placeholder="Start typing address"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label>P.O. Box</Label>
-              <Input
-                autoComplete="address-line2"
-                value={form.po_box}
-                onChange={event => updateAddress({ po_box: event.target.value })}
-                placeholder="456"
-              />
-            </div>
-          </div>
-          <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_110px_150px]">
-            <div className="space-y-1.5">
-              <Label>City</Label>
-              <Input
-                autoComplete="address-level2"
-                value={form.city}
-                onChange={event => updateAddress({ city: event.target.value })}
-                placeholder="Brooklyn"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label>State</Label>
-              <Input
-                autoComplete="address-level1"
-                maxLength={2}
-                value={form.state}
-                onChange={event => updateAddress({ state: event.target.value.toUpperCase() })}
-                placeholder="NY"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label>ZIP Code</Label>
-              <Input
-                autoComplete="postal-code"
-                inputMode="numeric"
-                value={form.zip_code}
-                onChange={event => updateAddress({ zip_code: event.target.value })}
-                placeholder="11201"
-              />
-            </div>
-          </div>
-          {googleSuggestion && !form.google_place_id && (
-            <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm">
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                <div>
-                  <div className="flex items-center gap-1.5 font-medium text-emerald-800">
-                    <CheckCircle2 className="h-4 w-4" />
-                    Suggested address
+                  {form.account_number_mode === 'single' && (
+                    <div className="space-y-1.5">
+                      <Label>Account number</Label>
+                      <Input value={form.account_number} onChange={event => onChange({ account_number: event.target.value })} />
+                    </div>
+                  )}
+                </div>
+                {form.account_number_mode === 'by_location' && (
+                  <div className="mt-4 space-y-3 rounded-md border border-slate-200 bg-slate-50 p-3">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="flex items-center gap-2">
+                        <Store className="h-4 w-4 text-slate-600" />
+                        <div>
+                          <Label>Account numbers by store/location</Label>
+                          <p className="text-xs text-muted-foreground">Use a different account number per store or warehouse.</p>
+                        </div>
+                      </div>
+                      <Button type="button" variant="outline" onClick={addLocationAccount} className="gap-1.5">
+                        <Plus className="h-4 w-4" />
+                        Add location
+                      </Button>
+                    </div>
+                    {form.locationAccounts.length ? (
+                      <div className="space-y-2">
+                        <div className="hidden grid-cols-[minmax(160px,0.8fr)_minmax(180px,1fr)_40px] gap-2 px-1 text-xs font-medium text-muted-foreground md:grid">
+                          <span>Store/location</span>
+                          <span>Account number</span>
+                          <span />
+                        </div>
+                        {form.locationAccounts.map(row => (
+                          <div key={row.id} className="grid gap-2 md:grid-cols-[minmax(160px,0.8fr)_minmax(180px,1fr)_40px] md:items-center">
+                            <Select value={row.store_id} onValueChange={value => updateLocationAccount(row.id, { store_id: value })}>
+                              <SelectTrigger><SelectValue /></SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="none">No location</SelectItem>
+                                {stores.map(store => (
+                                  <SelectItem key={store.id} value={store.id}>{store.name}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <Input
+                              value={row.account_number}
+                              onChange={event => updateLocationAccount(row.id, { account_number: event.target.value })}
+                              placeholder="Account number for this location"
+                            />
+                            <Button type="button" variant="ghost" size="icon" onClick={() => removeLocationAccount(row.id)} aria-label="Remove location account">
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="rounded-md border border-dashed bg-white px-3 py-4 text-center text-sm text-muted-foreground">
+                        No location account numbers yet.
+                      </div>
+                    )}
                   </div>
-                  <div className="mt-1 text-emerald-700">{googleSuggestion.google_formatted_address}</div>
-                </div>
-                <Button type="button" size="sm" variant="outline" onClick={useGoogleSuggestion} className="w-full bg-white sm:w-auto">
-                  Use suggested
-                </Button>
-              </div>
+                )}
+              </section>
             </div>
-          )}
-          {addressPreview && (
-            <div className="rounded-md border bg-white px-3 py-2 text-sm text-muted-foreground">
-              <div className="whitespace-pre-line">{addressPreview}</div>
-              {form.google_formatted_address && (
-                <div className="mt-2 flex items-center gap-1.5 text-xs font-medium text-emerald-700">
-                  <CheckCircle2 className="h-3.5 w-3.5" />
-                  Confirmed: {form.google_formatted_address}
+
+            <div className="space-y-3">
+              <section className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
+                <div className="mb-3 flex flex-col gap-2 border-b pb-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="flex h-7 w-7 items-center justify-center rounded-md bg-emerald-50 text-emerald-700">
+                      <MapPin className="h-4 w-4" />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-semibold text-slate-950">Address validation</h3>
+                    </div>
+                  </div>
+                  <Badge
+                    variant={form.google_place_id ? 'default' : googleStatus === 'suggested' ? 'secondary' : 'outline'}
+                    className="w-fit gap-1.5"
+                  >
+                    {form.google_place_id ? (
+                      <CheckCircle2 className="h-3.5 w-3.5" />
+                    ) : googleStatus === 'loading' || googleStatus === 'verifying' ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Search className="h-3.5 w-3.5" />
+                    )}
+                    {googleStatusLabel}
+                  </Badge>
                 </div>
-              )}
+                <div className="grid gap-3 lg:grid-cols-[minmax(0,1.4fr)_minmax(150px,0.6fr)]">
+                  <div className="space-y-1.5">
+                    <Label>Street</Label>
+                    <Input
+                      autoComplete="street-address"
+                      ref={streetInputRef}
+                      value={form.street}
+                      onChange={event => updateAddress({ street: event.target.value })}
+                      placeholder="Start typing address"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>P.O. Box</Label>
+                    <Input
+                      autoComplete="address-line2"
+                      value={form.po_box}
+                      onChange={event => updateAddress({ po_box: event.target.value })}
+                      placeholder="456"
+                    />
+                  </div>
+                </div>
+                <div className="mt-3 grid gap-3 md:grid-cols-[minmax(0,1fr)_96px_130px]">
+                  <div className="space-y-1.5">
+                    <Label>City</Label>
+                    <Input
+                      autoComplete="address-level2"
+                      value={form.city}
+                      onChange={event => updateAddress({ city: event.target.value })}
+                      placeholder="Brooklyn"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>State</Label>
+                    <Input
+                      autoComplete="address-level1"
+                      maxLength={2}
+                      value={form.state}
+                      onChange={event => updateAddress({ state: event.target.value.toUpperCase() })}
+                      placeholder="NY"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>ZIP code</Label>
+                    <Input
+                      autoComplete="postal-code"
+                      inputMode="numeric"
+                      value={form.zip_code}
+                      onChange={event => updateAddress({ zip_code: event.target.value })}
+                      placeholder="11201"
+                    />
+                  </div>
+                </div>
+                {googleSuggestion && !form.google_place_id && (
+                  <div className="mt-3 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                      <div>
+                        <div className="flex items-center gap-1.5 font-medium text-emerald-800">
+                          <CheckCircle2 className="h-4 w-4" />
+                          Suggested address
+                        </div>
+                        <div className="mt-1 text-emerald-700">{googleSuggestion.google_formatted_address}</div>
+                      </div>
+                      <Button type="button" size="sm" variant="outline" onClick={useGoogleSuggestion} className="w-full bg-white sm:w-auto">
+                        Use suggested
+                      </Button>
+                    </div>
+                  </div>
+                )}
+                {addressPreview && (
+                  <div className="mt-3 rounded-md border bg-slate-50 px-3 py-2 text-sm text-muted-foreground">
+                    <div className="whitespace-pre-line">{addressPreview}</div>
+                    {form.google_formatted_address && (
+                      <div className="mt-2 flex items-center gap-1.5 text-xs font-medium text-emerald-700">
+                        <CheckCircle2 className="h-3.5 w-3.5" />
+                        Confirmed: {form.google_formatted_address}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </section>
+
+              <section className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
+                <div className="mb-2 flex items-center gap-2 border-b pb-2">
+                  <div className="flex h-7 w-7 items-center justify-center rounded-md bg-amber-50 text-amber-700">
+                    <StickyNote className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-semibold text-slate-950">Internal notes</h3>
+                  </div>
+                </div>
+                <Textarea
+                  className="min-h-[74px] resize-none"
+                  value={form.notes}
+                  onChange={event => onChange({ notes: event.target.value })}
+                />
+              </section>
             </div>
-          )}
+          </div>
         </div>
-        <div className="space-y-1.5">
-          <Label>Notes</Label>
-          <Textarea value={form.notes} onChange={event => onChange({ notes: event.target.value })} />
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button onClick={onSave} disabled={saving || !form.name.trim()} className="gap-1.5">
+        <DialogFooter className="border-t bg-white px-4 py-3 sm:px-5">
+          <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
+          <Button type="button" onClick={onSave} disabled={saving || !form.name.trim()} className="gap-1.5">
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
             Save vendor
           </Button>
