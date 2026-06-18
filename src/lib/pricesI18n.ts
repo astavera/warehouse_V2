@@ -40,6 +40,8 @@ export type Dict = {
   scanner_start_err: string;
   btn_sync: string;
   btn_print: string;
+  btn_print_selected: string;
+  btn_print_vendor: string;
   searching: string;
   syncing: string;
   not_found: string;
@@ -84,6 +86,18 @@ export type Dict = {
   loading: string;
   missing: string;
   tags_ready: string;
+  bulk_selected: (n: number) => string;
+  bulk_select_all: string;
+  bulk_clear_selection: string;
+  bulk_mark_selected: string;
+  bulk_marking: string;
+  bulk_confirm_title: string;
+  bulk_confirm_description: (n: number) => string;
+  bulk_cancel: string;
+  bulk_confirm: string;
+  bulk_done: (n: number) => string;
+  select_group_items: (label: string, n: number) => string;
+  select_item: (label: string) => string;
   // print sheet
   print_title: string;
   print_print: string;
@@ -123,6 +137,8 @@ export const PRICE_I18N: Record<PriceLang, Dict> = {
     scanner_start_err: 'No se pudo iniciar el escaner de camara.',
     btn_sync: 'Buscar cambios de precio',
     btn_print: 'Imprimir lista (con barcodes)',
+    btn_print_selected: 'Imprimir seleccionados',
+    btn_print_vendor: 'Imprimir vendor',
     searching: 'Buscando…',
     syncing: 'Sincronizando…',
     not_found: 'No encontrado',
@@ -167,6 +183,19 @@ export const PRICE_I18N: Record<PriceLang, Dict> = {
     loading: 'Cargando…',
     missing: 'falta',
     tags_ready: 'tags listos',
+    bulk_selected: n => `${n} seleccionados`,
+    bulk_select_all: 'Seleccionar todos',
+    bulk_clear_selection: 'Limpiar',
+    bulk_mark_selected: 'Marcar seleccionados listos',
+    bulk_marking: 'Marcando...',
+    bulk_confirm_title: 'Confirmar tags seleccionados?',
+    bulk_confirm_description: n =>
+      `Esto marcara T72 y T86 como cambiados para ${n} productos seleccionados. El precio nuevo quedara guardado como precio base.`,
+    bulk_cancel: 'Cancelar',
+    bulk_confirm: 'Confirmar',
+    bulk_done: n => `${n} productos actualizados.`,
+    select_group_items: (label, n) => `Seleccionar ${n} productos en ${label}`,
+    select_item: label => `Seleccionar ${label}`,
     print_title: 'Cambios de precio — tags pendientes',
     print_print: '🖨️ Imprimir',
     print_reload: '↻ Actualizar',
@@ -203,6 +232,8 @@ export const PRICE_I18N: Record<PriceLang, Dict> = {
     scanner_start_err: 'Camera scanner could not start.',
     btn_sync: 'Find price changes',
     btn_print: 'Print list (with barcodes)',
+    btn_print_selected: 'Print selected',
+    btn_print_vendor: 'Print vendor',
     searching: 'Searching…',
     syncing: 'Syncing…',
     not_found: 'Not found',
@@ -247,6 +278,19 @@ export const PRICE_I18N: Record<PriceLang, Dict> = {
     loading: 'Loading…',
     missing: 'missing',
     tags_ready: 'tags ready',
+    bulk_selected: n => `${n} selected`,
+    bulk_select_all: 'Select all',
+    bulk_clear_selection: 'Clear',
+    bulk_mark_selected: 'Mark selected done',
+    bulk_marking: 'Marking...',
+    bulk_confirm_title: 'Confirm selected tags?',
+    bulk_confirm_description: n =>
+      `This will mark T72 and T86 as changed for ${n} selected products. The new price will be saved as the base price.`,
+    bulk_cancel: 'Cancel',
+    bulk_confirm: 'Confirm',
+    bulk_done: n => `${n} products updated.`,
+    select_group_items: (label, n) => `Select ${n} products in ${label}`,
+    select_item: label => `Select ${label}`,
     print_title: 'Price changes — tags pending',
     print_print: '🖨️ Print',
     print_reload: '↻ Refresh',

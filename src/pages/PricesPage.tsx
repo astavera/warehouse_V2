@@ -4,9 +4,21 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 import { toast } from 'sonner';
-import { Search, RefreshCw, Printer, Loader2, ArrowRight, Languages, CheckCheck, Camera } from 'lucide-react';
+import { Search, RefreshCw, Printer, Loader2, Languages, CheckCheck, Camera } from 'lucide-react';
 import { BarcodeScannerDialog } from '@/components/BarcodeScannerDialog';
 import {
   squarePrices,
@@ -29,7 +41,15 @@ function getErrorMessage(error: unknown, fallback: string) {
 // ---------------------------------------------------------------------
 //  Tab 1: Cambiar precio (escaneo + tags)
 // ---------------------------------------------------------------------
-function ChangePriceTab({ t, onZoom }: { t: Dict; onZoom: (url: string) => void }) {
+function ChangePriceTab({
+  t,
+  onPriceChangeResolved,
+  onZoom,
+}: {
+  t: Dict;
+  onPriceChangeResolved: () => void;
+  onZoom: (url: string) => void;
+}) {
   const [code, setCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [taggingAll, setTaggingAll] = useState(false);
@@ -83,6 +103,7 @@ function ChangePriceTab({ t, onZoom }: { t: Dict; onZoom: (url: string) => void 
       const data = await squarePrices.tag(product.barcode, store);
       setProduct(data);
       if (!data.changePending && data.confirmedStores.length === 0) {
+        onPriceChangeResolved();
         toast.success(t.toast_done);
       } else {
         toast.success(t.toast_tag(store));
@@ -104,6 +125,9 @@ function ChangePriceTab({ t, onZoom }: { t: Dict; onZoom: (url: string) => void 
         data = await squarePrices.tag(product.barcode, store);
       }
       setProduct(data);
+      if (!data.changePending && data.confirmedStores.length === 0) {
+        onPriceChangeResolved();
+      }
       toast.success(t.toast_done);
     } catch (err) {
       toast.error(getErrorMessage(err, t.toast_tag_err));
@@ -230,21 +254,12 @@ function ProductCard({
 
         <div className="flex items-center justify-center gap-4">
           {changed ? (
-            <>
-              <div className="text-center">
-                <div className="text-xs uppercase text-muted-foreground">{t.previous}</div>
-                <div className="text-xl font-medium text-muted-foreground line-through">
-                  {formatMoney(product.oldPrice, product.currency)}
-                </div>
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-5 py-3 text-center">
+              <div className="text-xs uppercase text-amber-700">{t.new_price}</div>
+              <div className="text-2xl font-bold text-amber-700">
+                {formatMoney(product.currentPrice, product.currency)}
               </div>
-              <ArrowRight className="h-5 w-5 text-muted-foreground" />
-              <div className="text-center">
-                <div className="text-xs uppercase text-muted-foreground">{t.new_price}</div>
-                <div className="text-2xl font-bold text-amber-600">
-                  {formatMoney(product.currentPrice, product.currency)}
-                </div>
-              </div>
-            </>
+            </div>
           ) : (
             <div className="text-center">
               <div className="text-xs uppercase text-muted-foreground">{t.current_price}</div>
@@ -433,7 +448,7 @@ async function syncPageWithRetry(cursor: string | null, syncRunStartedAt: string
   throw lastError;
 }
 
-function ListTab({ t }: { t: Dict }) {
+function ListTab({ refreshKey, t }: { refreshKey: number; t: Dict }) {
   const [syncing, setSyncing] = useState(false);
   const [summary, setSummary] = useState<SyncSummary | null>(null);
   const [changes, setChanges] = useState<PriceChange[]>([]);
@@ -441,12 +456,19 @@ function ListTab({ t }: { t: Dict }) {
   const [catalogMissing, setCatalogMissing] = useState<PriceCatalogMissing[]>([]);
   const [loading, setLoading] = useState(true);
   const [groupBy, setGroupBy] = useState<PriceGroupBy>('vendor');
+  const [selectedBarcodes, setSelectedBarcodes] = useState<Set<string>>(() => new Set());
+  const [bulkTagging, setBulkTagging] = useState(false);
   const groupedChanges = useMemo(() => groupPriceItems(changes, groupBy), [changes, groupBy]);
   const groupedDuplicates = useMemo(() => groupPriceItems(duplicates, groupBy), [duplicates, groupBy]);
   const groupedCatalogMissing = useMemo(
     () => groupPriceItems(catalogMissing, groupBy),
     [catalogMissing, groupBy]
   );
+  const selectedChanges = useMemo(
+    () => changes.filter(change => selectedBarcodes.has(change.barcode)),
+    [changes, selectedBarcodes]
+  );
+  const selectedCount = selectedChanges.length;
 
   const loadLists = async () => {
     setLoading(true);
@@ -471,7 +493,87 @@ function ListTab({ t }: { t: Dict }) {
   useEffect(() => {
     void loadLists();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [refreshKey]);
+
+  useEffect(() => {
+    const visibleBarcodes = new Set(changes.map(change => change.barcode));
+    setSelectedBarcodes(current => {
+      const next = new Set([...current].filter(barcode => visibleBarcodes.has(barcode)));
+      return next.size === current.size ? current : next;
+    });
+  }, [changes]);
+
+  const setBarcodeSelected = (barcode: string, checked: boolean) => {
+    setSelectedBarcodes(current => {
+      const next = new Set(current);
+      if (checked) {
+        next.add(barcode);
+      } else {
+        next.delete(barcode);
+      }
+      return next;
+    });
+  };
+
+  const setGroupSelected = (items: PriceChange[], checked: boolean) => {
+    setSelectedBarcodes(current => {
+      const next = new Set(current);
+      for (const item of items) {
+        if (checked) {
+          next.add(item.barcode);
+        } else {
+          next.delete(item.barcode);
+        }
+      }
+      return next;
+    });
+  };
+
+  const selectAllChanges = () => {
+    setSelectedBarcodes(new Set(changes.map(change => change.barcode)));
+  };
+
+  const clearSelection = () => {
+    setSelectedBarcodes(new Set());
+  };
+
+  const openPrintPage = (params: Record<string, string>) => {
+    const search = new URLSearchParams(params);
+    window.open(`/prices/print?${search.toString()}`, '_blank');
+  };
+
+  const printSelectedChanges = () => {
+    const barcodes = selectedChanges.map(change => change.barcode);
+    if (barcodes.length === 0) return;
+    openPrintPage({
+      groupBy: 'vendor',
+      barcodes: barcodes.join(','),
+    });
+  };
+
+  const markSelectedDone = async () => {
+    if (selectedChanges.length === 0) return;
+
+    setBulkTagging(true);
+    let completed = 0;
+    try {
+      for (const change of selectedChanges) {
+        const storesToTag = ([72, 86] as const).filter(store => !change.confirmedStores.includes(store));
+        for (const store of storesToTag) {
+          await squarePrices.tag(change.barcode, store);
+        }
+        completed += 1;
+      }
+      toast.success(t.bulk_done(completed));
+      clearSelection();
+      await loadLists();
+    } catch (err) {
+      toast.error(getErrorMessage(err, t.toast_tag_err));
+      await loadLists();
+    } finally {
+      setBulkTagging(false);
+    }
+  };
 
   const sync = async () => {
     setSyncing(true);
@@ -614,7 +716,7 @@ function ListTab({ t }: { t: Dict }) {
         <Button
           variant="outline"
           className="w-full gap-1.5 touch-target"
-          onClick={() => window.open(`/prices/print?groupBy=${groupBy}`, '_blank')}
+          onClick={() => openPrintPage({ groupBy })}
           disabled={changes.length === 0}
         >
           <Printer className="h-4 w-4" /> {t.btn_print}
@@ -622,7 +724,7 @@ function ListTab({ t }: { t: Dict }) {
         <Button
           variant="outline"
           className="w-full gap-1.5 touch-target"
-          onClick={() => window.open(`/prices/print?kind=missing&groupBy=${groupBy}`, '_blank')}
+          onClick={() => openPrintPage({ kind: 'missing', groupBy })}
           disabled={catalogMissing.length === 0}
         >
           <Printer className="h-4 w-4" /> {t.btn_print_missing}
@@ -630,12 +732,82 @@ function ListTab({ t }: { t: Dict }) {
         <Button
           variant="outline"
           className="w-full gap-1.5 touch-target"
-          onClick={() => window.open(`/prices/print?kind=duplicates&groupBy=${groupBy}`, '_blank')}
+          onClick={() => openPrintPage({ kind: 'duplicates', groupBy })}
           disabled={duplicates.length === 0}
         >
           <Printer className="h-4 w-4" /> {t.btn_print_duplicates}
         </Button>
       </div>
+
+      {changes.length > 0 && (
+        <div className="rounded-lg border bg-muted/30 p-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="text-sm font-medium">{t.bulk_selected(selectedCount)}</div>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={selectAllChanges}
+                disabled={loading || bulkTagging || selectedCount === changes.length}
+              >
+                {t.bulk_select_all}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={clearSelection}
+                disabled={loading || bulkTagging || selectedCount === 0}
+              >
+                {t.bulk_clear_selection}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="gap-1.5"
+                onClick={printSelectedChanges}
+                disabled={loading || bulkTagging || selectedCount === 0}
+              >
+                <Printer className="h-4 w-4" />
+                {t.btn_print_selected}
+              </Button>
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="gap-1.5"
+                    disabled={loading || bulkTagging || selectedCount === 0}
+                  >
+                    {bulkTagging ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <CheckCheck className="h-4 w-4" />
+                    )}
+                    {bulkTagging ? t.bulk_marking : t.bulk_mark_selected}
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>{t.bulk_confirm_title}</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      {t.bulk_confirm_description(selectedCount)}
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>{t.bulk_cancel}</AlertDialogCancel>
+                    <AlertDialogAction onClick={markSelectedDone}>
+                      {t.bulk_confirm}
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            </div>
+          </div>
+        </div>
+      )}
 
       {loading ? (
         <div className="py-10 text-center text-muted-foreground">{t.loading}</div>
@@ -644,46 +816,83 @@ function ListTab({ t }: { t: Dict }) {
       ) : (
         <>
           <div className="space-y-3">
-            {groupedChanges.map(group => (
-              <section key={group.label} className="overflow-hidden rounded-lg border">
-                <div className="flex items-center justify-between gap-3 border-b bg-muted/50 px-3 py-2">
-                  <div className="font-semibold">{group.label}</div>
-                  <Badge variant="secondary">{group.items.length}</Badge>
-                </div>
-                <div className="divide-y">
-                  {group.items.map(c => (
-                    <div key={c.barcode} className="flex items-center justify-between gap-3 p-3">
-                      <div className="min-w-0">
-                        <div className="flex min-w-0 items-center gap-2">
-                          <div className="truncate font-medium">{c.name}</div>
-                          {c.conflict && <Badge variant="secondary">{t.duplicate_badge}</Badge>}
-                        </div>
-                        <div className="text-xs text-muted-foreground">
-                          {c.barcode} -{' '}
-                          {c.pendingStores.length
-                            ? t.missing + ': ' + c.pendingStores.map(s => 'T' + s).join(', ')
-                            : t.tags_ready}
-                        </div>
-                        {groupBy === 'vendor' && c.categoryName && (
-                          <div className="text-xs text-muted-foreground">{c.categoryName}</div>
-                        )}
-                        {groupBy === 'category' && c.vendorName && c.vendorName !== UNKNOWN_PRICE_VENDOR && (
-                          <div className="text-xs text-muted-foreground">{c.vendorName}</div>
-                        )}
-                      </div>
-                      <div className="text-right">
-                        <div className="text-xs text-muted-foreground line-through">
-                          {formatMoney(c.oldPrice, c.currency)}
-                        </div>
-                        <div className="font-semibold text-amber-600">
-                          {formatMoney(c.currentPrice, c.currency)}
-                        </div>
-                      </div>
+            {groupedChanges.map(group => {
+              const groupSelectedCount = group.items.filter(item => selectedBarcodes.has(item.barcode)).length;
+              const groupChecked =
+                groupSelectedCount === 0
+                  ? false
+                  : groupSelectedCount === group.items.length
+                  ? true
+                  : 'indeterminate';
+
+              return (
+                <section key={group.label} className="overflow-hidden rounded-lg border">
+                  <div className="flex items-center justify-between gap-3 border-b bg-muted/50 px-3 py-2">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <Checkbox
+                        checked={groupChecked}
+                        aria-label={t.select_group_items(group.label, group.items.length)}
+                        onCheckedChange={checked => setGroupSelected(group.items, checked === true)}
+                      />
+                      <span className="truncate font-semibold">{group.label}</span>
                     </div>
-                  ))}
-                </div>
-              </section>
-            ))}
+                    <div className="flex items-center gap-2">
+                      {groupSelectedCount > 0 && (
+                        <Badge variant="outline">{t.bulk_selected(groupSelectedCount)}</Badge>
+                      )}
+                      <Badge variant="secondary">{group.items.length}</Badge>
+                      {groupBy === 'vendor' && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-8 gap-1.5"
+                          onClick={() => openPrintPage({ groupBy: 'vendor', vendor: group.label })}
+                        >
+                          <Printer className="h-4 w-4" />
+                          {t.btn_print_vendor}
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                  <div className="divide-y">
+                    {group.items.map(c => (
+                      <div key={c.barcode} className="flex items-center justify-between gap-3 p-3">
+                        <Checkbox
+                          checked={selectedBarcodes.has(c.barcode)}
+                          aria-label={t.select_item(c.name || c.barcode)}
+                          onCheckedChange={checked => setBarcodeSelected(c.barcode, checked === true)}
+                        />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex min-w-0 items-center gap-2">
+                            <div className="truncate font-medium">{c.name}</div>
+                            {c.conflict && <Badge variant="secondary">{t.duplicate_badge}</Badge>}
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            {c.barcode} -{' '}
+                            {c.pendingStores.length
+                              ? t.missing + ': ' + c.pendingStores.map(s => 'T' + s).join(', ')
+                              : t.tags_ready}
+                          </div>
+                          {groupBy === 'vendor' && c.categoryName && (
+                            <div className="text-xs text-muted-foreground">{c.categoryName}</div>
+                          )}
+                          {groupBy === 'category' && c.vendorName && c.vendorName !== UNKNOWN_PRICE_VENDOR && (
+                            <div className="text-xs text-muted-foreground">{c.vendorName}</div>
+                          )}
+                        </div>
+                        <div className="text-right">
+                          <div className="text-xs text-muted-foreground">{t.new_price}</div>
+                          <div className="font-semibold text-amber-600">
+                            {formatMoney(c.currentPrice, c.currency)}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              );
+            })}
           </div>
         </>
       )}
@@ -795,7 +1004,9 @@ export default function PricesPage() {
   const { user } = useAuth();
   const { lang, t, toggle } = usePriceLang();
   const [zoomUrl, setZoomUrl] = useState<string | null>(null);
+  const [priceChangesRefreshKey, setPriceChangesRefreshKey] = useState(0);
   const canManagePrices = canAccessPricePermission(user, 'prices.manage');
+  const refreshPriceChanges = () => setPriceChangesRefreshKey(current => current + 1);
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
@@ -820,14 +1031,14 @@ export default function PricesPage() {
           {canManagePrices && <TabsTrigger value="list">{t.tab_list}</TabsTrigger>}
         </TabsList>
         <TabsContent value="scan" className="mt-4">
-          <ChangePriceTab t={t} onZoom={setZoomUrl} />
+          <ChangePriceTab t={t} onPriceChangeResolved={refreshPriceChanges} onZoom={setZoomUrl} />
         </TabsContent>
         <TabsContent value="photo" className="mt-4">
           <BigPhotoTab t={t} onZoom={setZoomUrl} />
         </TabsContent>
         {canManagePrices && (
           <TabsContent value="list" className="mt-4">
-            <ListTab t={t} />
+            <ListTab t={t} refreshKey={priceChangesRefreshKey} />
           </TabsContent>
         )}
       </Tabs>

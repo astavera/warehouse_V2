@@ -16,11 +16,20 @@ export default function PricesPrintPage() {
   const [items, setItems] = useState<Array<PriceChange | PriceCatalogMissing | PriceDuplicate> | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const urlLang = new URLSearchParams(window.location.search).get('lang');
+  const searchParams = new URLSearchParams(window.location.search);
+  const urlLang = searchParams.get('lang');
   const lang = urlLang === 'en' || urlLang === 'es' ? urlLang : getPriceLang();
-  const urlGroupBy = new URLSearchParams(window.location.search).get('groupBy');
+  const urlGroupBy = searchParams.get('groupBy');
   const groupBy: PriceGroupBy = urlGroupBy === 'category' ? 'category' : 'vendor';
-  const kind = new URLSearchParams(window.location.search).get('kind');
+  const kind = searchParams.get('kind');
+  const barcodeFilterParam = searchParams.get('barcodes') || '';
+  const barcodeFilter = new Set(
+    barcodeFilterParam
+      .split(',')
+      .map(barcode => barcode.trim())
+      .filter(Boolean)
+  );
+  const vendorFilter = searchParams.get('vendor')?.trim() || null;
   const isMissingCatalog = kind === 'missing';
   const isDuplicates = kind === 'duplicates';
   const showsTagColumn = !isMissingCatalog && !isDuplicates;
@@ -28,8 +37,25 @@ export default function PricesPrintPage() {
   const title = isDuplicates ? t.print_duplicates_title : isMissingCatalog ? t.print_missing_title : t.print_title;
   const emptyText = isDuplicates ? t.print_duplicates_empty : isMissingCatalog ? t.print_missing_empty : t.print_empty;
   const groupedItems = useMemo(() => groupPriceItems(items || [], groupBy), [items, groupBy]);
-  const groupQueryPrefix = isDuplicates ? 'kind=duplicates&' : isMissingCatalog ? 'kind=missing&' : '';
   const canPrintPrices = canAccessPricePermission(user, 'prices.manage');
+
+  const matchesPrintFilter = (item: PriceChange | PriceCatalogMissing | PriceDuplicate) => {
+    if (barcodeFilter.size > 0) return barcodeFilter.has(String(item.barcode));
+    if (vendorFilter) {
+      const itemVendor = String(item.vendorName || '').trim() || UNKNOWN_PRICE_VENDOR;
+      return itemVendor === vendorFilter;
+    }
+    return true;
+  };
+
+  const switchGroupBy = (nextGroupBy: PriceGroupBy) => {
+    const next = new URLSearchParams();
+    if (kind) next.set('kind', kind);
+    next.set('groupBy', nextGroupBy);
+    if (barcodeFilterParam) next.set('barcodes', barcodeFilterParam);
+    if (vendorFilter) next.set('vendor', vendorFilter);
+    window.location.search = `?${next.toString()}`;
+  };
 
   useEffect(() => {
     document.documentElement.lang = lang;
@@ -44,7 +70,10 @@ export default function PricesPrintPage() {
       ? squarePrices.catalogMissing()
       : squarePrices.changes();
     request
-      .then(data => setItems('duplicates' in data ? data.duplicates : 'missing' in data ? data.missing : data.changes))
+      .then(data => {
+        const nextItems = 'duplicates' in data ? data.duplicates : 'missing' in data ? data.missing : data.changes;
+        setItems(nextItems.filter(matchesPrintFilter));
+      })
       .catch(err => setError(err instanceof Error ? err.message : t.print_load_err));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canPrintPrices, isDuplicates, isMissingCatalog, loading]);
@@ -83,7 +112,6 @@ export default function PricesPrintPage() {
         td.name { font-size: 14px; font-weight: 600; }
         .subcat { color: #555; font-size: 11px; font-weight: 400; margin-top: 2px; }
         td.price { white-space: nowrap; font-size: 14px; }
-        .old { color: #777; text-decoration: line-through; font-size: 12px; }
         .new { font-weight: 700; font-size: 16px; }
         .dup { display: inline-block; margin-top: 4px; border: 1px solid #b45309; color: #92400e; background: #fffbeb; border-radius: 4px; padding: 2px 5px; font-size: 10px; font-weight: 700; text-transform: uppercase; }
         td.bc { text-align: center; width: 230px; }
@@ -95,7 +123,19 @@ export default function PricesPrintPage() {
       `}</style>
 
       <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8 }}>
-        <h1 style={{ fontSize: 18, margin: 0 }}>{title}</h1>
+        <div>
+          <h1 style={{ fontSize: 18, margin: 0 }}>{title}</h1>
+          {vendorFilter && (
+            <div style={{ fontSize: 12, color: '#555', marginTop: 4 }}>
+              Vendor: {vendorFilter}
+            </div>
+          )}
+          {barcodeFilter.size > 0 && (
+            <div style={{ fontSize: 12, color: '#555', marginTop: 4 }}>
+              {t.bulk_selected(barcodeFilter.size)}
+            </div>
+          )}
+        </div>
         <div style={{ fontSize: 12, color: '#555' }}>
           {now.toLocaleString(t.locale)} · {items?.length ?? 0} {t.col_products}
         </div>
@@ -104,8 +144,8 @@ export default function PricesPrintPage() {
       <div className="toolbar" style={{ margin: '12px 0' }}>
         <button className="pp-btn" onClick={() => window.print()}>{t.print_print}</button>
         <button className="pp-btn" onClick={() => window.location.reload()}>{t.print_reload}</button>
-        <button className="pp-btn" onClick={() => window.location.search = `?${groupQueryPrefix}groupBy=vendor`}>Vendor</button>
-        <button className="pp-btn" onClick={() => window.location.search = `?${groupQueryPrefix}groupBy=category`}>Category</button>
+        <button className="pp-btn" onClick={() => switchGroupBy('vendor')}>Vendor</button>
+        <button className="pp-btn" onClick={() => switchGroupBy('category')}>Category</button>
       </div>
 
       {error ? (
@@ -143,15 +183,7 @@ export default function PricesPrintPage() {
                       {'conflict' in c && c.conflict && <div className="dup">{t.duplicate_badge}</div>}
                     </td>
                     <td className="price">
-                      {isMissingCatalog || isDuplicates ? (
-                        <span className="new">{formatMoney(c.currentPrice, c.currency)}</span>
-                      ) : (
-                        <>
-                          <span className="old">{formatMoney(c.oldPrice, c.currency)}</span>
-                          <br />
-                          <span className="new">{formatMoney(c.currentPrice, c.currency)}</span>
-                        </>
-                      )}
+                      <span className="new">{formatMoney(c.currentPrice, c.currency)}</span>
                     </td>
                     <td className="bc">
                       <svg className="barcode" data-code={String(c.barcode).replace(/"/g, '')} />
