@@ -453,7 +453,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
       {open && (
         <div className="fixed inset-0 top-16 z-40 bg-background/80 backdrop-blur-sm lg:hidden" onClick={() => setOpen(false)}>
-          <nav className="flex flex-col gap-1 border-b bg-white py-4 shadow-lg" onClick={e => e.stopPropagation()}>
+          <nav className="max-h-[calc(100vh-4rem)] overflow-y-auto border-b bg-white py-4 shadow-lg" onClick={e => e.stopPropagation()}>
             <div className="px-8 py-2 text-sm text-muted-foreground">
               Welcome, <span className="font-medium text-foreground">{user?.name}</span>
             </div>
@@ -469,27 +469,58 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 {statusLabel}
               </button>
             )}
-            {visibleNav.map(n => (
-              <Link
-                key={n.to}
-                to={n.to}
-                onClick={() => {
-                  handleNavClick(n.to);
-                  setOpen(false);
-                }}
-                onFocus={() => handleNavIntent(n.to)}
-                onMouseEnter={() => handleNavIntent(n.to)}
-                onPointerDown={() => handleNavIntent(n.to)}
-                className={cn(
-                  'mx-5 flex items-center rounded-lg px-4 py-3 text-base font-medium transition-colors touch-target',
-                  activePathname === n.to
-                    ? 'border border-red-600/20 bg-slate-950 text-white shadow-sm'
-                    : 'text-muted-foreground hover:bg-red-50/70 hover:text-slate-950'
-                )}
-              >
-                {n.label}
-              </Link>
-            ))}
+            <div className="mt-1 space-y-4 px-5 pb-2">
+              {visibleGroups.map(group => {
+                const GroupIcon = group.icon;
+                const groupActive = group.items.some(item => isNavItemActive(activePathname, item));
+                const showGroupHeader = group.items.length > 1;
+
+                return (
+                  <div key={group.label} className="space-y-1.5">
+                    {showGroupHeader && (
+                      <div
+                        className={cn(
+                          'flex items-center gap-2 px-1 text-[11px] font-semibold uppercase tracking-[0.14em]',
+                          groupActive ? 'text-slate-950' : 'text-muted-foreground'
+                        )}
+                      >
+                        <GroupIcon className={cn('h-3.5 w-3.5', groupActive && 'text-red-600')} />
+                        {group.label}
+                      </div>
+                    )}
+                    <div className="space-y-1">
+                      {group.items.map(item => {
+                        const ItemIcon = item.icon;
+                        const active = isNavItemActive(activePathname, item);
+
+                        return (
+                          <Link
+                            key={item.to}
+                            to={item.to}
+                            onClick={() => {
+                              handleNavClick(item.to);
+                              setOpen(false);
+                            }}
+                            onFocus={() => handleNavIntent(item.to)}
+                            onMouseEnter={() => handleNavIntent(item.to)}
+                            onPointerDown={() => handleNavIntent(item.to)}
+                            className={cn(
+                              'flex min-h-11 items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-semibold transition-colors touch-target',
+                              active
+                                ? 'border border-red-600/20 bg-slate-950 text-white shadow-sm'
+                                : 'text-slate-600 hover:bg-red-50/70 hover:text-slate-950'
+                            )}
+                          >
+                            <ItemIcon className={cn('h-4 w-4 shrink-0', active ? 'text-red-400' : 'text-slate-400')} />
+                            <span>{item.label}</span>
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
             <Button variant="outline" size="sm" onClick={signOut} className="mx-auto mt-2 gap-1.5">
               <LogOut className="w-4 h-4" /> Sign out
             </Button>
