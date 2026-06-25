@@ -63,7 +63,7 @@ export default function CarrierBadge({
   if (brand) {
     if (variant === 'plain') {
       return (
-        <span style={{ color: brand.fg }} className="font-bold text-[11px]">
+        <span style={{ color: brand.bg }} className="font-bold text-[11px]">
           {brand.abbr}
         </span>
       );
