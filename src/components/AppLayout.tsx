@@ -20,6 +20,7 @@ import {
   CreditCard,
   Upload,
   Database,
+  ChevronDown,
   type LucideIcon,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
@@ -201,6 +202,7 @@ const APP_NAV_GROUPS = [
 ] as const;
 
 const APP_NAV_ITEMS = APP_NAV_GROUPS.flatMap(group => group.items);
+const MOBILE_COLLAPSIBLE_GROUPS = new Set(['Warehouse', 'Control', 'Accounting']);
 
 function isNavItemActive(pathname: string, item: AppNavItem) {
   if (item.exact || item.to === '/') return pathname === item.to;
@@ -237,6 +239,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { pathname } = useLocation();
   const [open, setOpen] = useState(false);
   const [pendingPath, setPendingPath] = useState<string | null>(null);
+  const [mobileOpenGroups, setMobileOpenGroups] = useState<Set<string>>(() => new Set(['Warehouse']));
   const { user, signOut } = useAuth();
   const { isLocalDemo, isOffline, pendingCount, syncing, syncNow } = useOfflineStatus();
   const visibleGroups = APP_NAV_GROUPS
@@ -251,6 +254,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const desktopGroups = visibleGroups.filter(group => group.label !== 'Settings' && group.label !== 'Dashboard');
   const canOpenSettings = canAccessModule(user, 'settings');
   const activePathname = pendingPath ?? pathname;
+  const activeMobileGroupLabel = visibleGroups.find(group =>
+    group.items.some(item => isNavItemActive(activePathname, item))
+  )?.label;
   const statusLabel = isLocalDemo ? 'Local' : isOffline ? 'Offline' : pendingCount > 0 ? `Pending ${pendingCount}` : '';
   const StatusIcon = isOffline ? WifiOff : pendingCount > 0 ? RefreshCw : Cloud;
   const showDataStatus = Boolean(statusLabel);
@@ -264,6 +270,16 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     setPendingPath(null);
   }, [pathname]);
+
+  useEffect(() => {
+    if (!activeMobileGroupLabel || !MOBILE_COLLAPSIBLE_GROUPS.has(activeMobileGroupLabel)) return;
+    setMobileOpenGroups(prev => {
+      if (prev.has(activeMobileGroupLabel)) return prev;
+      const next = new Set(prev);
+      next.add(activeMobileGroupLabel);
+      return next;
+    });
+  }, [activeMobileGroupLabel]);
 
   useEffect(() => {
     const paths = preloadableRouteKey ? preloadableRouteKey.split('|') : [];
@@ -285,6 +301,18 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const handleNavClick = (path: string) => {
     setPendingPath(path);
     preloadRoute(path);
+  };
+
+  const toggleMobileGroup = (label: string) => {
+    setMobileOpenGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(label)) {
+        next.delete(label);
+      } else {
+        next.add(label);
+      }
+      return next;
+    });
   };
 
   return (
@@ -473,11 +501,32 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               {visibleGroups.map(group => {
                 const GroupIcon = group.icon;
                 const groupActive = group.items.some(item => isNavItemActive(activePathname, item));
-                const showGroupHeader = group.items.length > 1;
+                const isCollapsible = MOBILE_COLLAPSIBLE_GROUPS.has(group.label);
+                const groupExpanded = !isCollapsible || mobileOpenGroups.has(group.label);
+                const showGroupHeader = isCollapsible || group.items.length > 1;
 
                 return (
                   <div key={group.label} className="space-y-1.5">
-                    {showGroupHeader && (
+                    {showGroupHeader && isCollapsible && (
+                      <button
+                        type="button"
+                        onClick={() => toggleMobileGroup(group.label)}
+                        aria-expanded={groupExpanded}
+                        className={cn(
+                          'flex min-h-11 w-full items-center justify-between rounded-lg px-3 py-2 text-sm font-semibold transition-colors touch-target',
+                          groupActive
+                            ? 'bg-red-50/80 text-slate-950'
+                            : 'text-slate-600 hover:bg-red-50/70 hover:text-slate-950'
+                        )}
+                      >
+                        <span className="flex items-center gap-2">
+                          <GroupIcon className={cn('h-4 w-4', groupActive ? 'text-red-600' : 'text-slate-400')} />
+                          {group.label}
+                        </span>
+                        <ChevronDown className={cn('h-4 w-4 text-slate-400 transition-transform', groupExpanded && 'rotate-180')} />
+                      </button>
+                    )}
+                    {showGroupHeader && !isCollapsible && (
                       <div
                         className={cn(
                           'flex items-center gap-2 px-1 text-[11px] font-semibold uppercase tracking-[0.14em]',
@@ -488,7 +537,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                         {group.label}
                       </div>
                     )}
-                    <div className="space-y-1">
+                    {groupExpanded && <div className={cn('space-y-1', showGroupHeader && 'pl-2')}>
                       {group.items.map(item => {
                         const ItemIcon = item.icon;
                         const active = isNavItemActive(activePathname, item);
@@ -516,7 +565,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                           </Link>
                         );
                       })}
-                    </div>
+                    </div>}
                   </div>
                 );
               })}
