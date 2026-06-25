@@ -3,6 +3,7 @@ import { useEffect, type ReactNode } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
+import { preloadRoute } from '@/lib/routePreloaders';
 import {
   formatAccountingMoney,
   hasCreditApplied,
@@ -14,9 +15,10 @@ import {
 } from '@/lib/accounting';
 
 const ACCOUNTING_NAV = [
-  { to: '/accounting', label: 'Dashboard' },
+  { to: '/accounting', label: 'Overview' },
   { to: '/accounting/invoices', label: 'Invoices' },
   { to: '/accounting/paid-invoices', label: 'Paid invoices' },
+  { to: '/accounting/reports', label: 'Reports' },
   { to: '/accounting/vendors', label: 'Vendors' },
   { to: '/accounting/credit-card-payments', label: 'Card payments' },
   { to: '/accounting/personal-bills', label: 'Personal bills' },
@@ -25,22 +27,6 @@ const ACCOUNTING_NAV = [
   { to: '/accounting/catalogs', label: 'Catalogs' },
 ];
 
-const ACCOUNTING_ROUTE_PRELOADERS: Record<string, () => Promise<unknown>> = {
-  '/accounting': () => import('@/pages/accounting/AccountingDashboardPreviewPage'),
-  '/accounting/catalogs': () => import('@/pages/accounting/AccountingCatalogsPage'),
-  '/accounting/credit-card-payments': () => import('@/pages/accounting/AccountingLedgerPages'),
-  '/accounting/imports': () => import('@/pages/accounting/AccountingImportsPage'),
-  '/accounting/invoices': () => import('@/pages/accounting/AccountingInvoicesPage'),
-  '/accounting/paid-invoices': () => import('@/pages/accounting/AccountingLedgerPages'),
-  '/accounting/personal-bills': () => import('@/pages/accounting/AccountingLedgerPages'),
-  '/accounting/truck': () => import('@/pages/accounting/AccountingLedgerPages'),
-  '/accounting/vendors': () => import('@/pages/accounting/AccountingVendorsPage'),
-};
-
-function preloadAccountingRoute(path: string) {
-  void ACCOUNTING_ROUTE_PRELOADERS[path]?.();
-}
-
 export function AccountingTabs() {
   const { pathname } = useLocation();
 
@@ -48,7 +34,7 @@ export function AccountingTabs() {
     const timer = window.setTimeout(() => {
       ACCOUNTING_NAV
         .filter(item => item.to !== pathname)
-        .forEach(item => preloadAccountingRoute(item.to));
+        .forEach(item => preloadRoute(item.to));
     }, 250);
     return () => window.clearTimeout(timer);
   }, [pathname]);
@@ -59,8 +45,9 @@ export function AccountingTabs() {
         <Link
           key={item.to}
           to={item.to}
-          onFocus={() => preloadAccountingRoute(item.to)}
-          onMouseEnter={() => preloadAccountingRoute(item.to)}
+          onFocus={() => preloadRoute(item.to)}
+          onMouseEnter={() => preloadRoute(item.to)}
+          onPointerDown={() => preloadRoute(item.to)}
           className={cn(
             'whitespace-nowrap rounded-md px-3 py-2 text-sm font-medium transition-colors',
             pathname === item.to

@@ -26,8 +26,8 @@ const corsHeaders: Record<string, string> = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
-const SEBASTIAN_ADMIN_AUTH_USER_ID = 'e7bb5b60-b264-49b2-8358-81d0f3c37b09';
-const SEBASTIAN_ADMIN_EMPLOYEE_ID = '77f47458-3aa1-4fdb-a08a-8e7924671ec1';
+const SEBASTIAN_ADMIN_AUTH_USER_ID = '07b541f4-413f-4872-8ccd-0d8ca6128ae1';
+const SEBASTIAN_ADMIN_EMPLOYEE_ID = '0b289853-ccf2-41be-b773-884283169d8b';
 const PRICE_ADMIN_ACTIONS = new Set(['sync', 'changes', 'catalog-missing', 'duplicates']);
 
 // Reflect whatever headers the browser asks for in the preflight, so an extra

@@ -383,6 +383,34 @@
   }
 }
 
+@media (min-width: 900px) and (max-width: 1279px) and (orientation: landscape) {
+  .receive-main {
+    padding-bottom: max(1rem, env(safe-area-inset-bottom)) !important;
+  }
+
+  .receive-page {
+    padding-bottom: calc(1rem + env(safe-area-inset-bottom)) !important;
+  }
+
+  .receive-save-bar {
+    position: static !important;
+    bottom: auto !important;
+    margin-top: 0.75rem;
+    padding: 0.75rem;
+    border-radius: 1rem;
+    box-shadow: 0 16px 40px rgb(15 23 42 / 0.12);
+  }
+
+  .receive-save-summary {
+    min-width: 220px !important;
+    padding-block: 0.625rem !important;
+  }
+
+  .receive-save-action {
+    height: 2.75rem !important;
+  }
+}
+
 @media (min-width: 700px) and (max-width: 860px) and (orientation: portrait) {
   .receive-batch-time {
     grid-template-columns: minmax(0, 1fr) 118px !important;

@@ -10,8 +10,8 @@ export type AccountingPermission =
 
 export const EMPLOYEE_ROLES: EmployeeRole[] = ['admin', 'accounting', 'warehouse', 'store'];
 export const APP_MODULES: AppModule[] = ['receiving', 'expected_boxes', 'prices', 'audit', 'accounting', 'settings'];
-export const SEBASTIAN_ADMIN_AUTH_USER_ID = 'e7bb5b60-b264-49b2-8358-81d0f3c37b09';
-export const SEBASTIAN_ADMIN_EMPLOYEE_ID = '77f47458-3aa1-4fdb-a08a-8e7924671ec1';
+export const SEBASTIAN_ADMIN_AUTH_USER_ID = '07b541f4-413f-4872-8ccd-0d8ca6128ae1';
+export const SEBASTIAN_ADMIN_EMPLOYEE_ID = '0b289853-ccf2-41be-b773-884283169d8b';
 export const LOCAL_SEBASTIAN_ADMIN_EMPLOYEE_ID = '00000000-0000-0000-0000-000000000101';
 export const ACCOUNTING_PERMISSIONS: AccountingPermission[] = [
   'accounting.view',

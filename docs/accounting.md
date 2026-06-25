@@ -17,6 +17,7 @@ All Zentro Solutions includes an Accounting / Accounts Payable module for Modern
 - `/accounting`
 - `/accounting/invoices`
 - `/accounting/paid-invoices`
+- `/accounting/reports`
 - `/accounting/vendors`
 - `/accounting/credit-card-payments`
 - `/accounting/personal-bills`
@@ -147,6 +148,18 @@ The report includes:
 - Payment entry supports multiple invoice numbers through an Add/Remove list, not comma parsing.
 - Vendor profiles can store address, contact, phone, email, account number, default payment method, and notes.
 - Selecting a vendor in payment entry auto-fills saved vendor account information.
+
+## Reports
+
+The `/accounting/reports` page includes a custom vendor payment report for pending invoices by:
+
+- due date range
+- date selection from the calendar
+- invoice amount greater than or less than a user-entered threshold
+- vendor filter
+- optional invoices due before the selected range start
+
+The report keeps its printable template hidden during normal use. The `Print report` action prints that template without the surrounding app navigation or filters. To review the template on screen while tuning the layout, open `/accounting/reports?templatePreview=1#accounting-vendor-report-print-template`.
 
 ## Local Mock Mode
 

@@ -6,6 +6,7 @@ import {
 } from '@/lib/permissions';
 import {
   addDaysToIsoDate,
+  buildVendorPaymentReport,
   finalAmountToPay,
   findTruckDuplicateGroups,
   hasCreditApplied,
@@ -122,6 +123,130 @@ describe('accounting domain helpers', () => {
     expect(rows[0].dueNext15Count).toBe(1);
     expect(rows[0].dueNext15Amount).toBe('90.00');
     expect(rows[0].totalAmount).toBe('290.00');
+  });
+
+  it('builds a vendor payment report by due window and minimum invoice amount', () => {
+    const today = new Date('2026-01-10T12:00:00.000Z');
+    const rows = buildVendorPaymentReport([
+      invoice({
+        accounting_vendors: { id: 'vendor-a', name: 'Vendor A', normalized_name: 'vendor a' },
+        amount: '1500.00',
+        due_date: '2026-01-18',
+        invoice_number: 'INV-100',
+        vendor_id: 'vendor-a',
+      }),
+      invoice({
+        accounting_vendors: { id: 'vendor-a', name: 'Vendor A', normalized_name: 'vendor a' },
+        amount: '999.99',
+        due_date: '2026-01-16',
+        invoice_number: 'INV-LOW',
+        vendor_id: 'vendor-a',
+      }),
+      invoice({
+        accounting_vendors: { id: 'vendor-a', name: 'Vendor A', normalized_name: 'vendor a' },
+        amount: '1000.00',
+        due_date: '2026-01-17',
+        invoice_number: 'INV-EXACT',
+        vendor_id: 'vendor-a',
+      }),
+      invoice({
+        accounting_vendors: { id: 'vendor-b', name: 'Vendor B', normalized_name: 'vendor b' },
+        amount: '2200.00',
+        due_date: '2026-01-25',
+        invoice_number: 'INV-OUTSIDE',
+        vendor_id: 'vendor-b',
+      }),
+      invoice({
+        accounting_vendors: { id: 'vendor-c', name: 'Vendor C', normalized_name: 'vendor c' },
+        amount: '1800.00',
+        due_date: '2026-01-15',
+        invoice_number: 'INV-PAID',
+        paid: true,
+        status: 'paid',
+        vendor_id: 'vendor-c',
+      }),
+    ], { dueWithinDays: 8, minimumInvoiceAmount: '1000.00', today });
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0].vendorName).toBe('Vendor A');
+    expect(rows[0].invoiceCount).toBe(1);
+    expect(rows[0].totalAmount).toBe('1500.00');
+    expect(rows[0].invoices[0].daysUntilDue).toBe(8);
+  });
+
+  it('builds a vendor payment report by selected date and less-than amount comparison', () => {
+    const today = new Date('2026-01-10T12:00:00.000Z');
+    const rows = buildVendorPaymentReport([
+      invoice({
+        accounting_vendors: { id: 'vendor-a', name: 'Vendor A', normalized_name: 'vendor a' },
+        amount: '750.00',
+        due_date: '2026-01-20',
+        invoice_number: 'INV-UNDER',
+        vendor_id: 'vendor-a',
+      }),
+      invoice({
+        accounting_vendors: { id: 'vendor-a', name: 'Vendor A', normalized_name: 'vendor a' },
+        amount: '1000.00',
+        due_date: '2026-01-21',
+        invoice_number: 'INV-EQUAL',
+        vendor_id: 'vendor-a',
+      }),
+      invoice({
+        accounting_vendors: { id: 'vendor-b', name: 'Vendor B', normalized_name: 'vendor b' },
+        amount: '500.00',
+        due_date: '2026-02-01',
+        invoice_number: 'INV-AFTER',
+        vendor_id: 'vendor-b',
+      }),
+    ], {
+      amountComparison: 'less_than',
+      amountThreshold: '1000.00',
+      dueByDate: '2026-01-31',
+      dueWithinDays: 30,
+      today,
+    });
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0].vendorName).toBe('Vendor A');
+    expect(rows[0].invoiceCount).toBe(1);
+    expect(rows[0].invoices[0].invoiceNumber).toBe('INV-UNDER');
+  });
+
+  it('builds a vendor payment report inside an explicit due date range', () => {
+    const today = new Date('2026-01-10T12:00:00.000Z');
+    const rows = buildVendorPaymentReport([
+      invoice({
+        accounting_vendors: { id: 'vendor-a', name: 'Vendor A', normalized_name: 'vendor a' },
+        amount: '1500.00',
+        due_date: '2026-01-12',
+        invoice_number: 'INV-BEFORE',
+        vendor_id: 'vendor-a',
+      }),
+      invoice({
+        accounting_vendors: { id: 'vendor-a', name: 'Vendor A', normalized_name: 'vendor a' },
+        amount: '1800.00',
+        due_date: '2026-01-20',
+        invoice_number: 'INV-IN-RANGE',
+        vendor_id: 'vendor-a',
+      }),
+      invoice({
+        accounting_vendors: { id: 'vendor-b', name: 'Vendor B', normalized_name: 'vendor b' },
+        amount: '2100.00',
+        due_date: '2026-02-10',
+        invoice_number: 'INV-AFTER',
+        vendor_id: 'vendor-b',
+      }),
+    ], {
+      amountComparison: 'greater_than',
+      amountThreshold: '1000.00',
+      dueFromDate: '2026-01-15',
+      dueToDate: '2026-01-31',
+      today,
+    });
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0].invoiceCount).toBe(1);
+    expect(rows[0].invoices[0].invoiceNumber).toBe('INV-IN-RANGE');
   });
 
   it('creates stable source row keys and hashes', () => {

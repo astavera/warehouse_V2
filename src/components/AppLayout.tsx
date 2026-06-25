@@ -1,31 +1,256 @@
 import { Link, useLocation } from 'react-router-dom';
-import { Package, ClipboardList, Truck, Users, BarChart3, Menu, X, LogOut, PackageSearch, Cloud, RefreshCw, WifiOff, Tag, SearchCheck, Settings, Landmark } from 'lucide-react';
-import { useState } from 'react';
+import {
+  Package,
+  ClipboardList,
+  Truck,
+  Users,
+  BarChart3,
+  Menu,
+  X,
+  LogOut,
+  PackageSearch,
+  Cloud,
+  RefreshCw,
+  WifiOff,
+  Tag,
+  SearchCheck,
+  Settings,
+  Landmark,
+  ReceiptText,
+  CreditCard,
+  Upload,
+  Database,
+  type LucideIcon,
+} from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { useOfflineStatus } from '@/hooks/useOfflineStatus';
 import { canAccessModule, type AppModule } from '@/lib/permissions';
+import { preloadRoute, preloadRoutes } from '@/lib/routePreloaders';
 
-const NAV = [
-  { to: '/', label: 'Dashboard', icon: BarChart3, module: 'receiving' },
-  { to: '/receive', label: 'Receive', icon: Package, module: 'receiving' },
-  { to: '/expected-boxes', label: 'Expected Boxes', icon: PackageSearch, module: 'expected_boxes' },
-  { to: '/history', label: 'History', icon: ClipboardList, module: 'receiving' },
-  { to: '/suppliers', label: 'Suppliers', icon: Users, module: 'receiving' },
-  { to: '/carriers', label: 'Carriers', icon: Truck, module: 'receiving' },
-  { to: '/prices', label: 'Prices', icon: Tag, module: 'prices' },
-  { to: '/inventory-audit', label: 'Audit', icon: SearchCheck, module: 'audit' },
-  { to: '/accounting', label: 'Accounting', icon: Landmark, module: 'accounting' },
-  { to: '/settings', label: 'Settings', icon: Settings, module: 'settings' },
+type AppNavItem = {
+  to: string;
+  label: string;
+  description: string;
+  icon: LucideIcon;
+  module: AppModule;
+  exact?: boolean;
+};
+
+const APP_NAV_GROUPS = [
+  {
+    label: 'Dashboard',
+    icon: BarChart3,
+    items: [
+      {
+        to: '/',
+        label: 'Dashboard',
+        description: 'Main warehouse snapshot',
+        icon: BarChart3,
+        module: 'receiving',
+        exact: true,
+      },
+    ],
+  },
+  {
+    label: 'Warehouse',
+    icon: Package,
+    items: [
+      {
+        to: '/receive',
+        label: 'Receiving',
+        description: 'Scan and receive boxes',
+        icon: Package,
+        module: 'receiving',
+      },
+      {
+        to: '/expected-boxes',
+        label: 'Expected Boxes',
+        description: 'Inbound packages and WH status',
+        icon: PackageSearch,
+        module: 'expected_boxes',
+      },
+      {
+        to: '/history',
+        label: 'History',
+        description: 'Received activity log',
+        icon: ClipboardList,
+        module: 'receiving',
+      },
+      {
+        to: '/suppliers',
+        label: 'Suppliers',
+        description: 'Supplier directory',
+        icon: Users,
+        module: 'receiving',
+      },
+      {
+        to: '/carriers',
+        label: 'Carriers',
+        description: 'Carrier contacts and delivery notes',
+        icon: Truck,
+        module: 'receiving',
+      },
+    ],
+  },
+  {
+    label: 'Control',
+    icon: SearchCheck,
+    items: [
+      {
+        to: '/prices',
+        label: 'Prices',
+        description: 'Price change queue',
+        icon: Tag,
+        module: 'prices',
+      },
+      {
+        to: '/inventory-audit',
+        label: 'Audit',
+        description: 'Cycle counts and mismatch review',
+        icon: SearchCheck,
+        module: 'audit',
+      },
+    ],
+  },
+  {
+    label: 'Accounting',
+    icon: Landmark,
+    items: [
+      {
+        to: '/accounting',
+        label: 'Overview',
+        description: 'Payables and warehouse invoice coverage',
+        icon: Landmark,
+        module: 'accounting',
+        exact: true,
+      },
+      {
+        to: '/accounting/vendors',
+        label: 'Vendors',
+        description: 'Terms and mailing setup',
+        icon: Users,
+        module: 'accounting',
+      },
+      {
+        to: '/accounting/invoices',
+        label: 'Invoices',
+        description: 'Create, split checks, and review invoices',
+        icon: ReceiptText,
+        module: 'accounting',
+      },
+      {
+        to: '/accounting/paid-invoices',
+        label: 'Paid invoices',
+        description: 'Check payment ledger',
+        icon: ClipboardList,
+        module: 'accounting',
+      },
+      {
+        to: '/accounting/credit-card-payments',
+        label: 'Credit cards',
+        description: 'Card payments and accounts',
+        icon: CreditCard,
+        module: 'accounting',
+      },
+      {
+        to: '/accounting/personal-bills',
+        label: 'Personal bills',
+        description: 'Personal bill payment tracking',
+        icon: ReceiptText,
+        module: 'accounting',
+      },
+      {
+        to: '/accounting/truck',
+        label: 'Truck',
+        description: 'Truck expenses and violations',
+        icon: Truck,
+        module: 'accounting',
+      },
+      {
+        to: '/accounting/imports',
+        label: 'Imports',
+        description: 'Workbook import history',
+        icon: Upload,
+        module: 'accounting',
+      },
+      {
+        to: '/accounting/catalogs',
+        label: 'Catalogs',
+        description: 'Stores, categories, accounts',
+        icon: Database,
+        module: 'accounting',
+      },
+    ],
+  },
+  {
+    label: 'Settings',
+    icon: Settings,
+    items: [
+      {
+        to: '/settings',
+        label: 'Settings',
+        description: 'Users, permissions, and mappings',
+        icon: Settings,
+        module: 'settings',
+      },
+    ],
+  },
 ] as const;
+
+const APP_NAV_ITEMS = APP_NAV_GROUPS.flatMap(group => group.items);
+
+function isNavItemActive(pathname: string, item: AppNavItem) {
+  if (item.exact || item.to === '/') return pathname === item.to;
+  return pathname === item.to || pathname.startsWith(`${item.to}/`);
+}
+
+function AppDropdownItem({
+  active,
+  item,
+  onNavigate,
+}: {
+  active: boolean;
+  item: AppNavItem;
+  onNavigate: (path: string) => void;
+}) {
+  return (
+    <Link
+      to={item.to}
+      onClick={() => onNavigate(item.to)}
+      onFocus={() => preloadRoute(item.to)}
+      onMouseEnter={() => preloadRoute(item.to)}
+      onPointerDown={() => preloadRoute(item.to)}
+      className={cn(
+        'flex h-9 items-center rounded-md px-3 text-sm font-semibold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus:bg-muted focus:text-foreground focus:outline-none',
+        active && 'bg-foreground text-background hover:bg-foreground hover:text-background focus:bg-foreground focus:text-background'
+      )}
+    >
+      {item.label}
+    </Link>
+  );
+}
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { pathname } = useLocation();
   const [open, setOpen] = useState(false);
+  const [pendingPath, setPendingPath] = useState<string | null>(null);
   const { user, signOut } = useAuth();
   const { isLocalDemo, isOffline, pendingCount, syncing, syncNow } = useOfflineStatus();
-  const visibleNav = NAV.filter(item => canAccessModule(user, item.module as AppModule));
+  const visibleGroups = APP_NAV_GROUPS
+    .map(group => ({
+      ...group,
+      items: group.items.filter(item => canAccessModule(user, item.module)),
+    }))
+    .filter(group => group.items.length > 0);
+  const visibleNav = APP_NAV_ITEMS.filter(item => canAccessModule(user, item.module));
+  const preloadableRouteKey = visibleNav.map(item => item.to).join('|');
+  const dashboardNav = visibleNav.find(item => item.to === '/');
+  const desktopGroups = visibleGroups.filter(group => group.label !== 'Settings' && group.label !== 'Dashboard');
+  const canOpenSettings = canAccessModule(user, 'settings');
+  const activePathname = pendingPath ?? pathname;
   const statusLabel = isLocalDemo ? 'Local' : isOffline ? 'Offline' : pendingCount > 0 ? `Pending ${pendingCount}` : '';
   const StatusIcon = isOffline ? WifiOff : pendingCount > 0 ? RefreshCw : Cloud;
   const showDataStatus = Boolean(statusLabel);
@@ -36,30 +261,119 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       ? `${pendingCount} offline change${pendingCount === 1 ? '' : 's'} ready to sync.`
       : 'Syncing offline changes...';
 
+  useEffect(() => {
+    setPendingPath(null);
+  }, [pathname]);
+
+  useEffect(() => {
+    const paths = preloadableRouteKey ? preloadableRouteKey.split('|') : [];
+    if (canOpenSettings) paths.push('/settings');
+    let cancelPreloads: (() => void) | undefined;
+    const timer = window.setTimeout(() => {
+      cancelPreloads = preloadRoutes(paths, 90);
+    }, 350);
+    return () => {
+      window.clearTimeout(timer);
+      cancelPreloads?.();
+    };
+  }, [canOpenSettings, preloadableRouteKey]);
+
+  const handleNavIntent = (path: string) => {
+    preloadRoute(path);
+  };
+
+  const handleNavClick = (path: string) => {
+    setPendingPath(path);
+    preloadRoute(path);
+  };
+
   return (
     <div className="app-surface min-h-screen flex flex-col">
       <header className="sticky top-0 z-50 border-b border-border/70 bg-white/90 px-4 backdrop-blur-xl">
-        <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-2 py-2">
-          <div className="flex h-12 items-center justify-between gap-3">
-            <div className="flex min-w-0 items-center gap-3">
-              <button
-                className="lg:hidden touch-target flex items-center justify-center rounded-lg hover:bg-muted"
-                onClick={() => setOpen(!open)}
-                aria-label={open ? 'Close navigation menu' : 'Open navigation menu'}
-              >
-                {open ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-              </button>
-              <Link to="/" className="flex min-w-0 items-center gap-3 font-semibold">
-                <span className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border/70 bg-white shadow-sm">
-                  <img src="/all-zentro-logo-square.png" alt="" className="h-9 w-9 object-contain" />
-                </span>
-                <span className="min-w-0">
-                  <span className="block truncate text-base font-semibold text-foreground">All Zentro Solutions</span>
-                </span>
-              </Link>
-            </div>
+        <div className="mx-auto grid min-h-16 w-full max-w-[1600px] grid-cols-[1fr_auto] items-center gap-3 py-2 lg:grid-cols-[minmax(230px,1fr)_auto_minmax(270px,1fr)]">
+          <div className="flex min-w-0 items-center gap-3">
+            <button
+              className="lg:hidden touch-target flex items-center justify-center rounded-lg hover:bg-muted"
+              onClick={() => setOpen(!open)}
+              aria-label={open ? 'Close navigation menu' : 'Open navigation menu'}
+            >
+              {open ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+            </button>
+            <Link
+              to="/"
+              onClick={() => handleNavClick('/')}
+              onFocus={() => handleNavIntent('/')}
+              onMouseEnter={() => handleNavIntent('/')}
+              onPointerDown={() => handleNavIntent('/')}
+              className="flex min-w-0 items-center gap-2.5 font-semibold transition-opacity hover:opacity-85"
+            >
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden">
+                <img src="/all-zentro-logo-square.png" alt="" className="h-9 w-9 object-contain" />
+              </span>
+              <span className="block min-w-0 truncate text-base font-extrabold leading-tight tracking-tight text-slate-950">
+                All Zentro Solutions
+              </span>
+            </Link>
+          </div>
 
-            <div className="hidden items-center gap-3 lg:flex">
+          <div className="hidden min-w-0 justify-center lg:flex">
+            <nav className="flex h-auto max-w-full flex-wrap justify-center gap-1 rounded-full border border-border/80 bg-white/95 p-1 shadow-[0_10px_30px_rgba(15,23,42,0.06)]" aria-label="Main navigation">
+              {dashboardNav && (
+                <Link
+                  to={dashboardNav.to}
+                  onClick={() => handleNavClick(dashboardNav.to)}
+                  onFocus={() => handleNavIntent(dashboardNav.to)}
+                  onMouseEnter={() => handleNavIntent(dashboardNav.to)}
+                  onPointerDown={() => handleNavIntent(dashboardNav.to)}
+                  className={cn(
+                    'inline-flex h-9 items-center rounded-full px-4 text-sm font-semibold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground',
+                    isNavItemActive(activePathname, dashboardNav) && 'bg-foreground text-background hover:bg-foreground hover:text-background'
+                  )}
+                >
+                  Dashboard
+                </Link>
+              )}
+              {desktopGroups.map(group => {
+                const groupActive = group.items.some(item => isNavItemActive(activePathname, item));
+                const groupLanding = group.items[0];
+
+                return (
+                  <div key={group.label} className="group/nav relative">
+                    <Link
+                      to={groupLanding.to}
+                      onClick={() => handleNavClick(groupLanding.to)}
+                      onFocus={() => handleNavIntent(groupLanding.to)}
+                      onMouseEnter={() => handleNavIntent(groupLanding.to)}
+                      onPointerDown={() => handleNavIntent(groupLanding.to)}
+                      className={cn(
+                        'inline-flex h-9 items-center rounded-full px-4 text-sm font-semibold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus:bg-muted focus:text-foreground focus:outline-none',
+                        groupActive && 'bg-foreground text-background hover:bg-foreground hover:text-background focus:bg-foreground focus:text-background'
+                      )}
+                    >
+                      {group.label}
+                    </Link>
+                    {group.items.length > 1 && (
+                      <div className="invisible absolute left-1/2 top-full z-50 min-w-[180px] -translate-x-1/2 pt-2 opacity-0 transition group-hover/nav:visible group-hover/nav:opacity-100 group-focus-within/nav:visible group-focus-within/nav:opacity-100">
+                        <div className="rounded-lg border border-border/70 bg-white p-1.5 shadow-xl">
+                          {group.items.map(item => (
+                            <AppDropdownItem
+                              key={`${group.label}-${item.to}`}
+                              item={item}
+                              active={isNavItemActive(activePathname, item)}
+                              onNavigate={handleNavClick}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </nav>
+          </div>
+
+          <div className="flex min-w-0 justify-end">
+            <div className="hidden items-center gap-2 lg:flex">
               {showDataStatus && (
                 <button
                   type="button"
@@ -78,33 +392,32 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                   {statusLabel}
                 </button>
               )}
-              <div className="rounded-lg border border-border/70 bg-white px-3 py-2 text-sm">
-                <span className="text-muted-foreground">Welcome, </span>
+              <div className="max-w-[150px] truncate text-sm">
                 <span className="font-medium text-foreground">{user?.name}</span>
               </div>
+              {canOpenSettings && (
+                <Link
+                  to="/settings"
+                  onClick={() => handleNavClick('/settings')}
+                  onFocus={() => handleNavIntent('/settings')}
+                  onMouseEnter={() => handleNavIntent('/settings')}
+                  onPointerDown={() => handleNavIntent('/settings')}
+                  className={cn(
+                    'inline-flex h-10 items-center gap-1.5 rounded-lg border border-border/70 bg-white px-3 text-sm font-medium shadow-sm transition-colors',
+                    activePathname === '/settings'
+                      ? 'bg-foreground text-background'
+                      : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                  )}
+                >
+                  <Settings className="h-4 w-4" />
+                  Settings
+                </Link>
+              )}
               <Button variant="outline" size="sm" onClick={signOut} className="h-10 gap-1.5 rounded-lg bg-white">
                 <LogOut className="w-4 h-4" /> Sign out
               </Button>
             </div>
           </div>
-
-          <nav className="hidden min-w-0 items-center gap-1 overflow-x-auto rounded-lg border border-border/70 bg-muted/40 p-1 lg:flex">
-            {visibleNav.map(n => (
-              <Link
-                key={n.to}
-                to={n.to}
-                className={cn(
-                  'flex shrink-0 items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors',
-                  pathname === n.to
-                    ? 'bg-white text-foreground shadow-sm'
-                    : 'text-muted-foreground hover:bg-muted hover:text-foreground'
-                )}
-              >
-                <n.icon className="w-4 h-4" />
-                {n.label}
-              </Link>
-            ))}
-          </nav>
         </div>
       </header>
 
@@ -160,15 +473,20 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               <Link
                 key={n.to}
                 to={n.to}
-                onClick={() => setOpen(false)}
+                onClick={() => {
+                  handleNavClick(n.to);
+                  setOpen(false);
+                }}
+                onFocus={() => handleNavIntent(n.to)}
+                onMouseEnter={() => handleNavIntent(n.to)}
+                onPointerDown={() => handleNavIntent(n.to)}
                 className={cn(
-                  'flex items-center gap-3 px-4 py-3 rounded-lg text-base font-medium transition-colors touch-target',
-                  pathname === n.to
+                  'flex items-center px-4 py-3 rounded-lg text-base font-medium transition-colors touch-target',
+                  activePathname === n.to
                     ? 'bg-primary text-primary-foreground'
                     : 'text-muted-foreground hover:bg-muted'
                 )}
               >
-                <n.icon className="w-5 h-5" />
                 {n.label}
               </Link>
             ))}

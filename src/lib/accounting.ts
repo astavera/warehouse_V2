@@ -296,6 +296,37 @@ export type VendorBalanceSummary = {
   vendorName: string;
 };
 
+export type VendorPaymentReportInvoice = {
+  amount: string;
+  daysUntilDue: number;
+  dueDate: string | null;
+  id: string;
+  invoiceNumber: string | null;
+  storeName: string | null;
+};
+
+export type VendorPaymentReportRow = {
+  earliestDueDate: string | null;
+  earliestDueInDays: number;
+  invoiceCount: number;
+  invoices: VendorPaymentReportInvoice[];
+  totalAmount: string;
+  vendorId: string | null;
+  vendorName: string;
+};
+
+export type VendorPaymentReportOptions = {
+  amountComparison?: 'greater_than' | 'less_than';
+  amountThreshold?: string | number | null;
+  dueByDate?: string | null;
+  dueFromDate?: string | null;
+  dueToDate?: string | null;
+  dueWithinDays?: number | string;
+  includeOverdue?: boolean;
+  minimumInvoiceAmount?: string | number | null;
+  today?: Date;
+};
+
 const MONEY_SCALE = 100n;
 
 export function normalizeText(value: unknown) {
@@ -565,4 +596,101 @@ export function summarizeVendorBalances(invoices: AccountingInvoice[], today = n
       rows.set(key, current);
     });
   return [...rows.values()].sort((a, b) => Number(b.totalAmount) - Number(a.totalAmount));
+}
+
+export function buildVendorPaymentReport(
+  invoices: AccountingInvoice[],
+  {
+    amountComparison = 'greater_than',
+    amountThreshold,
+    dueByDate,
+    dueFromDate,
+    dueToDate,
+    dueWithinDays,
+    includeOverdue = false,
+    minimumInvoiceAmount = '1000.00',
+    today = new Date(),
+  }: VendorPaymentReportOptions
+): VendorPaymentReportRow[] {
+  const parsedWindowDays = dueByDate ? daysUntilDue(dueByDate, today) : Math.floor(Number(dueWithinDays ?? 30));
+  const windowDays = Number.isFinite(parsedWindowDays) ? Math.max(0, parsedWindowDays) : 30;
+  let rangeStartDate = toIsoDate(dueFromDate || null) || (includeOverdue ? null : todayKey(today));
+  let rangeEndDate = toIsoDate(dueToDate || dueByDate || null) || addDaysToIsoDate(todayKey(today), windowDays);
+  if (rangeStartDate && rangeEndDate && rangeStartDate > rangeEndDate) {
+    const originalStart = rangeStartDate;
+    rangeStartDate = rangeEndDate;
+    rangeEndDate = originalStart;
+  }
+  if (includeOverdue) rangeStartDate = null;
+  const thresholdCents = decimalStringToCents(amountThreshold ?? minimumInvoiceAmount);
+  const rows = new Map<string, VendorPaymentReportRow>();
+
+  invoices.forEach(invoice => {
+    if (isInvoicePaid(invoice)) return;
+    const days = daysUntilDue(invoice.due_date, today);
+    const dueDate = toIsoDate(invoice.due_date);
+    if (days == null || !dueDate) return;
+    if (rangeStartDate && dueDate < rangeStartDate) return;
+    if (rangeEndDate && dueDate > rangeEndDate) return;
+
+    const amount = invoiceFinalAmount(invoice);
+    const amountCents = decimalStringToCents(amount);
+    const matchesAmount = amountComparison === 'less_than'
+      ? amountCents < thresholdCents
+      : amountCents > thresholdCents;
+    if (!matchesAmount) return;
+
+    const vendorId = invoice.vendor_id || null;
+    const vendorName = invoice.accounting_vendors?.name || 'No vendor';
+    const key = vendorId || normalizeText(vendorName) || 'unknown';
+    const current = rows.get(key) || {
+      earliestDueDate: invoice.due_date,
+      earliestDueInDays: days,
+      invoiceCount: 0,
+      invoices: [],
+      totalAmount: '0.00',
+      vendorId,
+      vendorName,
+    };
+
+    current.invoiceCount += 1;
+    current.totalAmount = addMoney([current.totalAmount, amount]);
+    current.invoices.push({
+      amount,
+      daysUntilDue: days,
+      dueDate: invoice.due_date,
+      id: invoice.id,
+      invoiceNumber: invoice.invoice_number,
+      storeName: invoice.accounting_stores?.name || null,
+    });
+
+    if (
+      days < current.earliestDueInDays ||
+      (days === current.earliestDueInDays && (invoice.due_date || '') < (current.earliestDueDate || ''))
+    ) {
+      current.earliestDueDate = invoice.due_date;
+      current.earliestDueInDays = days;
+    }
+
+    rows.set(key, current);
+  });
+
+  return [...rows.values()]
+    .map(row => ({
+      ...row,
+      invoices: [...row.invoices].sort((left, right) => {
+        if (left.daysUntilDue !== right.daysUntilDue) return left.daysUntilDue - right.daysUntilDue;
+        const leftAmount = decimalStringToCents(left.amount);
+        const rightAmount = decimalStringToCents(right.amount);
+        if (leftAmount !== rightAmount) return leftAmount > rightAmount ? -1 : 1;
+        return (left.invoiceNumber || '').localeCompare(right.invoiceNumber || '');
+      }),
+    }))
+    .sort((left, right) => {
+      if (left.earliestDueInDays !== right.earliestDueInDays) return left.earliestDueInDays - right.earliestDueInDays;
+      const leftAmount = decimalStringToCents(left.totalAmount);
+      const rightAmount = decimalStringToCents(right.totalAmount);
+      if (leftAmount !== rightAmount) return leftAmount > rightAmount ? -1 : 1;
+      return left.vendorName.localeCompare(right.vendorName);
+    });
 }

@@ -20,8 +20,8 @@ const PERMISSIONS = new Set([
   'accounting.reports',
   'accounting.catalogs',
 ]);
-const SEBASTIAN_ADMIN_AUTH_USER_ID = 'e7bb5b60-b264-49b2-8358-81d0f3c37b09';
-const SEBASTIAN_ADMIN_EMPLOYEE_ID = '77f47458-3aa1-4fdb-a08a-8e7924671ec1';
+const SEBASTIAN_ADMIN_AUTH_USER_ID = '07b541f4-413f-4872-8ccd-0d8ca6128ae1';
+const SEBASTIAN_ADMIN_EMPLOYEE_ID = '0b289853-ccf2-41be-b773-884283169d8b';
 
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {

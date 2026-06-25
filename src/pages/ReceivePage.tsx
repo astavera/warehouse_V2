@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Textarea } from '@/components/ui/textarea';
 import { CalendarDays, AlertTriangle, Camera, CheckCheck, CheckCircle2, Copy, History, PackageCheck, Plus, RotateCcw, Save, Trash2 } from 'lucide-react';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Calendar as CalendarPicker } from '@/components/ui/calendar';
@@ -127,6 +128,7 @@ export default function ReceivePage() {
   const [receivedDate, setReceivedDate] = useState(date);
   const [receivedTime, setReceivedTime] = useState(time);
   const [batchNotes, setBatchNotes] = useState('');
+  const [notesFocused, setNotesFocused] = useState(false);
   const [items, setItems] = useState<LineItem[]>([emptyItem()]);
   const [saving, setSaving] = useState(false);
   const [openDetails, setOpenDetails] = useState<Set<string>>(new Set());
@@ -397,7 +399,7 @@ export default function ReceivePage() {
           <div className="rounded-xl border border-border/70 bg-white/96 p-3 shadow-[0_14px_42px_rgba(15,23,42,0.05)]">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
               <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-sm">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-slate-700/50 bg-gradient-to-br from-slate-900 to-slate-950 text-white shadow-[0_10px_24px_rgba(15,23,42,0.22)]">
                   <PackageCheck className="h-5 w-5" />
                 </div>
                 <div className="min-w-0">
@@ -452,7 +454,7 @@ export default function ReceivePage() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 gap-3 portrait:gap-2.5 md:grid-cols-[minmax(0,1fr)_250px] xl:grid-cols-1">
+        <div className="grid grid-cols-1 gap-3 portrait:gap-2.5 md:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-1">
           <div className="grid min-w-0 grid-cols-1 gap-3 xl:grid-cols-[minmax(0,1fr)_360px] portrait:gap-2.5">
             <div className="space-y-1.5">
               <div className="flex items-center justify-between gap-3">
@@ -482,26 +484,46 @@ export default function ReceivePage() {
               </div>
             </div>
 
-            <div className="receive-batch-time mr-auto grid w-full max-w-[400px] grid-cols-[minmax(0,1fr)_128px] gap-2 rounded-lg border border-border/60 bg-background p-2 sm:grid-cols-[minmax(0,1fr)_128px] xl:max-w-none portrait:max-w-[400px]">
-              <div className="receive-date-field space-y-1">
-                <Label className="text-xs font-semibold text-muted-foreground">Date</Label>
+            <div className="receive-batch-time mr-auto grid w-full max-w-[460px] grid-cols-[minmax(0,1fr)_128px] gap-2 rounded-xl border border-border/70 bg-gradient-to-br from-slate-50 via-white to-primary/5 p-2.5 shadow-inner sm:grid-cols-[minmax(0,1fr)_128px] xl:max-w-none portrait:max-w-[460px]">
+              <div className="receive-date-field min-w-0">
+                <Label className="sr-only">Date</Label>
                 <Popover open={datePickerOpen} onOpenChange={setDatePickerOpen}>
                   <PopoverTrigger asChild>
                     <Button
                       type="button"
                       variant="outline"
-                      className="h-10 w-full justify-start gap-2 rounded-lg bg-white px-3 text-left font-medium shadow-none"
+                      className="h-[52px] w-full justify-start rounded-lg border-border/70 bg-white px-3 text-left shadow-sm hover:bg-white"
                     >
-                      <CalendarDays className="h-4 w-4 text-primary" />
-                      <span className="truncate">
-                        {selectedReceivedDate ? format(selectedReceivedDate, 'MMM d, yyyy') : 'Select date'}
+                      <span className="min-w-0">
+                        <span className="block text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Date</span>
+                        <span className="mt-0.5 flex min-w-0 items-center gap-2 text-sm font-semibold text-foreground">
+                          <CalendarDays className="h-4 w-4 shrink-0 text-primary" />
+                          <span className="truncate">
+                            {selectedReceivedDate ? format(selectedReceivedDate, 'MMM d, yyyy') : 'Select date'}
+                          </span>
+                        </span>
                       </span>
                     </Button>
                   </PopoverTrigger>
-                  <PopoverContent align="start" className="w-auto rounded-xl p-2">
+                  <PopoverContent
+                    align="start"
+                    side="top"
+                    sideOffset={8}
+                    className="w-auto overflow-y-auto rounded-xl p-1.5"
+                    style={{ maxHeight: 'calc(var(--radix-popover-content-available-height) - 8px)' }}
+                  >
                     <CalendarPicker
                       mode="single"
                       selected={selectedReceivedDate}
+                      className="p-2"
+                      classNames={{
+                        month: 'space-y-2',
+                        caption: 'flex justify-center pt-0 relative items-center',
+                        row: 'flex w-full mt-1',
+                        head_cell: 'text-muted-foreground rounded-md w-8 font-normal text-[0.72rem]',
+                        cell: 'h-8 w-8 text-center text-sm p-0 relative [&:has([aria-selected].day-range-end)]:rounded-r-md [&:has([aria-selected].day-outside)]:bg-accent/50 [&:has([aria-selected])]:bg-accent first:[&:has([aria-selected])]:rounded-l-md last:[&:has([aria-selected])]:rounded-r-md focus-within:relative focus-within:z-20',
+                        day: `${buttonVariants({ variant: 'ghost' })} h-8 w-8 p-0 font-normal aria-selected:opacity-100`,
+                      }}
                       onSelect={selectedDate => {
                         if (!selectedDate) return;
                         setReceivedDate(formatLocalDate(selectedDate));
@@ -509,7 +531,7 @@ export default function ReceivePage() {
                       }}
                       initialFocus
                     />
-                    <div className="border-t px-2 pb-2 pt-2">
+                    <div className="border-t px-1.5 pb-1.5 pt-1.5">
                       <Button
                         type="button"
                         variant="ghost"
@@ -526,17 +548,36 @@ export default function ReceivePage() {
                   </PopoverContent>
                 </Popover>
               </div>
-              <div className="receive-time-field space-y-1">
-                <Label className="text-xs font-semibold text-muted-foreground">Time</Label>
-                <Input className="h-10 rounded-lg bg-white text-center tabular-nums" type="time" value={receivedTime} onChange={e => setReceivedTime(e.target.value)} />
+              <div className="receive-time-field rounded-lg border border-border/70 bg-white px-3 py-2 shadow-sm">
+                <Label className="block text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Time</Label>
+                <Input
+                  className="mt-0.5 h-6 border-0 bg-transparent p-0 text-sm font-semibold tabular-nums shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
+                  type="time"
+                  value={receivedTime}
+                  onChange={e => setReceivedTime(e.target.value)}
+                />
               </div>
-              <div className="receive-user-field rounded-lg border border-border/60 bg-background px-2.5 py-1.5 sm:col-span-2">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Received by</p>
-                <p className="truncate text-sm font-semibold text-foreground">{user?.name || 'Signed-in user'}</p>
+              <div className="receive-user-field flex min-w-0 items-center justify-between gap-3 rounded-lg border border-primary/15 bg-primary/[0.04] px-3 py-2 sm:col-span-2">
+                <div className="min-w-0">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Received by</p>
+                  <p className="truncate text-sm font-semibold text-foreground">{user?.name || 'Signed-in user'}</p>
+                </div>
+                <span className="shrink-0 rounded-full border border-primary/15 bg-white px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-primary">
+                  Active
+                </span>
               </div>
-              <div className="receive-notes-field space-y-1 sm:col-span-2">
-                <Label className="text-xs font-semibold text-muted-foreground">Notes</Label>
-                <Input className="h-10 rounded-lg bg-white" placeholder="Optional batch notes" value={batchNotes} onChange={e => setBatchNotes(e.target.value)} />
+              <div className="receive-notes-field sm:col-span-2">
+                <Label className="sr-only">Notes</Label>
+                <Textarea
+                  className="resize-none rounded-lg border-border/70 bg-white py-2.5 text-sm shadow-sm transition-[min-height] duration-200 focus-visible:ring-1 focus-visible:ring-primary/40 focus-visible:ring-offset-0"
+                  style={{ minHeight: notesFocused || batchNotes ? 80 : 44 }}
+                  rows={1}
+                  placeholder="+ Optional batch note..."
+                  value={batchNotes}
+                  onFocus={() => setNotesFocused(true)}
+                  onBlur={() => setNotesFocused(false)}
+                  onChange={e => setBatchNotes(e.target.value)}
+                />
               </div>
             </div>
           </div>
@@ -630,7 +671,7 @@ export default function ReceivePage() {
               )}
             </div>
 
-            <div className="hidden border-b border-border/70 bg-white px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground lg:grid lg:grid-cols-[78px_minmax(300px,1fr)_116px_82px_minmax(140px,0.72fr)_126px] lg:gap-2.5">
+            <div className="hidden border-b border-border/70 bg-white px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground xl:grid xl:grid-cols-[78px_minmax(300px,1fr)_116px_82px_minmax(140px,0.72fr)_126px] xl:gap-2.5">
               <span>Line</span>
               <span>Supplier</span>
               <span>Type</span>
@@ -651,22 +692,22 @@ export default function ReceivePage() {
                         : 'border-l-transparent bg-white'
                   }`}
                 >
-              <div className="receive-line-grid grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-[78px_minmax(300px,1fr)_116px_82px_minmax(140px,0.72fr)_126px] lg:items-end">
-                <div className="receive-line-number flex items-center justify-between gap-2 lg:block">
-                  <div className="flex items-center gap-2 lg:block">
+              <div className="receive-line-grid grid grid-cols-1 gap-2.5 sm:grid-cols-2 xl:grid-cols-[78px_minmax(300px,1fr)_116px_82px_minmax(140px,0.72fr)_126px] xl:items-end">
+                <div className="receive-line-number flex items-center justify-between gap-2 xl:block">
+                  <div className="flex items-center gap-2 xl:block">
                     <div className={`flex h-8 w-8 items-center justify-center rounded-lg text-sm font-semibold shadow-sm ${item.supplierId ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'}`}>
                       {idx + 1}
                     </div>
-                    <div className="lg:hidden">
+                    <div className="xl:hidden">
                       <p className="text-sm font-semibold text-foreground">Line {idx + 1}</p>
                       <p className="text-xs text-muted-foreground">{isLineReady(item) ? 'Ready to save' : 'Complete required fields'}</p>
                     </div>
                   </div>
-                  <div className="mt-1 hidden lg:block">
+                  <div className="mt-1 hidden xl:block">
                     {firstIncompleteIndex === idx && <span className="inline-flex rounded-md bg-primary/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-primary">Next</span>}
                     {firstIncompleteIndex !== idx && isLineReady(item) && <span className="inline-flex rounded-md bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-emerald-700">Ready</span>}
                   </div>
-                  <div className="mt-2 hidden w-fit items-center gap-1 rounded-lg border border-border/60 bg-background p-0.5 lg:flex">
+                  <div className="mt-2 hidden w-fit items-center gap-1 rounded-lg border border-border/60 bg-background p-0.5 xl:flex">
                     <Button type="button" variant="ghost" size="sm" className="h-7 w-7 rounded-md p-0 text-muted-foreground hover:text-foreground" onClick={() => duplicateItem(idx)} title="Duplicate line" aria-label="Duplicate line">
                       <Copy className="h-3.5 w-3.5" />
                     </Button>
@@ -676,7 +717,7 @@ export default function ReceivePage() {
                       </Button>
                     )}
                   </div>
-                  <div className="flex items-center gap-1 lg:hidden">
+                  <div className="flex items-center gap-1 xl:hidden">
                     {firstIncompleteIndex === idx && (
                       <span className="rounded-md bg-primary/10 px-2 py-1 text-xs font-semibold text-primary">Next</span>
                     )}
@@ -694,8 +735,8 @@ export default function ReceivePage() {
                   </div>
                 </div>
 
-                <div className="receive-line-supplier space-y-1 sm:col-span-2 lg:col-span-1 lg:space-y-0">
-                  <Label className="text-xs font-semibold text-muted-foreground lg:hidden">Supplier *</Label>
+                <div className="receive-line-supplier space-y-1 sm:col-span-2 xl:col-span-1 xl:space-y-0">
+                  <Label className="text-xs font-semibold text-muted-foreground xl:hidden">Supplier *</Label>
                   <SupplierCombobox
                     suppliers={suppliers}
                     value={item.supplierId}
@@ -710,8 +751,8 @@ export default function ReceivePage() {
                   />
                 </div>
 
-                <div className="receive-line-type space-y-1 lg:space-y-0">
-                  <Label className="text-xs font-semibold text-muted-foreground lg:hidden">Type</Label>
+                <div className="receive-line-type space-y-1 xl:space-y-0">
+                  <Label className="text-xs font-semibold text-muted-foreground xl:hidden">Type</Label>
                   <Select value={item.packageType} onValueChange={value => updateItem(idx, { packageType: value })}>
                     <SelectTrigger className="h-10 rounded-lg bg-white">
                       <SelectValue />
@@ -723,8 +764,8 @@ export default function ReceivePage() {
                   </Select>
                 </div>
 
-                <div className="receive-line-qty space-y-1 lg:space-y-0">
-                  <Label className="text-xs font-semibold text-muted-foreground lg:hidden">Qty</Label>
+                <div className="receive-line-qty space-y-1 xl:space-y-0">
+                  <Label className="text-xs font-semibold text-muted-foreground xl:hidden">Qty</Label>
                   <Input
                     ref={node => {
                       qtyRefs.current[item.id] = node;
@@ -760,13 +801,13 @@ export default function ReceivePage() {
                   />
                 </div>
 
-                <div className="receive-line-po space-y-1 lg:space-y-0">
-                  <Label className="text-xs font-semibold text-muted-foreground lg:hidden">P.O</Label>
+                <div className="receive-line-po space-y-1 xl:space-y-0">
+                  <Label className="text-xs font-semibold text-muted-foreground xl:hidden">P.O</Label>
                   <Input className="h-10 rounded-lg bg-white" placeholder="P.O" value={item.trackingNumber} onChange={e => updateItem(idx, { trackingNumber: e.target.value })} />
                 </div>
 
-                <div className="receive-line-damage space-y-1 lg:space-y-0">
-                  <Label className="receive-line-damage-label text-xs font-semibold text-muted-foreground lg:hidden">Damage</Label>
+                <div className="receive-line-damage space-y-1 xl:space-y-0">
+                  <Label className="receive-line-damage-label text-xs font-semibold text-muted-foreground xl:hidden">Damage</Label>
                   <div className="receive-damage-toggle-wrap flex h-10 w-full items-center">
                     <Button
                       type="button"
@@ -905,7 +946,7 @@ export default function ReceivePage() {
       </div>
 
       <div className="receive-save-bar sticky bottom-3 z-10 flex flex-col gap-2 rounded-2xl border border-white/80 bg-white/95 p-3 shadow-[0_20px_70px_rgba(15,23,42,0.14)] backdrop-blur portrait:bottom-2 portrait:mx-2 sm:flex-row sm:items-center">
-        <div className="min-w-[240px] rounded-xl border border-border/60 bg-muted/30 px-3 py-2 portrait:min-w-0">
+        <div className="receive-save-summary min-w-[240px] rounded-xl border border-border/60 bg-muted/30 px-3 py-2 portrait:min-w-0">
           <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Receipt summary</p>
           <p className="mt-1 text-sm text-muted-foreground">
             <span className="font-semibold text-foreground">{totalPackages}</span> packages,
@@ -914,24 +955,24 @@ export default function ReceivePage() {
         </div>
         {currentReceiptAlreadySaved ? (
           <>
-            <Button asChild size="lg" className="h-12 gap-2 rounded-xl sm:flex-1">
+            <Button asChild size="lg" className="receive-save-action h-12 gap-2 rounded-xl sm:flex-1">
               <Link to={`/history?open=${encodeURIComponent(lastSavedBatchId || '')}`}>
                 <History className="h-5 w-5" /> View in History
               </Link>
             </Button>
-            <Button onClick={resetBatch} size="lg" variant="secondary" className="h-12 gap-2 rounded-xl sm:flex-1">
+            <Button onClick={resetBatch} size="lg" variant="secondary" className="receive-save-action h-12 gap-2 rounded-xl sm:flex-1">
               <RotateCcw className="h-5 w-5" /> Start New
             </Button>
           </>
         ) : (
           <>
-            <Button onClick={() => handleSave(false)} size="lg" className="h-12 gap-2 rounded-xl sm:flex-1" disabled={saving}>
+            <Button onClick={() => handleSave(false)} size="lg" className="receive-save-action h-12 gap-2 rounded-xl sm:flex-1" disabled={saving}>
               <Save className="h-5 w-5" /> {saving ? 'Saving...' : 'Save Batch'}
             </Button>
-            <Button onClick={() => handleSave(true)} size="lg" variant="secondary" className="h-12 gap-2 rounded-xl sm:flex-1" disabled={saving}>
+            <Button onClick={() => handleSave(true)} size="lg" variant="secondary" className="receive-save-action h-12 gap-2 rounded-xl sm:flex-1" disabled={saving}>
               <RotateCcw className="h-5 w-5" /> Save & New
             </Button>
-            <Button onClick={resetBatch} size="lg" variant="outline" className="h-12 gap-2 rounded-xl bg-white" disabled={saving}>
+            <Button onClick={resetBatch} size="lg" variant="outline" className="receive-save-action h-12 gap-2 rounded-xl bg-white" disabled={saving}>
               <RotateCcw className="h-5 w-5" /> Reset
             </Button>
           </>

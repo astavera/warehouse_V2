@@ -41,6 +41,11 @@ function publicEmployee(employee: Employee) {
   return safeEmployee;
 }
 
+function requiresPasswordLogin(employee: Employee) {
+  const permissions = Array.isArray(employee.permissions) ? employee.permissions : [];
+  return employee.role === 'admin' || permissions.includes('settings');
+}
+
 async function sha256(value: string) {
   const bytes = new TextEncoder().encode(value);
   const hash = await crypto.subtle.digest('SHA-256', bytes);
@@ -149,6 +154,10 @@ Deno.serve(async req => {
         return jsonResponse({ error: 'Incorrect passcode' }, 401);
       }
       employee = data as Employee;
+      if (requiresPasswordLogin(employee)) {
+        await recordLoginAttempt(admin, action, ipAddress, passcodeHash, false);
+        return jsonResponse({ error: 'Admin users must sign in with email and password.' }, 403);
+      }
     } else if (action === 'sign-up') {
       if (!adminPasscode) return jsonResponse({ error: 'Admin passcode is not configured' }, 500);
       const name = typeof payload.name === 'string' ? payload.name.trim() : '';

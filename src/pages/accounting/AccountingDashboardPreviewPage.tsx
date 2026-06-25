@@ -879,8 +879,7 @@ export default function AccountingDashboardPreviewPage() {
   return (
     <div className="space-y-5">
       <AccountingPageHeader
-        title="Accounting Command Center"
-        description="Payment urgency, vendor balances, warehouse arrivals, and invoice follow-through in one view."
+        title="Overview"
         actions={
           <div className="flex flex-wrap justify-end gap-2">
             <Button variant="outline" onClick={() => void refetch()} disabled={isFetching} className="gap-1.5">

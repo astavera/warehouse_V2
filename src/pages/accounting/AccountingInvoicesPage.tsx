@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Camera, Check, CreditCard, Edit, ListChecks, Loader2, MapPin, Plus, RotateCcw, Save, Search, SlidersHorizontal, Trash2, Users } from 'lucide-react';
+import { Camera, Check, CreditCard, Edit, ListChecks, Loader2, MapPin, Plus, RotateCcw, Save, Search, SlidersHorizontal, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -1872,7 +1872,6 @@ export default function AccountingInvoicesPage() {
   const [statusFilter, setStatusFilter] = useState<'all' | AccountingStatus>('all');
   const [flagFilter, setFlagFilter] = useState('all');
   const [vendorFilter, setVendorFilter] = useState('all');
-  const [balanceSearch, setBalanceSearch] = useState('');
   const [form, setForm] = useState<InvoiceFormState>(EMPTY_FORM);
   const [editing, setEditing] = useState<AccountingInvoice | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -1939,24 +1938,6 @@ export default function AccountingInvoicesPage() {
   }, [displayInvoices, flagFilter, focusedInvoice, search, statusFilter, vendorFilter]);
 
   const vendorBalances = useMemo(() => summarizeVendorBalances(displayInvoices), [displayInvoices]);
-  const visibleVendorBalances = useMemo(() => {
-    const query = normalizeText(balanceSearch);
-    const dueWithin15Rows = vendorBalances.filter(row => decimalStringToCents(row.dueNext15Amount) > 0n);
-    const rows = vendorFilter === 'all'
-      ? dueWithin15Rows
-      : vendorBalances.filter(row => (row.vendorId || 'none') === vendorFilter);
-    const searchedRows = query ? rows.filter(row => normalizeText(row.vendorName).includes(query)) : rows;
-    return [...searchedRows].sort((a, b) => {
-      const amountA = decimalStringToCents(a.dueNext15Amount);
-      const amountB = decimalStringToCents(b.dueNext15Amount);
-      if (amountA !== amountB) return amountA > amountB ? -1 : 1;
-      return a.vendorName.localeCompare(b.vendorName);
-    });
-  }, [balanceSearch, vendorBalances, vendorFilter]);
-  const visibleVendorOwedTotal = useMemo(
-    () => addMoney(visibleVendorBalances.map(row => row.dueNext15Amount)),
-    [visibleVendorBalances]
-  );
   const selectedVendorBalance = useMemo(() => {
     if (vendorFilter === 'all') return null;
     const existingBalance = vendorBalances.find(row => (row.vendorId || 'none') === vendorFilter);
@@ -1977,14 +1958,12 @@ export default function AccountingInvoicesPage() {
   }, [catalogs?.vendors, vendorBalances, vendorFilter]);
   const filtersActive =
     Boolean(search.trim()) ||
-    Boolean(balanceSearch.trim()) ||
     statusFilter !== 'all' ||
     flagFilter !== 'all' ||
     vendorFilter !== 'all';
 
   const resetFilters = () => {
     setSearch('');
-    setBalanceSearch('');
     setStatusFilter('all');
     setFlagFilter('all');
     setVendorFilter('all');
@@ -2482,66 +2461,13 @@ export default function AccountingInvoicesPage() {
             </div>
           )}
 
-          <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_300px]">
-            <div className="rounded-lg border bg-white p-3">
-              <div className="mb-3 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <Users className="h-4 w-4 text-primary" />
-                    <h2 className="text-sm font-semibold">Due within 15 days by vendor</h2>
-                    <Badge variant="outline">{visibleVendorBalances.length}</Badge>
-                  </div>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Due 15d total: <span className="font-semibold text-foreground"><MoneyText value={visibleVendorOwedTotal} /></span>
-                  </p>
-                </div>
-                <div className="relative lg:w-[260px]">
-                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                  <Input
-                    value={balanceSearch}
-                    onChange={event => setBalanceSearch(event.target.value)}
-                    placeholder="Find vendor owed"
-                    className="pl-9"
-                  />
-                </div>
-              </div>
-              {isLoading ? (
-                <LoadingState label="Loading vendor balances..." />
-              ) : visibleVendorBalances.length ? (
-                <div className="max-h-[340px] overflow-auto rounded-md border">
-                  <Table>
-                    <TableHeader className="sticky top-0 z-10 bg-white">
-                      <TableRow>
-                        <TableHead>Vendor</TableHead>
-                        <TableHead className="text-right">Invoices</TableHead>
-                        <TableHead className="text-right">Due 15d</TableHead>
-                        <TableHead className="text-right">Total owed</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {visibleVendorBalances.map(row => (
-                        <TableRow key={row.vendorId || row.vendorName}>
-                          <TableCell className="min-w-[180px] font-medium">{row.vendorName}</TableCell>
-                          <TableCell className="text-right">{row.dueNext15Count}</TableCell>
-                          <TableCell className="text-right"><MoneyText value={row.dueNext15Amount} /></TableCell>
-                          <TableCell className="text-right font-semibold"><MoneyText value={row.totalAmount} /></TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
-              ) : (
-                <EmptyState label="No vendor balances due within 15 days for the current filter." />
-              )}
-            </div>
-            <div className="self-start rounded-lg border bg-muted/20 p-3 text-sm">
-              <div className="font-semibold">Due color legend</div>
-              <div className="mt-3 space-y-2">
-                <div className="flex items-center gap-2"><span className="h-4 w-8 rounded bg-rose-100" /> Due in 8 days or overdue</div>
-                <div className="flex items-center gap-2"><span className="h-4 w-8 rounded bg-amber-100" /> Due in 15 days</div>
-                <div className="flex items-center gap-2"><span className="h-4 w-8 rounded bg-emerald-100" /> Due in 30 days</div>
-                <div className="flex items-center gap-2"><span className="h-4 w-8 rounded border bg-white" /> More than 30 days / paid</div>
-              </div>
+          <div className="rounded-lg border bg-muted/20 p-3 text-sm">
+            <div className="font-semibold">Due color legend</div>
+            <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+              <div className="flex items-center gap-2"><span className="h-4 w-8 rounded bg-rose-100" /> Due in 8 days or overdue</div>
+              <div className="flex items-center gap-2"><span className="h-4 w-8 rounded bg-amber-100" /> Due in 15 days</div>
+              <div className="flex items-center gap-2"><span className="h-4 w-8 rounded bg-emerald-100" /> Due in 30 days</div>
+              <div className="flex items-center gap-2"><span className="h-4 w-8 rounded border bg-white" /> More than 30 days / paid</div>
             </div>
           </div>
 
