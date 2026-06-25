@@ -483,8 +483,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 className={cn(
                   'mx-5 flex items-center rounded-lg px-4 py-3 text-base font-medium transition-colors touch-target',
                   activePathname === n.to
-                    ? 'bg-primary text-primary-foreground'
-                    : 'text-muted-foreground hover:bg-muted'
+                    ? 'border border-red-600/20 bg-slate-950 text-white shadow-sm'
+                    : 'text-muted-foreground hover:bg-red-50/70 hover:text-slate-950'
                 )}
               >
                 {n.label}
