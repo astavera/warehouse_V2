@@ -21,6 +21,8 @@ import {
   Upload,
   Database,
   ChevronDown,
+  Warehouse,
+  BookOpenCheck,
   type LucideIcon,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
@@ -57,7 +59,7 @@ const APP_NAV_GROUPS = [
   },
   {
     label: 'Warehouse',
-    icon: Package,
+    icon: Warehouse,
     items: [
       {
         to: '/receive',
@@ -118,7 +120,7 @@ const APP_NAV_GROUPS = [
   },
   {
     label: 'Accounting',
-    icon: Landmark,
+    icon: BookOpenCheck,
     items: [
       {
         to: '/accounting',
