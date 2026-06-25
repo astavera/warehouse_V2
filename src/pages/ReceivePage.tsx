@@ -60,9 +60,9 @@ function emptyItem(): LineItem {
 function getCarrierButtonClass(name: string, selected: boolean) {
   const lower = name.toLowerCase().trim();
   const widthClass =
-    lower.includes('amazon') || lower.includes('fedex') || lower.includes('federal express') || lower.includes('dhl')
+    lower.includes('amazon') || lower.includes('fedex') || lower.includes('federal express') || lower.includes('dhl') || lower.includes('ups')
       ? 'w-[96px]'
-      : lower.includes('ups') || lower.includes('usps')
+      : lower.includes('usps')
         ? 'w-14'
         : 'min-w-[88px] max-w-[132px] px-3';
 
