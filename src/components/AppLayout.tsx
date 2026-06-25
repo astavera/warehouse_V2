@@ -453,8 +453,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
       {open && (
         <div className="fixed inset-0 top-16 z-40 bg-background/80 backdrop-blur-sm lg:hidden" onClick={() => setOpen(false)}>
-          <nav className="flex flex-col gap-1 border-b bg-white p-4 shadow-lg" onClick={e => e.stopPropagation()}>
-            <div className="px-4 py-2 text-sm text-muted-foreground">
+          <nav className="flex flex-col gap-1 border-b bg-white py-4 shadow-lg" onClick={e => e.stopPropagation()}>
+            <div className="px-8 py-2 text-sm text-muted-foreground">
               Welcome, <span className="font-medium text-foreground">{user?.name}</span>
             </div>
             {showDataStatus && (
@@ -462,7 +462,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 type="button"
                 onClick={() => void syncNow()}
                 disabled={isLocalDemo || isOffline || pendingCount === 0 || syncing}
-                className="mx-4 mb-2 inline-flex items-center gap-2 rounded-lg border border-border/70 bg-white px-3 py-2 text-sm font-medium text-muted-foreground"
+                className="mx-5 mb-2 inline-flex items-center gap-2 rounded-lg border border-border/70 bg-white px-3 py-2 text-sm font-medium text-muted-foreground"
                 aria-label={pendingCount > 0 ? `Sync ${pendingCount} pending offline changes` : statusLabel}
               >
                 <StatusIcon className={cn('h-4 w-4', syncing && 'animate-spin')} />
@@ -481,7 +481,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 onMouseEnter={() => handleNavIntent(n.to)}
                 onPointerDown={() => handleNavIntent(n.to)}
                 className={cn(
-                  'flex items-center px-4 py-3 rounded-lg text-base font-medium transition-colors touch-target',
+                  'mx-5 flex items-center rounded-lg px-4 py-3 text-base font-medium transition-colors touch-target',
                   activePathname === n.to
                     ? 'bg-primary text-primary-foreground'
                     : 'text-muted-foreground hover:bg-muted'
@@ -490,7 +490,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 {n.label}
               </Link>
             ))}
-            <Button variant="outline" size="sm" onClick={signOut} className="mt-2 gap-1.5">
+            <Button variant="outline" size="sm" onClick={signOut} className="mx-auto mt-2 gap-1.5">
               <LogOut className="w-4 h-4" /> Sign out
             </Button>
           </nav>
