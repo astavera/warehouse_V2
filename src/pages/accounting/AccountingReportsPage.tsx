@@ -25,9 +25,11 @@ import { AccountingPageHeader, EmptyState, LoadingState, MoneyText } from './Acc
 
 type AmountComparison = 'greater_than' | 'less_than';
 
-const REPORT_HEADER_ACTIONS_CLASS = 'grid w-full grid-cols-2 gap-2 sm:w-auto sm:min-w-[360px]';
-const REPORT_HEADER_ACTIONS_LOADED_CLASS = 'grid w-full grid-cols-1 gap-2 min-[520px]:grid-cols-3 sm:w-auto sm:min-w-[480px]';
-const REPORT_HEADER_BUTTON_CLASS = 'h-10 w-full !min-w-0 justify-center gap-2 rounded-lg px-3 text-sm leading-none';
+const REPORT_HEADER_ACTIONS_CLASS =
+  'grid w-full grid-cols-2 gap-2 lg:w-auto lg:grid-cols-[repeat(4,minmax(142px,1fr))]';
+const REPORT_HEADER_ACTIONS_LOADED_CLASS =
+  'grid w-full grid-cols-1 gap-2 min-[520px]:grid-cols-3 lg:w-auto lg:grid-cols-[repeat(3,minmax(142px,1fr))]';
+const REPORT_HEADER_BUTTON_CLASS = 'h-9 min-h-[36px] w-full !min-w-0 justify-center gap-2 rounded-lg px-3 text-[0.8125rem] leading-none';
 const REPORT_HEADER_SECONDARY_BUTTON_CLASS =
   `${REPORT_HEADER_BUTTON_CLASS} !border-slate-200 !bg-white !text-slate-700 !shadow-sm hover:!bg-slate-50 hover:!text-slate-950`;
 const REPORT_HEADER_PRIMARY_BUTTON_CLASS =
@@ -334,7 +336,7 @@ export default function AccountingReportsPage() {
   };
 
   return (
-    <div className="space-y-6">
+    <>
       <style>
         {`
           @media print {
@@ -367,37 +369,38 @@ export default function AccountingReportsPage() {
         `}
       </style>
 
-      <AccountingPageHeader
-        title="Reports"
-        description="Custom vendor payment report by due date range and invoice amount condition."
-        actions={
-          <div className={reportHeaderActionsClass}>
-            {!includeAllInvoices && (
-              <Button
-                variant="outline"
-                onClick={() => setIncludeAllInvoices(true)}
-                disabled={isFetching}
-                className={REPORT_HEADER_SECONDARY_BUTTON_CLASS}
-              >
-                {isFetching ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                Load all invoices
+      <div className="space-y-6">
+        <AccountingPageHeader
+          title="Reports"
+          description="Custom vendor payment report by due date range and invoice amount condition."
+          actions={
+            <div className={reportHeaderActionsClass}>
+              {!includeAllInvoices && (
+                <Button
+                  variant="outline"
+                  onClick={() => setIncludeAllInvoices(true)}
+                  disabled={isFetching}
+                  className={REPORT_HEADER_SECONDARY_BUTTON_CLASS}
+                >
+                  {isFetching ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                  Load all invoices
+                </Button>
+              )}
+              <Button variant="outline" onClick={resetFilters} className={REPORT_HEADER_SECONDARY_BUTTON_CLASS}>
+                <RotateCcw className="h-4 w-4" />
+                Reset
               </Button>
-            )}
-            <Button variant="outline" onClick={resetFilters} className={REPORT_HEADER_SECONDARY_BUTTON_CLASS}>
-              <RotateCcw className="h-4 w-4" />
-              Reset
-            </Button>
-            <Button onClick={exportReport} disabled={!visibleReportRows.length} className={REPORT_HEADER_PRIMARY_BUTTON_CLASS}>
-              <Download className="h-4 w-4" />
-              Export CSV
-            </Button>
-            <Button variant="outline" onClick={printReport} className={REPORT_HEADER_SECONDARY_BUTTON_CLASS}>
-              <Printer className="h-4 w-4" />
-              Print report
-            </Button>
-          </div>
-        }
-      />
+              <Button onClick={exportReport} disabled={!visibleReportRows.length} className={REPORT_HEADER_PRIMARY_BUTTON_CLASS}>
+                <Download className="h-4 w-4" />
+                Export CSV
+              </Button>
+              <Button variant="outline" onClick={printReport} className={REPORT_HEADER_SECONDARY_BUTTON_CLASS}>
+                <Printer className="h-4 w-4" />
+                Print report
+              </Button>
+            </div>
+          }
+        />
 
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Card>
@@ -693,6 +696,7 @@ export default function AccountingReportsPage() {
           )}
         </CardContent>
       </Card>
-    </div>
+      </div>
+    </>
   );
 }

@@ -880,13 +880,19 @@ export default function AccountingDashboardPreviewPage() {
     <div className="space-y-5">
       <AccountingPageHeader
         title="Overview"
+        variant="overview"
         actions={
-          <div className="flex flex-wrap justify-end gap-2">
-            <Button variant="outline" onClick={() => void refetch()} disabled={isFetching} className="gap-1.5">
+          <div className="flex flex-wrap items-center gap-2 sm:flex-nowrap lg:justify-end">
+            <Button
+              variant="outline"
+              onClick={() => void refetch()}
+              disabled={isFetching}
+              className="!h-9 !min-h-[36px] gap-1.5 !rounded-lg !border-slate-200 !bg-white/90 px-3 text-[0.8125rem] font-semibold !text-slate-700 !shadow-sm !shadow-slate-950/5 hover:!border-slate-300 hover:!bg-slate-50 hover:!text-slate-950 [&_svg]:!opacity-70"
+            >
               <RefreshCw className={isFetching ? 'h-4 w-4 animate-spin' : 'h-4 w-4'} />
               Refresh
             </Button>
-            <Button className="accounting-rainbow-button gap-1.5" asChild>
+            <Button className="accounting-rainbow-button !h-9 !min-h-[36px] !min-w-[116px] gap-1.5 !rounded-lg px-3 text-[0.8125rem]" asChild>
               <Link to="/accounting/imports">
                 <FileSpreadsheet className="h-4 w-4" />
                 Imports

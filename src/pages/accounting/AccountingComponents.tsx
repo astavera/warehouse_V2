@@ -40,7 +40,7 @@ export function AccountingTabs() {
   }, [pathname]);
 
   return (
-    <nav className="flex gap-1 overflow-x-auto rounded-lg border bg-muted/30 p-1">
+    <nav className="inline-flex max-w-full gap-1 overflow-x-auto rounded-xl border border-slate-200/80 bg-white/85 p-1 shadow-sm shadow-slate-950/5">
       {ACCOUNTING_NAV.map(item => (
         <Link
           key={item.to}
@@ -49,10 +49,10 @@ export function AccountingTabs() {
           onMouseEnter={() => preloadRoute(item.to)}
           onPointerDown={() => preloadRoute(item.to)}
           className={cn(
-            'whitespace-nowrap rounded-md px-3 py-2 text-sm font-medium transition-colors',
+            'whitespace-nowrap rounded-lg px-3 py-2 text-[0.8125rem] font-semibold transition-all duration-150',
             pathname === item.to
-              ? 'bg-white text-foreground shadow-sm'
-              : 'text-muted-foreground hover:bg-white/70 hover:text-foreground'
+              ? 'bg-slate-950 text-white shadow-sm shadow-slate-950/15'
+              : 'text-slate-500 hover:bg-slate-100 hover:text-slate-950'
           )}
         >
           {item.label}
@@ -64,21 +64,47 @@ export function AccountingTabs() {
 
 export function AccountingPageHeader({
   actions,
-  description,
+  variant = 'default',
   title,
 }: {
   actions?: ReactNode;
   description?: string;
   title: string;
+  variant?: 'default' | 'overview';
 }) {
+  const isOverview = variant === 'overview';
+
   return (
-    <div className="space-y-4">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">{title}</h1>
-          {description && <p className="mt-1 max-w-3xl text-sm text-muted-foreground">{description}</p>}
+    <div className={cn(isOverview ? 'space-y-2' : 'space-y-3')}>
+      <div
+        className={cn(
+          'flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between'
+        )}
+      >
+        <div className="min-w-0">
+          <h1
+            className={cn(
+              'font-black leading-none tracking-normal text-slate-950',
+              isOverview ? 'text-4xl sm:text-5xl' : 'text-3xl sm:text-4xl'
+            )}
+          >
+            {title}
+          </h1>
         </div>
-        {actions}
+        {actions && (
+          <div
+            className={cn(
+              'shrink-0',
+              '[&_a]:!h-9 [&_a]:!min-h-[36px] [&_button]:!h-9 [&_button]:!min-h-[36px]',
+              '[&_.app-rainbow-button]:!min-w-[116px] [&_.app-rainbow-button]:!rounded-lg [&_.app-rainbow-button]:px-3 [&_.app-rainbow-button]:text-[0.8125rem]',
+              '[&_.app-secondary-ghost-button]:!rounded-lg [&_.app-secondary-ghost-button]:!border-slate-200 [&_.app-secondary-ghost-button]:!bg-white/90 [&_.app-secondary-ghost-button]:!text-slate-700 [&_.app-secondary-ghost-button]:!shadow-sm [&_.app-secondary-ghost-button]:!shadow-slate-950/5',
+              '[&_.app-secondary-ghost-button:hover]:!border-slate-300 [&_.app-secondary-ghost-button:hover]:!bg-slate-50 [&_.app-secondary-ghost-button:hover]:!text-slate-950',
+              '[&_.app-secondary-ghost-button_svg]:!opacity-70'
+            )}
+          >
+            {actions}
+          </div>
+        )}
       </div>
       <AccountingTabs />
     </div>
