@@ -449,12 +449,12 @@ function KpiTile({ item }: { item: Kpi }) {
   const Icon = item.icon;
 
   return (
-    <Card className="group overflow-hidden border-slate-800/80 bg-slate-950 p-0 text-white shadow-sm transition-shadow hover:shadow-lg">
+    <Card className="group h-full overflow-hidden border-slate-800/80 bg-slate-950 p-0 text-white shadow-sm transition-shadow hover:shadow-lg">
       <Link
         to={item.href}
-        className="block focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+        className="flex h-full flex-col focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
       >
-        <CardContent className="relative min-h-[108px] overflow-hidden bg-gradient-to-br from-slate-950 via-teal-950 to-slate-900 p-3 sm:min-h-[132px] sm:p-4">
+        <CardContent className="relative flex min-h-[108px] flex-1 flex-col overflow-hidden bg-gradient-to-br from-slate-950 via-teal-950 to-slate-900 p-3 sm:min-h-[132px] sm:p-4">
           <div className={cn('absolute inset-x-0 top-0 h-1', toneAccentClasses(item.tone))} />
           <div
             aria-hidden="true"
@@ -479,7 +479,7 @@ function KpiTile({ item }: { item: Kpi }) {
               <Icon className="h-4 w-4" />
             </div>
           </div>
-          <p className="relative mt-2 min-h-4 text-[11px] leading-4 text-slate-300 sm:mt-3 sm:text-xs">{item.detail}</p>
+          <p className="relative mt-auto line-clamp-2 pt-2 text-[11px] leading-4 text-slate-300 sm:pt-3 sm:text-xs">{item.detail}</p>
         </CardContent>
         <div className="flex min-h-[34px] items-center border-t border-white/10 bg-slate-950 px-3 py-2 text-[11px] font-semibold text-slate-200 transition-colors group-hover:text-white sm:min-h-[40px] sm:px-4 sm:py-2.5 sm:text-xs">
           <span className="inline-flex items-center gap-1">
@@ -496,11 +496,11 @@ function QuickActionTile({ action }: { action: QuickAction }) {
   const Icon = action.icon;
 
   return (
-    <motion.div animate="visible" initial="hidden" variants={riskCardVariants} whileHover={{ y: -3 }}>
+    <motion.div animate="visible" className="h-full" initial="hidden" variants={riskCardVariants} whileHover={{ y: -3 }}>
       <Link
         to={action.href}
         className={cn(
-          'group relative flex min-h-[148px] overflow-hidden rounded-xl border bg-white p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:min-h-[172px] sm:p-5 xl:min-h-[190px] xl:rounded-2xl xl:p-6',
+          'group relative flex h-full min-h-[148px] overflow-hidden rounded-xl border bg-white p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:min-h-[172px] sm:p-5 xl:min-h-[190px] xl:rounded-2xl xl:p-6',
           toneBorderClasses(action.tone)
         )}
         style={riskCardStyle(action.tone)}
@@ -512,7 +512,7 @@ function QuickActionTile({ action }: { action: QuickAction }) {
             <p className={cn('text-[11px] font-bold uppercase leading-4 tracking-wide sm:text-xs', toneTextClasses(action.tone))}>
               {action.eyebrow}
             </p>
-            <h3 className="mt-1.5 text-sm font-bold leading-5 text-slate-950 sm:mt-2 sm:text-base">{action.label}</h3>
+            <h3 className="mt-1.5 min-h-10 text-sm font-bold leading-5 text-slate-950 sm:mt-2 sm:text-base">{action.label}</h3>
             <p className="mt-1.5 line-clamp-2 text-xs leading-4 text-slate-600 sm:mt-2 sm:max-w-[84%] sm:text-sm sm:leading-5">{action.helper}</p>
           </div>
 
@@ -1467,7 +1467,7 @@ export default function AccountingDashboardPreviewPage() {
                                 <Icon className={cn('h-4 w-4', isCard ? 'text-sky-700' : 'text-emerald-700')} />
                                 <p className="text-sm font-semibold">{group.label}</p>
                               </div>
-                              <Button variant="ghost" size="sm" asChild className="h-7 px-2 text-xs">
+                              <Button variant="ghost" size="sm" asChild className="h-9 px-3 text-xs">
                                 <Link to={group.href}>Open</Link>
                               </Button>
                             </div>
@@ -1556,7 +1556,28 @@ export default function AccountingDashboardPreviewPage() {
               </CardHeader>
               <CardContent>
                 {recentPayments.length ? (
-                  <div className="overflow-x-auto">
+                  <>
+                  <div className="space-y-2 sm:hidden">
+                    {recentPayments.slice(0, 4).map(payment => (
+                      <div className="rounded-md border bg-white px-3 py-2.5" key={`${payment.id}-mobile`}>
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-semibold text-slate-950">
+                              {payment.accounting_vendors?.name || '-'}
+                            </p>
+                            <p className="mt-1 text-xs text-muted-foreground">{payment.payment_date || '-'}</p>
+                          </div>
+                          <p className="shrink-0 text-sm font-bold tabular-nums">
+                            <MoneyText value={payment.amount_paid} />
+                          </p>
+                        </div>
+                        <Badge variant="outline" className="mt-2">
+                          {payment.accounting_payment_methods?.name || payment.status || 'Payment'}
+                        </Badge>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="hidden overflow-x-auto sm:block">
                     <Table>
                       <TableHeader>
                         <TableRow>
@@ -1582,6 +1603,7 @@ export default function AccountingDashboardPreviewPage() {
                       </TableBody>
                     </Table>
                   </div>
+                  </>
                 ) : (
                   <EmptyState
                     compact
@@ -1606,26 +1628,48 @@ export default function AccountingDashboardPreviewPage() {
               <CardDescription>Large unpaid items that need review before payment</CardDescription>
             </CardHeader>
             <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Vendor</TableHead>
-                    <TableHead>Invoice</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="text-right">Final</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {highAmountInvoices.map(invoice => (
-                    <TableRow key={invoice.id}>
-                      <TableCell>{invoice.accounting_vendors?.name || '-'}</TableCell>
-                      <TableCell>{invoice.invoice_number || '-'}</TableCell>
-                      <TableCell><InvoiceStatusBadges invoice={invoice} /></TableCell>
-                      <TableCell className="text-right font-medium">{formatAccountingMoney(invoiceFinalAmount(invoice))}</TableCell>
+              <div className="space-y-2 sm:hidden">
+                {highAmountInvoices.map(invoice => (
+                  <div className="rounded-md border bg-white px-3 py-2.5" key={`${invoice.id}-mobile`}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-slate-950">
+                          {invoice.accounting_vendors?.name || '-'}
+                        </p>
+                        <p className="mt-1 truncate text-xs text-muted-foreground">{invoice.invoice_number || '-'}</p>
+                      </div>
+                      <p className="shrink-0 text-sm font-bold tabular-nums">
+                        {formatAccountingMoney(invoiceFinalAmount(invoice))}
+                      </p>
+                    </div>
+                    <div className="mt-2">
+                      <InvoiceStatusBadges invoice={invoice} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="hidden overflow-x-auto sm:block">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Vendor</TableHead>
+                      <TableHead>Invoice</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead className="text-right">Final</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {highAmountInvoices.map(invoice => (
+                      <TableRow key={invoice.id}>
+                        <TableCell>{invoice.accounting_vendors?.name || '-'}</TableCell>
+                        <TableCell>{invoice.invoice_number || '-'}</TableCell>
+                        <TableCell><InvoiceStatusBadges invoice={invoice} /></TableCell>
+                        <TableCell className="text-right font-medium">{formatAccountingMoney(invoiceFinalAmount(invoice))}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
             </CardContent>
           </Card>
           ) : null}

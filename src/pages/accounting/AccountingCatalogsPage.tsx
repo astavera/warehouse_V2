@@ -302,11 +302,11 @@ export default function AccountingCatalogsPage() {
         </CardHeader>
         <CardContent className="space-y-4">
           <Tabs value={activeTab} onValueChange={value => setActiveTab(value as CatalogTab)}>
-            <TabsList className="flex h-auto flex-wrap justify-start">
-              <TabsTrigger value="stores">Stores</TabsTrigger>
-              <TabsTrigger value="accounts">Accounts</TabsTrigger>
-              <TabsTrigger value="methods">Payment methods</TabsTrigger>
-              <TabsTrigger value="categories">Categories</TabsTrigger>
+            <TabsList className="flex h-auto flex-wrap justify-start gap-1">
+              <TabsTrigger className="min-h-9 rounded-lg px-3" value="stores">Stores</TabsTrigger>
+              <TabsTrigger className="min-h-9 rounded-lg px-3" value="accounts">Accounts</TabsTrigger>
+              <TabsTrigger className="min-h-9 rounded-lg px-3" value="methods">Payment methods</TabsTrigger>
+              <TabsTrigger className="min-h-9 rounded-lg px-3" value="categories">Categories</TabsTrigger>
             </TabsList>
             <TabsContent value="stores">
               <CatalogTable rows={(data?.stores || []) as CatalogRow[]} search={search} type="stores" onEdit={row => openEdit('stores', row)} />

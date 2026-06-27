@@ -91,7 +91,7 @@ export function AccountingPageHeader({
           <h1
             className={cn(
               'font-black leading-none tracking-normal text-slate-950',
-              isOverview ? 'text-4xl sm:text-5xl' : 'text-3xl sm:text-4xl'
+              'text-3xl sm:text-4xl'
             )}
           >
             {title}
