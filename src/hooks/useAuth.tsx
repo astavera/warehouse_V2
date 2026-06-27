@@ -5,6 +5,7 @@ import type { Session } from '@supabase/supabase-js';
 import { functionErrorMessage } from '@/lib/functionErrors';
 import { listLocalEmployees } from '@/lib/localWarehouseData';
 import { canAccessModule } from '@/lib/permissions';
+import { clearStoredSupabaseAuthTokens, isInvalidRefreshTokenError } from '@/lib/supabaseAuth';
 
 type Employee = Tables<'employees'>;
 type PublicEmployee = Omit<Employee, 'passcode'> & { auth_user_id?: string | null };
@@ -60,7 +61,13 @@ function cacheUser(employee: PublicEmployee) {
 }
 
 async function clearLocalAuthSession() {
-  await supabase.auth.signOut({ scope: 'local' });
+  try {
+    await supabase.auth.signOut({ scope: 'local' });
+  } catch (error) {
+    if (!isInvalidRefreshTokenError(error)) throw error;
+  } finally {
+    clearStoredSupabaseAuthTokens();
+  }
 }
 
 async function invokeKioskAuth(body: Record<string, unknown>) {
@@ -123,7 +130,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      const { data: sessionData } = await supabase.auth.getSession();
+      const { data: sessionData, error: sessionError } = await supabase.auth.getSession().catch(error => ({
+        data: { session: null },
+        error,
+      }));
+      if (sessionError) {
+        if (isInvalidRefreshTokenError(sessionError)) {
+          await clearLocalAuthSession();
+          localStorage.removeItem(STORAGE_KEY);
+          localStorage.removeItem(USER_STORAGE_KEY);
+          setUser(null);
+          setLoading(false);
+          return;
+        }
+        if (cachedUser) {
+          setUser(cachedUser);
+          setLoading(false);
+          return;
+        }
+        localStorage.removeItem(STORAGE_KEY);
+        localStorage.removeItem(USER_STORAGE_KEY);
+        setUser(null);
+        setLoading(false);
+        return;
+      }
       const authUserId = sessionData.session?.user.id;
       if (!authUserId) {
         localStorage.removeItem(STORAGE_KEY);
@@ -146,10 +176,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           return;
         }
 
-        await supabase.auth.signOut();
+        await clearLocalAuthSession();
         setUser(null);
       } else if (!data) {
-        await supabase.auth.signOut();
+        await clearLocalAuthSession();
         localStorage.removeItem(STORAGE_KEY);
         localStorage.removeItem(USER_STORAGE_KEY);
         setUser(null);
@@ -212,7 +242,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const authUserId = sessionData.user?.id;
     if (!authUserId) {
-      await supabase.auth.signOut();
+      await clearLocalAuthSession();
       throw new Error('Admin session was not returned');
     }
 
@@ -223,17 +253,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       .eq('active', true)
       .maybeSingle();
     if (error) {
-      await supabase.auth.signOut();
+      await clearLocalAuthSession();
       throw error;
     }
     if (!data) {
-      await supabase.auth.signOut();
+      await clearLocalAuthSession();
       throw new Error('No active employee profile is linked to this admin account');
     }
 
     const employee = data as PublicEmployee;
     if (!canAccessModule(employee, 'settings')) {
-      await supabase.auth.signOut();
+      await clearLocalAuthSession();
       throw new Error('This email is not allowed to open admin settings');
     }
 
@@ -279,7 +309,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    await supabase.auth.signOut();
+    await clearLocalAuthSession();
     setUser(null);
   };
 

@@ -31,7 +31,7 @@ import {
 } from 'recharts';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useAccountingDashboard, useAccountingInvoicePayments, useAccountingInvoices } from '@/hooks/useAccountingData';
@@ -106,8 +106,10 @@ type WarehouseInvoiceRow = {
 };
 
 type WarehouseActivityRow = Omit<WarehouseInvoiceRow, 'hasInvoice' | 'invoiceAmount' | 'invoiceCount'>;
+type WarehouseArrivalFilter = 'all' | 'needs_invoice';
 
 const HIDDEN_WAREHOUSE_ARRIVALS_KEY = 'accounting.preview.hiddenWarehouseArrivals';
+const WAREHOUSE_PREVIEW_LIMIT = 5;
 
 function moneySubtract(left: string | number | null | undefined, right: string | number | null | undefined) {
   const cents = decimalStringToCents(left) - decimalStringToCents(right);
@@ -137,6 +139,42 @@ function formatShortDate(value: string | null | undefined) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return 'No date';
   return date.toLocaleDateString('en-US', { day: 'numeric', month: 'short' });
+}
+
+function dateFromIsoLike(value: string | null | undefined) {
+  if (!value) return null;
+  const [datePart] = value.split('T');
+  const [year, month, day] = datePart.split('-').map(Number);
+  if (year && month && day) return new Date(year, month - 1, day);
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function formatDateWithYear(value: string | null | undefined) {
+  const date = dateFromIsoLike(value);
+  if (!date) return 'No date';
+  return date.toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+function daysFromTodayLabel(value: string | null | undefined) {
+  const date = dateFromIsoLike(value);
+  if (!date) return '';
+  const today = new Date();
+  const start = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
+  const target = Date.UTC(date.getFullYear(), date.getMonth(), date.getDate());
+  const days = Math.round((target - start) / 86400000);
+  const absoluteDays = Math.abs(days);
+
+  if (days < 0) return `${absoluteDays} day${absoluteDays === 1 ? '' : 's'} overdue`;
+  if (days === 0) return 'due today';
+  if (days === 1) return 'due tomorrow';
+  return `due in ${days} days`;
+}
+
+function formatDueDateWithAge(value: string | null | undefined) {
+  const dateLabel = formatDateWithYear(value);
+  const ageLabel = daysFromTodayLabel(value);
+  return ageLabel ? `${dateLabel} - ${ageLabel}` : dateLabel;
 }
 
 function expectedBoxArrivalDate(box: ExpectedBox) {
@@ -412,39 +450,44 @@ function KpiTile({ item }: { item: Kpi }) {
 
   return (
     <Card className="group overflow-hidden border-slate-800/80 bg-slate-950 p-0 text-white shadow-sm transition-shadow hover:shadow-lg">
-      <CardContent className="relative min-h-[132px] overflow-hidden bg-gradient-to-br from-slate-950 via-teal-950 to-slate-900 p-4">
-        <div className={cn('absolute inset-x-0 top-0 h-1', toneAccentClasses(item.tone))} />
-        <div
-          aria-hidden="true"
-          className="absolute inset-0 opacity-[0.14]"
-          style={{
-            backgroundImage:
-              'linear-gradient(to right, rgba(255,255,255,0.22) 1px, transparent 1px), linear-gradient(to bottom, rgba(255,255,255,0.18) 1px, transparent 1px)',
-            backgroundSize: '36px 36px',
-          }}
-        />
-        <div className="relative flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <p className="text-xs font-semibold uppercase text-slate-300">{item.label}</p>
-              <span className={cn('h-2 w-2 rounded-full shadow-[0_0_16px_currentColor]', toneAccentClasses(item.tone))} />
+      <Link
+        to={item.href}
+        className="block focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+      >
+        <CardContent className="relative min-h-[108px] overflow-hidden bg-gradient-to-br from-slate-950 via-teal-950 to-slate-900 p-3 sm:min-h-[132px] sm:p-4">
+          <div className={cn('absolute inset-x-0 top-0 h-1', toneAccentClasses(item.tone))} />
+          <div
+            aria-hidden="true"
+            className="absolute inset-0 opacity-[0.14]"
+            style={{
+              backgroundImage:
+                'linear-gradient(to right, rgba(255,255,255,0.22) 1px, transparent 1px), linear-gradient(to bottom, rgba(255,255,255,0.18) 1px, transparent 1px)',
+              backgroundSize: '36px 36px',
+            }}
+          />
+          <div className="relative flex items-start justify-between gap-2 sm:gap-3">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <p className="text-[11px] font-semibold uppercase leading-4 text-slate-300 sm:text-xs">{item.label}</p>
+                <span className={cn('h-2 w-2 rounded-full shadow-[0_0_16px_currentColor]', toneAccentClasses(item.tone))} />
+              </div>
+              <p className="mt-2 text-xl font-bold tracking-tight text-white tabular-nums sm:text-2xl">
+                {typeof item.value === 'number' ? item.value : <MoneyText value={item.value} />}
+              </p>
             </div>
-            <p className="mt-2 text-2xl font-bold tracking-tight text-white tabular-nums">
-              {typeof item.value === 'number' ? item.value : <MoneyText value={item.value} />}
-            </p>
+            <div className={cn('rounded-md border p-1.5 shadow-sm sm:p-2', toneDarkIconClasses(item.tone))}>
+              <Icon className="h-4 w-4" />
+            </div>
           </div>
-          <div className={cn('rounded-md border p-2 shadow-sm', toneDarkIconClasses(item.tone))}>
-            <Icon className="h-4 w-4" />
-          </div>
-        </div>
-        <p className="relative mt-3 min-h-4 text-xs leading-4 text-slate-300">{item.detail}</p>
-      </CardContent>
-      <div className="border-t border-white/10 bg-slate-950 px-4 py-2.5">
-        <Link to={item.href} className="inline-flex items-center gap-1 text-xs font-medium text-slate-200 hover:text-white">
+          <p className="relative mt-2 min-h-4 text-[11px] leading-4 text-slate-300 sm:mt-3 sm:text-xs">{item.detail}</p>
+        </CardContent>
+        <div className="flex min-h-[34px] items-center border-t border-white/10 bg-slate-950 px-3 py-2 text-[11px] font-semibold text-slate-200 transition-colors group-hover:text-white sm:min-h-[40px] sm:px-4 sm:py-2.5 sm:text-xs">
+          <span className="inline-flex items-center gap-1">
           {item.actionLabel}
           <ArrowRight className="h-3.5 w-3.5" />
-        </Link>
-      </div>
+          </span>
+        </div>
+      </Link>
     </Card>
   );
 }
@@ -457,41 +500,41 @@ function QuickActionTile({ action }: { action: QuickAction }) {
       <Link
         to={action.href}
         className={cn(
-          'group relative flex min-h-[190px] overflow-hidden rounded-2xl border bg-white p-6 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+          'group relative flex min-h-[148px] overflow-hidden rounded-xl border bg-white p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:min-h-[172px] sm:p-5 xl:min-h-[190px] xl:rounded-2xl xl:p-6',
           toneBorderClasses(action.tone)
         )}
         style={riskCardStyle(action.tone)}
       >
-        <Icon className={cn('absolute right-6 top-6 h-5 w-5', toneTextClasses(action.tone))} />
+        <Icon className={cn('absolute right-4 top-4 h-4 w-4 sm:right-5 sm:top-5 sm:h-5 sm:w-5 xl:right-6 xl:top-6', toneTextClasses(action.tone))} />
 
-        <div className="relative flex w-full flex-col justify-between pr-12">
+        <div className="relative flex w-full flex-col justify-between pr-6 sm:pr-10 xl:pr-12">
           <div>
-            <p className={cn('text-xs font-bold uppercase tracking-wide', toneTextClasses(action.tone))}>
+            <p className={cn('text-[11px] font-bold uppercase leading-4 tracking-wide sm:text-xs', toneTextClasses(action.tone))}>
               {action.eyebrow}
             </p>
-            <h3 className="mt-2 text-base font-bold leading-5 text-slate-950">{action.label}</h3>
-            <p className="mt-2 max-w-[84%] text-sm leading-5 text-slate-600">{action.helper}</p>
+            <h3 className="mt-1.5 text-sm font-bold leading-5 text-slate-950 sm:mt-2 sm:text-base">{action.label}</h3>
+            <p className="mt-1.5 line-clamp-2 text-xs leading-4 text-slate-600 sm:mt-2 sm:max-w-[84%] sm:text-sm sm:leading-5">{action.helper}</p>
           </div>
 
-          <div className="my-5 h-px w-full bg-slate-200/80" />
+          <div className="my-3 h-px w-full bg-slate-200/80 sm:my-4 xl:my-5" />
 
-          <div className="flex items-end justify-between gap-3">
+          <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-end sm:justify-between sm:gap-3">
             <div className="min-w-0">
               <p
                 className={cn(
                   'font-black tracking-tight text-slate-950 tabular-nums',
-                  action.valueKind === 'text' ? 'text-4xl' : 'text-3xl'
+                  action.valueKind === 'text' ? 'text-2xl sm:text-4xl' : 'text-xl sm:text-3xl'
                 )}
               >
                 {action.valueKind === 'text' ? action.value : <MoneyText value={action.value} />}
               </p>
-              <p className="mt-1 text-xs text-muted-foreground">
+              <p className="mt-1 text-[11px] text-muted-foreground sm:text-xs">
                 {action.valueLabel || (action.valueKind === 'text' ? 'vendor signals' : 'amount to track')}
               </p>
             </div>
             <span
               className={cn(
-                'inline-flex shrink-0 items-center gap-1 rounded-full px-4 py-2 text-xs font-bold shadow-sm transition-all group-hover:-translate-y-0.5',
+                'inline-flex shrink-0 items-center gap-1 rounded-full px-3 py-1.5 text-[11px] font-bold shadow-sm transition-all group-hover:-translate-y-0.5 sm:px-4 sm:py-2 sm:text-xs',
                 tonePillClasses(action.tone)
               )}
             >
@@ -590,6 +633,8 @@ export default function AccountingDashboardPreviewPage() {
   const { batches: todayBatches, loading: todayBatchesLoading } = useTodayBatches();
   const { suppliers, loading: suppliersLoading } = useSuppliers();
   const [selectedPressureMetric, setSelectedPressureMetric] = useState<PressureMetricKey>('amount');
+  const [warehouseArrivalFilter, setWarehouseArrivalFilter] = useState<WarehouseArrivalFilter>('needs_invoice');
+  const [showAllWarehouseArrivals, setShowAllWarehouseArrivals] = useState(false);
   const [hiddenWarehouseArrivalKeys, setHiddenWarehouseArrivalKeys] = useState(
     () => new Set(readHiddenWarehouseArrivals())
   );
@@ -756,6 +801,8 @@ export default function AccountingDashboardPreviewPage() {
     },
   ];
   const selectedPressure = pressureMetrics.find(metric => metric.key === selectedPressureMetric) || pressureMetrics[0];
+  const overdueInvoiceCount = summary?.overdueCount || 0;
+  const pressureSummary = `${overdueInvoiceCount} overdue invoice${overdueInvoiceCount === 1 ? '' : 's'}, ${formatAccountingMoney(urgentPaymentWindow)} exposed through the next 15 days.`;
 
   const scheduleRows = summary
     ? [
@@ -803,7 +850,7 @@ export default function AccountingDashboardPreviewPage() {
       href: '/accounting/paid-invoices',
       icon: Banknote,
       label: 'Checks',
-      rows: checkPayments.slice(0, 4),
+      rows: checkPayments.slice(0, 3),
       total: moneySum(checkPayments.map(payment => payment.amount_paid)),
       tone: 'emerald',
     },
@@ -812,7 +859,7 @@ export default function AccountingDashboardPreviewPage() {
       href: '/accounting/paid-invoices',
       icon: CreditCard,
       label: 'Credit cards',
-      rows: creditCardPayments.slice(0, 4),
+      rows: creditCardPayments.slice(0, 3),
       total: moneySum(creditCardPayments.map(payment => payment.amount_paid)),
       tone: 'sky',
     },
@@ -847,21 +894,34 @@ export default function AccountingDashboardPreviewPage() {
       return right.invoiceCount - left.invoiceCount;
     })
     .slice(0, 5);
-  const largestOpenInvoices = [...dashboardInvoices]
+  const openInvoicesByAmount = [...dashboardInvoices]
     .filter(invoice => !isInvoicePaid(invoice))
     .sort((left, right) => {
       const leftAmount = decimalStringToCents(invoiceFinalAmount(left));
       const rightAmount = decimalStringToCents(invoiceFinalAmount(right));
       if (leftAmount === rightAmount) return invoiceLabel(left).localeCompare(invoiceLabel(right));
       return leftAmount > rightAmount ? -1 : 1;
-    })
-    .slice(0, 3);
+    });
+  const exposureVendorRows = (topOverdueVendors.length ? topOverdueVendors : vendorRows).slice(0, 2).map(vendor => {
+    const vendorKey = normalizeText(vendor.vendorName);
+    const largestInvoice = openInvoicesByAmount.find(invoice => normalizeText(invoice.accounting_vendors?.name) === vendorKey);
+    return { largestInvoice, vendor };
+  });
   const warehouseInvoiceRows = buildWarehouseInvoiceRows(expectedBoxes, todayBatches, suppliers, dashboardInvoices);
   const warehouseVisibleRows = warehouseInvoiceRows.filter(
     row => !hiddenWarehouseArrivalKeys.has(warehouseArrivalKey(row))
   );
   const hiddenWarehouseArrivalCount = warehouseInvoiceRows.length - warehouseVisibleRows.length;
   const warehouseRowsMissingInvoices = warehouseVisibleRows.filter(row => !row.hasInvoice);
+  const warehouseFilteredRows =
+    warehouseArrivalFilter === 'needs_invoice' ? warehouseRowsMissingInvoices : warehouseVisibleRows;
+  const warehousePreviewRows = showAllWarehouseArrivals
+    ? warehouseFilteredRows
+    : warehouseFilteredRows.slice(0, WAREHOUSE_PREVIEW_LIMIT);
+  const hasMoreWarehouseRows = warehouseFilteredRows.length > warehousePreviewRows.length;
+  const recentPayments = data?.recentPayments || [];
+  const highAmountInvoices = data?.highAmountInvoices || [];
+  const hasFollowUpActivity = recentPayments.length > 0 || highAmountInvoices.length > 0;
   const hideWarehouseArrival = (row: WarehouseInvoiceRow) => {
     setHiddenWarehouseArrivalKeys(current => {
       const next = new Set(current);
@@ -906,7 +966,7 @@ export default function AccountingDashboardPreviewPage() {
         <LoadingState />
       ) : (
         <>
-          <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <section className="grid grid-cols-2 gap-2 sm:gap-3 xl:grid-cols-4">
             {kpis.map(item => (
               <KpiTile item={item} key={item.label} />
             ))}
@@ -917,7 +977,7 @@ export default function AccountingDashboardPreviewPage() {
               <CardContent className="h-full p-4">
                 <div className="flex items-center gap-2 text-sm font-semibold">
                   <CalendarClock className="h-4 w-4 text-primary" />
-                  Terms due next 15d
+                  <h2 className="text-sm font-semibold">Terms due in next 15 days</h2>
                 </div>
                 <p className="mt-2 text-xs leading-4 text-muted-foreground">Vendors with terms and invoices due in 15 days.</p>
                 <div className="mt-4 space-y-2">
@@ -946,7 +1006,7 @@ export default function AccountingDashboardPreviewPage() {
               </CardContent>
             </Card>
 
-            <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+            <div className="grid grid-cols-2 gap-2 md:grid-cols-2 xl:grid-cols-4">
               {quickActions.map(action => (
                 <QuickActionTile action={action} key={action.label} />
               ))}
@@ -958,23 +1018,24 @@ export default function AccountingDashboardPreviewPage() {
               <CardHeader className="border-b bg-gradient-to-r from-slate-950 via-teal-950 to-slate-900 p-0 text-white">
                 <div className="flex flex-col gap-2 p-4 sm:flex-row sm:items-start sm:justify-between">
                   <div>
-                    <CardTitle className="flex items-center gap-2 text-base">
+                    <h2 className="flex items-center gap-2 text-base font-semibold">
                       <CalendarClock className="h-4 w-4 text-teal-200" />
                       Payment pressure
-                    </CardTitle>
+                    </h2>
                     <CardDescription className="text-slate-300">Due-date view with urgency signals and payment exposure</CardDescription>
+                    <p className="mt-2 text-sm font-medium text-white">{pressureSummary}</p>
                   </div>
                   <Badge variant="secondary" className="gap-1.5 bg-white/10 text-white hover:bg-white/15">
                     Pending <MoneyText value={summary?.pendingAmount || '0.00'} />
                   </Badge>
                 </div>
-                <div className="grid border-t border-white/10 sm:grid-cols-2 xl:grid-cols-4">
+                <div className="grid grid-cols-2 border-t border-white/10 xl:grid-cols-4">
                   {pressureMetrics.map(metric => {
                     const isSelected = metric.key === selectedPressureMetric;
                     return (
                       <button
                         className={cn(
-                          'border-t border-white/10 px-4 py-3 text-left transition-colors first:border-t-0 sm:border-l sm:first:border-l-0 sm:[&:nth-child(2)]:border-t-0 xl:border-t-0',
+                          'border-t border-white/10 px-3 py-2.5 text-left transition-colors odd:border-l-0 even:border-l first:border-t-0 [&:nth-child(2)]:border-t-0 sm:px-4 sm:py-3 xl:border-t-0 xl:border-l xl:first:border-l-0',
                           isSelected ? 'bg-white/12' : 'hover:bg-white/8'
                         )}
                         key={metric.key}
@@ -1008,7 +1069,7 @@ export default function AccountingDashboardPreviewPage() {
                   }}
                 />
                 {pressureChartData.length ? (
-                  <div className="relative min-h-[330px] flex-1 p-4 pt-6">
+                  <div className="relative min-h-[220px] flex-1 p-4 pt-6 sm:min-h-[300px]">
                     <ResponsiveContainer width="100%" height="100%">
                       <ComposedChart data={pressureChartData} margin={{ bottom: 8, left: 4, right: 18, top: 30 }}>
                       <defs>
@@ -1053,7 +1114,7 @@ export default function AccountingDashboardPreviewPage() {
                   </ResponsiveContainer>
                   </div>
                 ) : (
-                  <div className="relative min-h-[330px] flex-1">
+                  <div className="relative min-h-[220px] flex-1 sm:min-h-[300px]">
                     <EmptyState label="No aging data available." />
                   </div>
                 )}
@@ -1061,90 +1122,53 @@ export default function AccountingDashboardPreviewPage() {
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div>
                       <h3 className="text-sm font-semibold text-slate-950">Highest exposure now</h3>
-                      <p className="text-xs text-muted-foreground">Top overdue vendors and largest open invoices</p>
+                      <p className="text-xs text-muted-foreground">Top vendors with the invoice creating the current risk</p>
                     </div>
                     <Badge variant="outline" className="bg-white">
                       Live invoice data
                     </Badge>
                   </div>
 
-                  <div className="mt-3 grid gap-3 lg:grid-cols-2">
-                    <div className="rounded-md border border-rose-200 bg-gradient-to-br from-white to-rose-50/80 p-3">
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-2">
-                          <AlertTriangle className="h-4 w-4 text-rose-600" />
-                          <p className="text-xs font-semibold uppercase text-rose-700">Top overdue vendors</p>
-                        </div>
-                        <span className="text-[11px] text-muted-foreground">by open overdue</span>
+                  <div className="mt-3 rounded-md border border-rose-200 bg-gradient-to-br from-white to-rose-50/80 p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <AlertTriangle className="h-4 w-4 text-rose-600" />
+                        <p className="text-xs font-semibold uppercase text-rose-700">Top vendor exposure</p>
                       </div>
-                      <div className="mt-3 space-y-2">
-                        {topOverdueVendors.length ? (
-                          topOverdueVendors.map((vendor, index) => (
-                            <div className="flex items-center justify-between gap-3 rounded-md border border-white/70 bg-white/90 px-3 py-2 shadow-sm" key={vendor.vendorId || vendor.vendorName}>
-                              <div className="flex min-w-0 items-center gap-2">
-                                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-rose-100 text-xs font-bold text-rose-700">
-                                  {index + 1}
-                                </span>
-                                <div className="min-w-0">
-                                  <p className="truncate text-sm font-semibold text-slate-950">{vendor.vendorName}</p>
-                                  <p className="text-xs text-muted-foreground">
-                                    {vendor.invoiceCount} open invoice{vendor.invoiceCount === 1 ? '' : 's'}
-                                  </p>
-                                </div>
-                              </div>
-                              <p className="shrink-0 text-right text-sm font-bold tabular-nums text-rose-700">
-                                <MoneyText value={vendor.overdueAmount} />
-                              </p>
-                            </div>
-                          ))
-                        ) : (
-                          <div className="rounded-md border bg-white/80 px-3 py-3 text-sm text-muted-foreground">
-                            No overdue vendors right now.
-                          </div>
-                        )}
-                      </div>
+                      <span className="text-[11px] text-muted-foreground">by open overdue</span>
                     </div>
-
-                    <div className="rounded-md border border-sky-200 bg-gradient-to-br from-white to-sky-50/80 p-3">
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-2">
-                          <Banknote className="h-4 w-4 text-sky-700" />
-                          <p className="text-xs font-semibold uppercase text-sky-700">Largest open invoices</p>
+                    <div className="mt-3 space-y-2">
+                      {invoicesLoading ? (
+                        <div className="rounded-md border bg-white/80 px-3 py-3 text-sm text-muted-foreground">
+                          Loading exposure...
                         </div>
-                        <span className="text-[11px] text-muted-foreground">by final amount</span>
-                      </div>
-                      <div className="mt-3 space-y-2">
-                        {invoicesLoading ? (
-                          <div className="rounded-md border bg-white/80 px-3 py-3 text-sm text-muted-foreground">
-                            Loading largest invoices...
-                          </div>
-                        ) : largestOpenInvoices.length ? (
-                          largestOpenInvoices.map((invoice, index) => (
-                            <div className="flex items-center justify-between gap-3 rounded-md border border-white/70 bg-white/90 px-3 py-2 shadow-sm" key={invoice.id}>
-                              <div className="flex min-w-0 items-center gap-2">
-                                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-sky-100 text-xs font-bold text-sky-700">
-                                  {index + 1}
-                                </span>
-                                <div className="min-w-0">
-                                  <p className="truncate text-sm font-semibold text-slate-950">
-                                    {invoice.accounting_vendors?.name || 'No vendor'}
-                                  </p>
-                                  <p className="truncate text-xs text-muted-foreground">
-                                    {invoice.invoice_number || 'No invoice #'} - Due {formatShortDate(invoice.due_date)}
-                                  </p>
-                                </div>
+                      ) : exposureVendorRows.length ? (
+                        exposureVendorRows.map(({ largestInvoice, vendor }, index) => (
+                          <div className="flex items-center justify-between gap-3 rounded-md border border-white/70 bg-white/90 px-3 py-2 shadow-sm" key={vendor.vendorId || vendor.vendorName}>
+                            <div className="flex min-w-0 items-center gap-2">
+                              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-rose-100 text-xs font-bold text-rose-700">
+                                {index + 1}
+                              </span>
+                              <div className="min-w-0">
+                                <p className="truncate text-sm font-semibold text-slate-950">{vendor.vendorName}</p>
+                                <p className="truncate text-xs text-muted-foreground">
+                                  {vendor.invoiceCount} open invoice{vendor.invoiceCount === 1 ? '' : 's'}
+                                  {largestInvoice
+                                    ? ` - ${invoiceNumberLabel(largestInvoice)} - ${formatDueDateWithAge(largestInvoice.due_date)}`
+                                    : ''}
+                                </p>
                               </div>
-                              <p className="shrink-0 text-right text-sm font-bold tabular-nums text-sky-700">
-                                <MoneyText value={invoiceFinalAmount(invoice)} />
-                              </p>
                             </div>
-                          ))
-                        ) : (
-                          <div className="rounded-md border bg-white/80 px-3 py-3 text-sm text-muted-foreground">
-                            No open invoices right now.
+                            <p className="shrink-0 text-right text-sm font-bold tabular-nums text-rose-700">
+                              <MoneyText value={vendor.overdueAmount || vendor.totalAmount} />
+                            </p>
                           </div>
-                        )}
-                      </div>
+                        ))
+                      ) : (
+                        <div className="rounded-md border bg-white/80 px-3 py-3 text-sm text-muted-foreground">
+                          No open vendor exposure right now.
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -1153,10 +1177,10 @@ export default function AccountingDashboardPreviewPage() {
 
             <Card>
               <CardHeader className="pb-3">
-                <CardTitle className="flex items-center gap-2 text-base">
+                <h2 className="flex items-center gap-2 text-base font-semibold">
                   <PackageCheck className="h-4 w-4 text-emerald-700" />
                   Warehouse arrivals
-                </CardTitle>
+                </h2>
                 <CardDescription>Vendors received in warehouse and invoice coverage</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -1182,63 +1206,123 @@ export default function AccountingDashboardPreviewPage() {
                       </Button>
                     )}
 
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        className="h-8 rounded-full px-3 text-xs"
+                        onClick={() => {
+                          setWarehouseArrivalFilter('needs_invoice');
+                          setShowAllWarehouseArrivals(false);
+                        }}
+                        size="sm"
+                        type="button"
+                        variant={warehouseArrivalFilter === 'needs_invoice' ? 'default' : 'outline'}
+                      >
+                        Needs invoice ({warehouseRowsMissingInvoices.length})
+                      </Button>
+                      <Button
+                        className="h-8 rounded-full px-3 text-xs"
+                        onClick={() => {
+                          setWarehouseArrivalFilter('all');
+                          setShowAllWarehouseArrivals(false);
+                        }}
+                        size="sm"
+                        type="button"
+                        variant={warehouseArrivalFilter === 'all' ? 'default' : 'outline'}
+                      >
+                        All visible ({warehouseVisibleRows.length})
+                      </Button>
+                    </div>
+
                     <div className="max-h-[520px] space-y-2 overflow-y-auto pr-1">
                       <div className="sticky top-0 z-10 rounded-md border bg-white/95 px-3 py-2 text-xs font-medium text-muted-foreground shadow-sm backdrop-blur">
-                        Showing {warehouseVisibleRows.length} warehouse arrivals - newest first
+                        Showing {warehousePreviewRows.length} of {warehouseFilteredRows.length} warehouse arrivals - newest first
                       </div>
-                      {warehouseVisibleRows.map(row => (
-                        <div
-                          className={cn(
-                            'rounded-md border p-3',
-                            row.hasInvoice ? 'bg-white' : 'border-amber-200 bg-amber-50/55'
-                          )}
-                          key={row.supplierName}
-                        >
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="min-w-0">
-                              <p className="truncate text-sm font-semibold">{row.supplierName}</p>
-                              <p className="mt-0.5 text-xs text-muted-foreground">
-                                {row.receivedCount} WH received / {row.deliveredCount} delivered / {row.trackingCount} tracking
-                              </p>
-                            </div>
-                            <div className="flex shrink-0 items-center gap-1.5">
-                              <Badge variant={row.hasInvoice ? 'outline' : 'secondary'}>
-                                {row.hasInvoice ? 'Invoice found' : 'Needs invoice'}
-                              </Badge>
-                              <Button
-                                aria-label={`Hide ${row.supplierName} from warehouse arrivals`}
-                                className="h-7 w-7 text-muted-foreground hover:text-foreground"
-                                onClick={() => hideWarehouseArrival(row)}
-                                size="icon"
-                                title="Hide from dashboard"
-                                variant="ghost"
-                              >
-                                <X className="h-3.5 w-3.5" />
-                              </Button>
-                            </div>
-                          </div>
-                          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs">
-                            <span className="text-muted-foreground">Latest {formatShortDate(row.latestAt)}</span>
-                            {row.hasInvoice ? (
-                              <span className="font-medium text-emerald-700">
-                                {row.invoiceCount} invoice{row.invoiceCount === 1 ? '' : 's'} / <MoneyText value={row.invoiceAmount} />
-                              </span>
-                            ) : (
-                              <Button size="sm" className="accounting-rainbow-button h-8 gap-1.5" asChild>
-                                <Link
-                                  to={{
-                                    pathname: '/accounting/invoices',
-                                    search: createInvoiceSearchForSupplier(row.supplierName),
-                                  }}
-                                >
-                                  Enter invoice
-                                  <ArrowRight className="h-3.5 w-3.5" />
-                                </Link>
-                              </Button>
+                      {warehousePreviewRows.length ? (
+                        warehousePreviewRows.map(row => (
+                          <div
+                            className={cn(
+                              'rounded-md border p-3',
+                              row.hasInvoice ? 'bg-white' : 'border-amber-200 bg-amber-50/55'
                             )}
+                            key={warehouseArrivalKey(row)}
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <p className="truncate text-sm font-semibold">{row.supplierName}</p>
+                                <p className="mt-0.5 text-xs text-muted-foreground">
+                                  {row.receivedCount} WH received / {row.deliveredCount} delivered / {row.trackingCount} tracking
+                                </p>
+                              </div>
+                              <div className="flex shrink-0 items-center gap-1.5">
+                                <Badge variant={row.hasInvoice ? 'outline' : 'secondary'}>
+                                  {row.hasInvoice ? 'Invoice found' : 'Needs invoice'}
+                                </Badge>
+                                <Button
+                                  aria-label={`Hide ${row.supplierName} from warehouse arrivals`}
+                                  className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                                  onClick={() => hideWarehouseArrival(row)}
+                                  size="icon"
+                                  title="Hide from dashboard"
+                                  variant="ghost"
+                                >
+                                  <X className="h-3.5 w-3.5" />
+                                </Button>
+                              </div>
+                            </div>
+                            <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs">
+                              <span className="text-muted-foreground">Latest {formatShortDate(row.latestAt)}</span>
+                              {row.hasInvoice ? (
+                                <span className="font-medium text-emerald-700">
+                                  {row.invoiceCount} invoice{row.invoiceCount === 1 ? '' : 's'} / <MoneyText value={row.invoiceAmount} />
+                                </span>
+                              ) : (
+                                <Button size="sm" className="accounting-rainbow-button h-8 gap-1.5" asChild>
+                                  <Link
+                                    to={{
+                                      pathname: '/accounting/invoices',
+                                      search: createInvoiceSearchForSupplier(row.supplierName),
+                                    }}
+                                  >
+                                    Enter invoice
+                                    <ArrowRight className="h-3.5 w-3.5" />
+                                  </Link>
+                                </Button>
+                              )}
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        ))
+                      ) : (
+                        <EmptyState
+                          compact
+                          label={
+                            warehouseArrivalFilter === 'needs_invoice'
+                              ? 'No visible warehouse arrivals need an invoice match.'
+                              : 'No visible warehouse arrivals found.'
+                          }
+                        />
+                      )}
+                      {hasMoreWarehouseRows && (
+                        <Button
+                          className="w-full"
+                          onClick={() => setShowAllWarehouseArrivals(true)}
+                          size="sm"
+                          type="button"
+                          variant="outline"
+                        >
+                          View all {warehouseFilteredRows.length} arrivals
+                        </Button>
+                      )}
+                      {showAllWarehouseArrivals && warehouseFilteredRows.length > WAREHOUSE_PREVIEW_LIMIT && (
+                        <Button
+                          className="w-full"
+                          onClick={() => setShowAllWarehouseArrivals(false)}
+                          size="sm"
+                          type="button"
+                          variant="ghost"
+                        >
+                          Show first {WAREHOUSE_PREVIEW_LIMIT}
+                        </Button>
+                      )}
                     </div>
 
                     <div className="grid gap-2 sm:grid-cols-2">
@@ -1253,6 +1337,7 @@ export default function AccountingDashboardPreviewPage() {
                 ) : (
                   <>
                     <EmptyState
+                      compact
                       label={
                         hiddenWarehouseArrivalCount > 0
                           ? 'All warehouse arrivals are hidden from this dashboard.'
@@ -1282,15 +1367,15 @@ export default function AccountingDashboardPreviewPage() {
           <section className="grid gap-4 xl:grid-cols-[minmax(360px,0.95fr)_minmax(0,1.05fr)]">
             <Card>
               <CardHeader className="pb-3">
-                <CardTitle className="flex items-center gap-2 text-base">
+                <h2 className="flex items-center gap-2 text-base font-semibold">
                   <TrendingUp className="h-4 w-4 text-primary" />
                   Vendor balances
-                </CardTitle>
+                </h2>
                 <CardDescription>Top open balances with near-term risk</CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
                 {vendorRows.length ? (
-                  vendorRows.slice(0, 6).map(vendor => (
+                  vendorRows.slice(0, 4).map(vendor => (
                     <div className="rounded-md border p-3" key={vendor.vendorId || vendor.vendorName}>
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
@@ -1327,10 +1412,10 @@ export default function AccountingDashboardPreviewPage() {
 
             <Card>
               <CardHeader className="pb-3">
-                <CardTitle className="flex items-center gap-2 text-base">
+                <h2 className="flex items-center gap-2 text-base font-semibold">
                   <ReceiptText className="h-4 w-4 text-primary" />
                   Payments by method
-                </CardTitle>
+                </h2>
                 <CardDescription>Paid invoice rows separated by checks and credit cards</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -1371,7 +1456,7 @@ export default function AccountingDashboardPreviewPage() {
                       })}
                     </div>
 
-                    <div className="grid gap-3 lg:grid-cols-2">
+                    <div className="hidden gap-3 sm:grid lg:grid-cols-2">
                       {paymentMethodGroups.map(group => {
                         const Icon = group.icon;
                         const isCard = group.tone === 'sky';
@@ -1418,26 +1503,29 @@ export default function AccountingDashboardPreviewPage() {
                         );
                       })}
                     </div>
+                    <Button className="w-full sm:hidden" size="sm" variant="outline" asChild>
+                      <Link to="/accounting/paid-invoices">Open paid invoices</Link>
+                    </Button>
                   </>
                 ) : (
-                  <EmptyState label="No check or credit card payments found." />
+                  <EmptyState compact label="No check or credit card payments found." />
                 )}
               </CardContent>
             </Card>
           </section>
 
-          <section className="grid gap-4 xl:grid-cols-[minmax(320px,0.75fr)_minmax(0,1.25fr)]">
-            <Card>
+          <section className="grid min-w-0 gap-4 xl:grid-cols-[minmax(320px,0.75fr)_minmax(0,1.25fr)]">
+            <Card className="min-w-0">
               <CardHeader className="pb-3">
-                <CardTitle className="flex items-center gap-2 text-base">
+                <h2 className="flex items-center gap-2 text-base font-semibold">
                   <CalendarClock className="h-4 w-4 text-primary" />
                   Payment schedule
-                </CardTitle>
+                </h2>
                 <CardDescription>Next payment decisions by urgency</CardDescription>
               </CardHeader>
-              <CardContent className="space-y-3">
+              <CardContent className="grid grid-cols-2 gap-2 sm:block sm:space-y-3">
                 {scheduleRows.map(item => (
-                  <div className="flex items-start justify-between gap-3 rounded-md border p-3" key={item.title}>
+                  <div className="flex min-w-0 flex-col gap-2 rounded-md border p-3 sm:flex-row sm:items-start sm:justify-between sm:gap-3" key={item.title}>
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
                         <p className="text-sm font-semibold">{item.title}</p>
@@ -1446,7 +1534,7 @@ export default function AccountingDashboardPreviewPage() {
                       <p className="mt-1 text-xs text-muted-foreground">{item.label}</p>
                       {item.count != null && <p className="mt-2 text-xs text-muted-foreground">{item.count} invoices</p>}
                     </div>
-                    <p className="text-right text-sm font-bold tabular-nums">
+                    <p className="text-sm font-bold tabular-nums sm:text-right">
                       <MoneyText value={item.amount} />
                     </p>
                   </div>
@@ -1454,16 +1542,20 @@ export default function AccountingDashboardPreviewPage() {
               </CardContent>
             </Card>
 
-            <Card>
+            <Card className="min-w-0">
               <CardHeader className="pb-3">
-                <CardTitle className="flex items-center gap-2 text-base">
+                <h2 className="flex items-center gap-2 text-base font-semibold">
                   <ReceiptText className="h-4 w-4 text-primary" />
-                  Recent payments
-                </CardTitle>
-                <CardDescription>Compact ledger follow-up view</CardDescription>
+                  {hasFollowUpActivity ? 'Recent payments' : 'Follow-up clear'}
+                </h2>
+                <CardDescription>
+                  {hasFollowUpActivity
+                    ? 'Compact ledger follow-up view'
+                    : 'No recent payments or high amount invoices need review.'}
+                </CardDescription>
               </CardHeader>
               <CardContent>
-                {data?.recentPayments?.length ? (
+                {recentPayments.length ? (
                   <div className="overflow-x-auto">
                     <Table>
                       <TableHeader>
@@ -1475,7 +1567,7 @@ export default function AccountingDashboardPreviewPage() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {data.recentPayments.slice(0, 8).map(payment => (
+                        {recentPayments.slice(0, 6).map(payment => (
                           <TableRow key={payment.id}>
                             <TableCell className="min-w-[180px] font-medium">{payment.accounting_vendors?.name || '-'}</TableCell>
                             <TableCell>{payment.payment_date || '-'}</TableCell>
@@ -1491,47 +1583,52 @@ export default function AccountingDashboardPreviewPage() {
                     </Table>
                   </div>
                 ) : (
-                  <EmptyState label="No recent payments found." />
+                  <EmptyState
+                    compact
+                    label={
+                      hasFollowUpActivity
+                        ? 'No recent payments found.'
+                        : 'No recent payments or high amount invoices need review.'
+                    }
+                  />
                 )}
               </CardContent>
             </Card>
           </section>
 
+          {highAmountInvoices.length ? (
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="flex items-center gap-2 text-base">
+              <h2 className="flex items-center gap-2 text-base font-semibold">
                 <AlertTriangle className="h-4 w-4 text-rose-600" />
                 High amount invoice watchlist
-              </CardTitle>
+              </h2>
               <CardDescription>Large unpaid items that need review before payment</CardDescription>
             </CardHeader>
             <CardContent>
-              {data?.highAmountInvoices?.length ? (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Vendor</TableHead>
-                      <TableHead>Invoice</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead className="text-right">Final</TableHead>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Vendor</TableHead>
+                    <TableHead>Invoice</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="text-right">Final</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {highAmountInvoices.map(invoice => (
+                    <TableRow key={invoice.id}>
+                      <TableCell>{invoice.accounting_vendors?.name || '-'}</TableCell>
+                      <TableCell>{invoice.invoice_number || '-'}</TableCell>
+                      <TableCell><InvoiceStatusBadges invoice={invoice} /></TableCell>
+                      <TableCell className="text-right font-medium">{formatAccountingMoney(invoiceFinalAmount(invoice))}</TableCell>
                     </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {data.highAmountInvoices.map(invoice => (
-                      <TableRow key={invoice.id}>
-                        <TableCell>{invoice.accounting_vendors?.name || '-'}</TableCell>
-                        <TableCell>{invoice.invoice_number || '-'}</TableCell>
-                        <TableCell><InvoiceStatusBadges invoice={invoice} /></TableCell>
-                        <TableCell className="text-right font-medium">{formatAccountingMoney(invoiceFinalAmount(invoice))}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              ) : (
-                <EmptyState label="No high amount invoices found." />
-              )}
+                  ))}
+                </TableBody>
+              </Table>
             </CardContent>
           </Card>
+          ) : null}
         </>
       )}
     </div>

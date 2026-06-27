@@ -40,25 +40,31 @@ export function AccountingTabs() {
   }, [pathname]);
 
   return (
-    <nav className="inline-flex max-w-full gap-1 overflow-x-auto rounded-xl border border-slate-200/80 bg-white/85 p-1 shadow-sm shadow-slate-950/5">
-      {ACCOUNTING_NAV.map(item => (
-        <Link
-          key={item.to}
-          to={item.to}
-          onFocus={() => preloadRoute(item.to)}
-          onMouseEnter={() => preloadRoute(item.to)}
-          onPointerDown={() => preloadRoute(item.to)}
-          className={cn(
-            'whitespace-nowrap rounded-lg px-3 py-2 text-[0.8125rem] font-semibold transition-all duration-150',
-            pathname === item.to
-              ? 'bg-slate-950 text-white shadow-sm shadow-slate-950/15'
-              : 'text-slate-500 hover:bg-slate-100 hover:text-slate-950'
-          )}
-        >
-          {item.label}
-        </Link>
-      ))}
-    </nav>
+    <div className="relative w-full min-w-0 max-w-full overflow-hidden [contain:inline-size]">
+      <nav
+        aria-label="Accounting sections"
+        className="flex w-full min-w-0 max-w-full snap-x gap-1 overflow-x-auto overscroll-x-contain rounded-xl border border-slate-200/80 bg-white/85 p-1 shadow-sm shadow-slate-950/5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      >
+        {ACCOUNTING_NAV.map(item => (
+          <Link
+            key={item.to}
+            to={item.to}
+            onFocus={() => preloadRoute(item.to)}
+            onMouseEnter={() => preloadRoute(item.to)}
+            onPointerDown={() => preloadRoute(item.to)}
+            className={cn(
+              'snap-start whitespace-nowrap rounded-lg px-3 py-2 text-[0.8125rem] font-semibold transition-all duration-150',
+              pathname === item.to
+                ? 'bg-slate-950 text-white shadow-sm shadow-slate-950/15'
+                : 'text-slate-500 hover:bg-slate-100 hover:text-slate-950'
+            )}
+          >
+            {item.label}
+          </Link>
+        ))}
+      </nav>
+      <div className="pointer-events-none absolute inset-y-0 right-0 w-10 bg-gradient-to-l from-background via-background/85 to-transparent sm:hidden" />
+    </div>
   );
 }
 
@@ -115,8 +121,17 @@ export function LoadingState({ label = 'Loading accounting data...' }: { label?:
   return <div className="py-16 text-center text-sm text-muted-foreground">{label}</div>;
 }
 
-export function EmptyState({ label }: { label: string }) {
-  return <div className="rounded-lg border bg-muted/20 py-12 text-center text-sm text-muted-foreground">{label}</div>;
+export function EmptyState({ compact = false, label }: { compact?: boolean; label: string }) {
+  return (
+    <div
+      className={cn(
+        'rounded-lg border bg-muted/20 text-center text-sm text-muted-foreground',
+        compact ? 'px-3 py-4' : 'py-12'
+      )}
+    >
+      {label}
+    </div>
+  );
 }
 
 export function MoneyText({ value }: { value: string | number | null | undefined }) {
