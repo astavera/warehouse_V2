@@ -15,6 +15,7 @@ const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
+const PASSCODE_EMPLOYEE_SUFFIX = ' Passcode';
 
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -36,6 +37,12 @@ function employeeEmail(employeeId: string) {
   return `${employeeId}@warehouse.localhost`;
 }
 
+function passcodeEmployeeName(employee: Employee) {
+  return employee.name.endsWith(PASSCODE_EMPLOYEE_SUFFIX)
+    ? employee.name
+    : `${employee.name}${PASSCODE_EMPLOYEE_SUFFIX}`;
+}
+
 function publicEmployee(employee: Employee) {
   const { passcode: _passcode, ...safeEmployee } = employee;
   return safeEmployee;
@@ -51,8 +58,74 @@ function hasAccountingAccess(employee: Employee) {
 }
 
 function requiresPasswordLogin(employee: Employee) {
+  if (employee.name.endsWith(PASSCODE_EMPLOYEE_SUFFIX)) return false;
+
   const permissions = Array.isArray(employee.permissions) ? employee.permissions : [];
   return employee.role === 'admin' || permissions.includes('settings') || hasAccountingAccess(employee);
+}
+
+function passcodePermissions(employee: Employee) {
+  const permissions = Array.isArray(employee.permissions) ? employee.permissions : [];
+  const allowed = permissions.filter(permission =>
+    permission !== 'accounting' && !permission.startsWith('accounting.')
+  );
+  return allowed.length > 0 ? allowed : ['receiving'];
+}
+
+async function getOrCreatePasscodeEmployee(
+  admin: ReturnType<typeof createClient>,
+  employee: Employee
+) {
+  const name = passcodeEmployeeName(employee);
+  const permissions = passcodePermissions(employee);
+
+  const { data: existing, error: existingError } = await admin
+    .from('employees')
+    .select('id, name, passcode, active, auth_user_id, role, store_number, permissions')
+    .eq('passcode', employee.passcode)
+    .eq('name', name)
+    .eq('active', true)
+    .maybeSingle();
+  if (existingError) throw existingError;
+
+  if (existing) {
+    const shadow = existing as Employee;
+    const currentPermissions = Array.isArray(shadow.permissions) ? shadow.permissions : [];
+    const needsUpdate =
+      shadow.role !== 'warehouse' ||
+      shadow.store_number !== null ||
+      JSON.stringify([...currentPermissions].sort()) !== JSON.stringify([...permissions].sort());
+
+    if (!needsUpdate) return shadow;
+
+    const { data, error } = await admin
+      .from('employees')
+      .update({
+        role: 'warehouse',
+        store_number: null,
+        permissions,
+      })
+      .eq('id', shadow.id)
+      .select('id, name, passcode, active, auth_user_id, role, store_number, permissions')
+      .single();
+    if (error) throw error;
+    return data as Employee;
+  }
+
+  const { data, error } = await admin
+    .from('employees')
+    .insert({
+      name,
+      passcode: employee.passcode,
+      active: true,
+      role: 'warehouse',
+      store_number: null,
+      permissions,
+    })
+    .select('id, name, passcode, active, auth_user_id, role, store_number, permissions')
+    .single();
+  if (error) throw error;
+  return data as Employee;
 }
 
 async function sha256(value: string) {
@@ -156,21 +229,16 @@ Deno.serve(async req => {
         .select('id, name, passcode, active, auth_user_id, role, store_number, permissions')
         .eq('passcode', passcode)
         .eq('active', true)
-        .maybeSingle();
+        .limit(20);
       if (error) throw error;
-      if (!data) {
+      const matches = (data || []) as Employee[];
+      if (matches.length === 0) {
         await recordLoginAttempt(admin, action, ipAddress, passcodeHash, false);
         return jsonResponse({ error: 'Incorrect passcode' }, 401);
       }
-      employee = data as Employee;
-      if (requiresPasswordLogin(employee)) {
-        await recordLoginAttempt(admin, action, ipAddress, passcodeHash, false);
-        return jsonResponse({
-          error: hasAccountingAccess(employee)
-            ? 'Accounting users must sign in with email and password.'
-            : 'Admin users must sign in with email and password.',
-        }, 403);
-      }
+
+      const passcodeEmployee = matches.find(row => !requiresPasswordLogin(row));
+      employee = passcodeEmployee || await getOrCreatePasscodeEmployee(admin, matches[0]);
     } else if (action === 'sign-up') {
       if (!adminPasscode) return jsonResponse({ error: 'Admin passcode is not configured' }, 500);
       const name = typeof payload.name === 'string' ? payload.name.trim() : '';

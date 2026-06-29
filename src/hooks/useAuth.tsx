@@ -43,6 +43,23 @@ const MOCK_USER: PublicEmployee = {
   permissions: ['receiving', 'expected_boxes', 'prices', 'audit', 'accounting', 'settings'],
 };
 
+function passcodeOnlyEmployee(employee: PublicEmployee): PublicEmployee {
+  if (!canAccessModule(employee, 'accounting')) return employee;
+
+  const permissions = employee.permissions?.filter(permission =>
+    permission !== 'accounting' && !permission.startsWith('accounting.')
+  );
+
+  return {
+    ...employee,
+    id: `${employee.id}-passcode`,
+    auth_user_id: null,
+    role: 'warehouse',
+    store_number: null,
+    permissions: permissions?.length ? permissions : ['receiving'],
+  };
+}
+
 function isOffline() {
   return typeof navigator !== 'undefined' && navigator.onLine === false;
 }
@@ -210,10 +227,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const employee = listLocalEmployees().find(row => row.passcode === normalizedPasscode && row.active);
       if (!employee) throw new Error('Incorrect passcode');
       const { passcode: _passcode, ...safeEmployee } = employee;
-      if (canAccessModule(safeEmployee, 'accounting')) {
-        throw new Error('Accounting users must sign in with email and password.');
-      }
-      return safeEmployee;
+      return passcodeOnlyEmployee(safeEmployee);
     }
     if (isOffline()) {
       throw new Error('Reconnect to sign in. Offline mode works after a user has already opened the workspace on this device.');
@@ -221,9 +235,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     await clearLocalAuthSession();
     const result = await invokeKioskAuth({ action: 'sign-in', passcode: normalizedPasscode });
-    if (canAccessModule(result.employee, 'accounting')) {
-      throw new Error('Accounting users must sign in with email and password.');
-    }
     const { error: sessionError } = await supabase.auth.setSession({
       access_token: result.session.access_token,
       refresh_token: result.session.refresh_token,
