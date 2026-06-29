@@ -241,6 +241,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { pathname } = useLocation();
   const [open, setOpen] = useState(false);
   const [pendingPath, setPendingPath] = useState<string | null>(null);
+  const [desktopOpenGroup, setDesktopOpenGroup] = useState<string | null>(null);
   const [mobileOpenGroups, setMobileOpenGroups] = useState<Set<string>>(() => new Set(['Warehouse']));
   const { user, signOut } = useAuth();
   const { isLocalDemo, isOffline, pendingCount, syncing, syncNow } = useOfflineStatus();
@@ -271,6 +272,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     setPendingPath(null);
+    setDesktopOpenGroup(null);
   }, [pathname]);
 
   useEffect(() => {
@@ -302,7 +304,14 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   const handleNavClick = (path: string) => {
     setPendingPath(path);
+    setDesktopOpenGroup(null);
     preloadRoute(path);
+  };
+
+  const handleDesktopGroupBlur = (event: React.FocusEvent<HTMLDivElement>) => {
+    const nextTarget = event.relatedTarget;
+    if (nextTarget instanceof Node && event.currentTarget.contains(nextTarget)) return;
+    setDesktopOpenGroup(null);
   };
 
   const toggleMobileGroup = (label: string) => {
@@ -368,7 +377,14 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 const groupLanding = group.items[0];
 
                 return (
-                  <div key={group.label} className="group/nav relative">
+                  <div
+                    key={group.label}
+                    className="relative"
+                    onBlur={handleDesktopGroupBlur}
+                    onFocus={() => setDesktopOpenGroup(group.label)}
+                    onMouseEnter={() => setDesktopOpenGroup(group.label)}
+                    onMouseLeave={() => setDesktopOpenGroup(null)}
+                  >
                     <Link
                       to={groupLanding.to}
                       onClick={() => handleNavClick(groupLanding.to)}
@@ -383,7 +399,14 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                       {group.label}
                     </Link>
                     {group.items.length > 1 && (
-                      <div className="invisible absolute left-1/2 top-full z-50 min-w-[180px] -translate-x-1/2 pt-2 opacity-0 transition group-hover/nav:visible group-hover/nav:opacity-100 group-focus-within/nav:visible group-focus-within/nav:opacity-100">
+                      <div
+                        className={cn(
+                          'absolute left-1/2 top-full z-50 min-w-[180px] -translate-x-1/2 pt-2 transition',
+                          desktopOpenGroup === group.label
+                            ? 'visible opacity-100'
+                            : 'invisible pointer-events-none opacity-0'
+                        )}
+                      >
                         <div className="rounded-lg border border-border/70 bg-white p-1.5 shadow-xl">
                           {group.items.map(item => (
                             <AppDropdownItem
