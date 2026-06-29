@@ -41,9 +41,18 @@ function publicEmployee(employee: Employee) {
   return safeEmployee;
 }
 
+function hasAccountingAccess(employee: Employee) {
+  const permissions = Array.isArray(employee.permissions) ? employee.permissions : [];
+  return (
+    employee.role === 'accounting' ||
+    permissions.includes('accounting') ||
+    permissions.some(permission => permission.startsWith('accounting.'))
+  );
+}
+
 function requiresPasswordLogin(employee: Employee) {
   const permissions = Array.isArray(employee.permissions) ? employee.permissions : [];
-  return employee.role === 'admin' || permissions.includes('settings');
+  return employee.role === 'admin' || permissions.includes('settings') || hasAccountingAccess(employee);
 }
 
 async function sha256(value: string) {
@@ -156,7 +165,11 @@ Deno.serve(async req => {
       employee = data as Employee;
       if (requiresPasswordLogin(employee)) {
         await recordLoginAttempt(admin, action, ipAddress, passcodeHash, false);
-        return jsonResponse({ error: 'Admin users must sign in with email and password.' }, 403);
+        return jsonResponse({
+          error: hasAccountingAccess(employee)
+            ? 'Accounting users must sign in with email and password.'
+            : 'Admin users must sign in with email and password.',
+        }, 403);
       }
     } else if (action === 'sign-up') {
       if (!adminPasscode) return jsonResponse({ error: 'Admin passcode is not configured' }, 500);

@@ -98,7 +98,7 @@ export default function ResetPasswordPage() {
                   className="h-full w-full object-contain"
                 />
               </div>
-              <p className="text-xs font-semibold uppercase tracking-[0.28em] text-muted-foreground">Admin access</p>
+              <p className="text-xs font-semibold uppercase tracking-[0.28em] text-muted-foreground">Accounting access</p>
               <h1 className="mt-3 text-3xl font-semibold text-foreground">Reset password</h1>
             </div>
 

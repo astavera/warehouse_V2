@@ -9,7 +9,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { GridBackground } from '@/components/ui/grid-background';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/hooks/useAuth';
-import { getDefaultLandingPath } from '@/lib/permissions';
+import { canAccessModule, getDefaultLandingPath } from '@/lib/permissions';
 
 const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'spacer', '0', 'back'] as const;
 type Mode = 'login' | 'password' | 'admin' | 'register';
@@ -43,7 +43,7 @@ export default function LoginPage() {
     setLoading(true);
     setStatusMessage(
       isPasswordMode
-        ? 'Checking admin account...'
+        ? 'Checking accounting account...'
         : isAdminMode
         ? 'Verifying admin...'
         : isSignup
@@ -71,7 +71,9 @@ export default function LoginPage() {
       setShowSuccess(true);
 
       window.setTimeout(() => {
-        const landingPath = getDefaultLandingPath(employee);
+        const landingPath = isPasswordMode && canAccessModule(employee, 'accounting')
+          ? '/accounting'
+          : getDefaultLandingPath(employee);
         completeSignIn(employee);
         navigate(landingPath, { replace: true });
       }, 120);
@@ -110,8 +112,8 @@ export default function LoginPage() {
   const handlePasswordReset = async () => {
     if (loading) return;
     if (!email.trim()) {
-      setStatusMessage('Enter the admin email first.');
-      toast.error('Enter the admin email first');
+      setStatusMessage('Enter the accounting email first.');
+      toast.error('Enter the accounting email first');
       return;
     }
 
@@ -252,7 +254,7 @@ export default function LoginPage() {
               <div className="mb-7 text-center">
                 <p className="text-[0.95rem] font-medium leading-6 text-muted-foreground">
                   {isPasswordMode
-                    ? 'Admin access requires email and password'
+                    ? 'Accounting access requires email and password'
                     : isAdminMode
                     ? 'Admin verification required'
                     : isSignup
@@ -291,7 +293,7 @@ export default function LoginPage() {
                     setStatusMessage('');
                   }}
                 >
-                  Admin login
+                  Login
                 </Button>
               </div>
 
@@ -342,7 +344,7 @@ export default function LoginPage() {
                       className="h-12 w-full rounded-2xl text-sm font-bold"
                       disabled={loading || !email.trim() || !password}
                     >
-                      {loading ? 'Opening admin...' : 'Open admin'}
+                      {loading ? 'Entering...' : 'Enter'}
                     </Button>
                   </>
                 ) : (

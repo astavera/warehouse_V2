@@ -210,6 +210,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const employee = listLocalEmployees().find(row => row.passcode === normalizedPasscode && row.active);
       if (!employee) throw new Error('Incorrect passcode');
       const { passcode: _passcode, ...safeEmployee } = employee;
+      if (canAccessModule(safeEmployee, 'accounting')) {
+        throw new Error('Accounting users must sign in with email and password.');
+      }
       return safeEmployee;
     }
     if (isOffline()) {
@@ -218,8 +221,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     await clearLocalAuthSession();
     const result = await invokeKioskAuth({ action: 'sign-in', passcode: normalizedPasscode });
-    if (canAccessModule(result.employee, 'settings')) {
-      throw new Error('Admin users must sign in with email and password.');
+    if (canAccessModule(result.employee, 'accounting')) {
+      throw new Error('Accounting users must sign in with email and password.');
     }
     const { error: sessionError } = await supabase.auth.setSession({
       access_token: result.session.access_token,
@@ -240,7 +243,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return MOCK_USER;
     }
     if (isOffline()) {
-      throw new Error('Reconnect to sign in as admin.');
+      throw new Error('Reconnect to sign in with email and password.');
     }
 
     await clearLocalAuthSession();
@@ -253,7 +256,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const authUserId = sessionData.user?.id;
     if (!authUserId) {
       await clearLocalAuthSession();
-      throw new Error('Admin session was not returned');
+      throw new Error('Email session was not returned');
     }
 
     const { data, error } = await supabase
@@ -268,13 +271,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     if (!data) {
       await clearLocalAuthSession();
-      throw new Error('No active employee profile is linked to this admin account');
+      throw new Error('No active employee profile is linked to this email account');
     }
 
     const employee = data as PublicEmployee;
-    if (!canAccessModule(employee, 'settings')) {
+    if (!canAccessModule(employee, 'accounting')) {
       await clearLocalAuthSession();
-      throw new Error('This email is not allowed to open admin settings');
+      throw new Error('This email is not allowed to open Accounting');
     }
 
     return employee;
