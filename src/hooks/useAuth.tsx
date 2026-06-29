@@ -6,6 +6,7 @@ import { functionErrorMessage } from '@/lib/functionErrors';
 import { listLocalEmployees } from '@/lib/localWarehouseData';
 import { canAccessModule } from '@/lib/permissions';
 import { clearStoredSupabaseAuthTokens, isInvalidRefreshTokenError } from '@/lib/supabaseAuth';
+import { displayEmployeeName } from '@/lib/employeeDisplay';
 
 type Employee = Tables<'employees'>;
 type PublicEmployee = Omit<Employee, 'passcode'> & { auth_user_id?: string | null };
@@ -60,6 +61,10 @@ function passcodeOnlyEmployee(employee: PublicEmployee): PublicEmployee {
   };
 }
 
+function normalizeEmployeeDisplayName(employee: PublicEmployee): PublicEmployee {
+  return { ...employee, name: displayEmployeeName(employee.name) };
+}
+
 function isOffline() {
   return typeof navigator !== 'undefined' && navigator.onLine === false;
 }
@@ -74,8 +79,9 @@ function readCachedUser() {
 }
 
 function cacheUser(employee: PublicEmployee) {
-  localStorage.setItem(STORAGE_KEY, employee.id);
-  localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(employee));
+  const displayEmployee = normalizeEmployeeDisplayName(employee);
+  localStorage.setItem(STORAGE_KEY, displayEmployee.id);
+  localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(displayEmployee));
 }
 
 async function clearLocalAuthSession() {
@@ -133,7 +139,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const employee = listLocalEmployees().find(row => row.id === cachedId);
         if (employee) {
           const { passcode: _passcode, ...safeEmployee } = employee;
-          setUser(safeEmployee);
+          setUser(normalizeEmployeeDisplayName(safeEmployee));
           setLoading(false);
           return;
         }
@@ -148,7 +154,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       const cachedUser = readCachedUser();
       if (isOffline() && cachedUser) {
-        setUser(cachedUser);
+        setUser(normalizeEmployeeDisplayName(cachedUser));
         setLoading(false);
         return;
       }
@@ -167,7 +173,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           return;
         }
         if (cachedUser) {
-          setUser(cachedUser);
+          setUser(normalizeEmployeeDisplayName(cachedUser));
           setLoading(false);
           return;
         }
@@ -198,7 +204,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (error) {
         if (cachedUser && (cachedUser.auth_user_id === authUserId || localStorage.getItem(STORAGE_KEY) === cachedUser.id)) {
-          setUser(cachedUser);
+          setUser(normalizeEmployeeDisplayName(cachedUser));
           setLoading(false);
           return;
         }
@@ -211,7 +217,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         localStorage.removeItem(USER_STORAGE_KEY);
         setUser(null);
       } else {
-        const employee = data as PublicEmployee;
+        const employee = normalizeEmployeeDisplayName(data as PublicEmployee);
         cacheUser(employee);
         setUser(employee);
       }
@@ -227,7 +233,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const employee = listLocalEmployees().find(row => row.passcode === normalizedPasscode && row.active);
       if (!employee) throw new Error('Incorrect passcode');
       const { passcode: _passcode, ...safeEmployee } = employee;
-      return passcodeOnlyEmployee(safeEmployee);
+      return normalizeEmployeeDisplayName(passcodeOnlyEmployee(safeEmployee));
     }
     if (isOffline()) {
       throw new Error('Reconnect to sign in. Offline mode works after a user has already opened the workspace on this device.');
@@ -240,7 +246,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       refresh_token: result.session.refresh_token,
     });
     if (sessionError) throw sessionError;
-    return result.employee;
+    return normalizeEmployeeDisplayName(result.employee);
   };
 
   const beginAdminSignIn = async (email: string, password: string) => {
@@ -251,7 +257,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (normalizedEmail !== MOCK_ADMIN_EMAIL || password !== MOCK_ADMIN_PASSWORD) {
         throw new Error('Incorrect admin email or password');
       }
-      return MOCK_USER;
+      return normalizeEmployeeDisplayName(MOCK_USER);
     }
     if (isOffline()) {
       throw new Error('Reconnect to sign in with email and password.');
@@ -291,7 +297,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       throw new Error('This email is not allowed to open Accounting');
     }
 
-    return employee;
+    return normalizeEmployeeDisplayName(employee);
   };
 
   const sendPasswordReset = async (email: string) => {
@@ -316,7 +322,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const normalizedPasscode = passcode.trim();
     if (MOCK_LOCAL) {
       if (!normalizedName || normalizedPasscode.length !== 4 || !adminPasscode) throw new Error('Invalid test registration');
-      return { ...MOCK_USER, name: normalizedName, role: 'warehouse', store_number: null, permissions: null };
+      return normalizeEmployeeDisplayName({ ...MOCK_USER, name: normalizedName, role: 'warehouse', store_number: null, permissions: null });
     }
     if (isOffline()) {
       throw new Error('Reconnect to register a new employee.');
@@ -334,12 +340,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       refresh_token: result.session.refresh_token,
     });
     if (sessionError) throw sessionError;
-    return result.employee;
+    return normalizeEmployeeDisplayName(result.employee);
   };
 
   const completeSignIn = (employee: PublicEmployee) => {
-    cacheUser(employee);
-    setUser(employee);
+    const displayEmployee = normalizeEmployeeDisplayName(employee);
+    cacheUser(displayEmployee);
+    setUser(displayEmployee);
   };
 
   const signOut = async () => {

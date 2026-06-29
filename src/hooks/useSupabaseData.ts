@@ -25,6 +25,7 @@ import {
   type OfflineQueueItem,
 } from '@/lib/localWarehouseData';
 import { defaultModulesForRole, type AppModule, type EmployeeRole } from '@/lib/permissions';
+import { isPasscodeShadowEmployee } from '@/lib/employeeDisplay';
 
 type Supplier = Tables<'suppliers'>;
 type Carrier = Tables<'carriers'>;
@@ -220,7 +221,7 @@ export function useEmployees() {
       if (error) throw error;
       const rows = (data || []) as Employee[];
       cacheRemoteEmployees(rows);
-      setData(rows);
+      setData(rows.filter(row => !isPasscodeShadowEmployee(row)));
     } catch (err) {
       console.error('Failed to load employees', err);
       setData(listLocalEmployees());

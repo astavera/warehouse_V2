@@ -45,7 +45,12 @@ function passcodeEmployeeName(employee: Employee) {
 
 function publicEmployee(employee: Employee) {
   const { passcode: _passcode, ...safeEmployee } = employee;
-  return safeEmployee;
+  return {
+    ...safeEmployee,
+    name: employee.name.endsWith(PASSCODE_EMPLOYEE_SUFFIX)
+      ? employee.name.slice(0, -PASSCODE_EMPLOYEE_SUFFIX.length)
+      : employee.name,
+  };
 }
 
 function hasAccountingAccess(employee: Employee) {

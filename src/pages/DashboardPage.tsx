@@ -17,6 +17,7 @@ import { useExpectedBoxes, type ExpectedBoxStatus } from '@/hooks/useExpectedBox
 import { useAuth } from '@/hooks/useAuth';
 import CarrierBadge from '@/components/CarrierBadge';
 import { cn } from '@/lib/utils';
+import { displayEmployeeName } from '@/lib/employeeDisplay';
 
 const EXPECTED_STATUS_META: Record<ExpectedBoxStatus, { label: string; className: string; priority: number }> = {
   delivered: {
@@ -277,7 +278,7 @@ export default function DashboardPage() {
             <div className="mt-5 max-w-3xl">
               <h1 className="text-3xl font-extrabold tracking-tight text-slate-950 sm:text-4xl">Receiving overview</h1>
               <p className="mt-3 text-sm leading-6 text-muted-foreground sm:text-base">
-                Welcome, <span className="font-semibold text-foreground">{user?.name}</span>. Review today&apos;s receipts and start the next intake when the floor is ready.
+                Welcome, <span className="font-semibold text-foreground">{displayEmployeeName(user?.name)}</span>. Review today&apos;s receipts and start the next intake when the floor is ready.
               </p>
             </div>
             <div className="mt-5 grid gap-2 sm:grid-cols-3">

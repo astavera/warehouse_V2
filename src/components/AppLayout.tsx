@@ -31,6 +31,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { useOfflineStatus } from '@/hooks/useOfflineStatus';
 import { canAccessModule, type AppModule } from '@/lib/permissions';
+import { displayEmployeeName } from '@/lib/employeeDisplay';
 import { preloadRoute, preloadRoutes } from '@/lib/routePreloaders';
 
 type AppNavItem = {
@@ -263,6 +264,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const statusLabel = isLocalDemo ? 'Local' : isOffline ? 'Offline' : pendingCount > 0 ? `Pending ${pendingCount}` : '';
   const StatusIcon = isOffline ? WifiOff : pendingCount > 0 ? RefreshCw : Cloud;
   const showDataStatus = Boolean(statusLabel);
+  const displayUserName = displayEmployeeName(user?.name);
   const showOfflineBanner = !isLocalDemo && (isOffline || pendingCount > 0 || syncing);
   const offlineBannerText = isOffline
     ? `Offline mode active${pendingCount > 0 ? ` - ${pendingCount} change${pendingCount === 1 ? '' : 's'} waiting to sync` : ''}. Receipts save on this device.`
@@ -446,7 +448,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 </button>
               )}
               <div className="max-w-[150px] truncate text-sm">
-                <span className="font-medium text-foreground">{user?.name}</span>
+                <span className="font-medium text-foreground">{displayUserName}</span>
               </div>
               {canOpenSettings && (
                 <Link
@@ -508,7 +510,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         <div className="fixed inset-0 top-16 z-40 bg-background/80 backdrop-blur-sm lg:hidden" onClick={() => setOpen(false)}>
           <nav className="max-h-[calc(100vh-4rem)] overflow-y-auto border-b bg-white py-4 shadow-lg" onClick={e => e.stopPropagation()}>
             <div className="px-8 py-2 text-sm text-muted-foreground">
-              Welcome, <span className="font-medium text-foreground">{user?.name}</span>
+              Welcome, <span className="font-medium text-foreground">{displayUserName}</span>
             </div>
             {showDataStatus && (
               <button
