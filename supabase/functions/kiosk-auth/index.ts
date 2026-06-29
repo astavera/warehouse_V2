@@ -37,6 +37,10 @@ function employeeEmail(employeeId: string) {
   return `${employeeId}@warehouse.localhost`;
 }
 
+function passcodeEmployeeInternalPasscode(employee: Employee) {
+  return `passcode:${employee.id}`;
+}
+
 function passcodeEmployeeName(employee: Employee) {
   return employee.name.endsWith(PASSCODE_EMPLOYEE_SUFFIX)
     ? employee.name
@@ -72,17 +76,29 @@ function passcodePermissions(employee: Employee) {
   return allowed.length > 0 ? allowed : ['receiving'];
 }
 
+function errorMessage(error: unknown) {
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'object' && error) {
+    const record = error as Record<string, unknown>;
+    for (const key of ['message', 'details', 'hint', 'code']) {
+      if (typeof record[key] === 'string' && record[key]) return String(record[key]);
+    }
+    return JSON.stringify(error);
+  }
+  return String(error || 'Unknown auth error');
+}
+
 async function getOrCreatePasscodeEmployee(
   admin: ReturnType<typeof createClient>,
   employee: Employee
 ) {
   const name = passcodeEmployeeName(employee);
   const permissions = passcodePermissions(employee);
+  const internalPasscode = passcodeEmployeeInternalPasscode(employee);
 
   const { data: existing, error: existingError } = await admin
     .from('employees')
     .select('id, name, passcode, active, auth_user_id, role, store_number, permissions')
-    .eq('passcode', employee.passcode)
     .eq('name', name)
     .eq('active', true)
     .maybeSingle();
@@ -92,6 +108,7 @@ async function getOrCreatePasscodeEmployee(
     const shadow = existing as Employee;
     const currentPermissions = Array.isArray(shadow.permissions) ? shadow.permissions : [];
     const needsUpdate =
+      shadow.passcode !== internalPasscode ||
       shadow.role !== 'warehouse' ||
       shadow.store_number !== null ||
       JSON.stringify([...currentPermissions].sort()) !== JSON.stringify([...permissions].sort());
@@ -101,6 +118,7 @@ async function getOrCreatePasscodeEmployee(
     const { data, error } = await admin
       .from('employees')
       .update({
+        passcode: internalPasscode,
         role: 'warehouse',
         store_number: null,
         permissions,
@@ -116,7 +134,7 @@ async function getOrCreatePasscodeEmployee(
     .from('employees')
     .insert({
       name,
-      passcode: employee.passcode,
+      passcode: internalPasscode,
       active: true,
       role: 'warehouse',
       store_number: null,
@@ -316,6 +334,6 @@ Deno.serve(async req => {
       session: sessionData.session,
     });
   } catch (error) {
-    return jsonResponse({ error: error instanceof Error ? error.message : 'Unknown auth error' }, 500);
+    return jsonResponse({ error: errorMessage(error) }, 500);
   }
 });
