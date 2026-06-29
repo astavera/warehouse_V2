@@ -110,6 +110,7 @@ export default function LoginPage() {
   const handlePasswordReset = async () => {
     if (loading) return;
     if (!email.trim()) {
+      setStatusMessage('Enter the admin email first.');
       toast.error('Enter the admin email first');
       return;
     }
@@ -121,8 +122,9 @@ export default function LoginPage() {
       toast.success('Password reset email sent');
       setStatusMessage('Check your email for the newest reset link.');
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Password reset failed');
-      setStatusMessage('');
+      const message = err instanceof Error ? err.message : 'Password reset failed';
+      toast.error(message);
+      setStatusMessage(message);
     } finally {
       setLoading(false);
     }
@@ -317,7 +319,7 @@ export default function LoginPage() {
                           variant="link"
                           className="h-auto px-0 text-xs font-semibold text-muted-foreground hover:text-foreground"
                           onClick={handlePasswordReset}
-                          disabled={loading || !email.trim()}
+                          disabled={loading}
                         >
                           Forgot password?
                         </Button>
@@ -333,7 +335,7 @@ export default function LoginPage() {
                       />
                     </div>
                     <p className="min-h-5 text-center text-xs font-medium uppercase tracking-[0.22em] text-muted-foreground">
-                      {loading && !showSuccess ? statusMessage : ''}
+                      {!showSuccess ? statusMessage : ''}
                     </p>
                     <Button
                       type="submit"

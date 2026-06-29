@@ -109,6 +109,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const restoreUser = async () => {
+      const isPasswordRecoveryRoute = window.location.pathname === '/reset-password';
+
       if (MOCK_LOCAL) {
         const cachedId = localStorage.getItem(STORAGE_KEY);
         const employee = listLocalEmployees().find(row => row.id === cachedId);
@@ -162,6 +164,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (!authUserId) {
         localStorage.removeItem(STORAGE_KEY);
         localStorage.removeItem(USER_STORAGE_KEY);
+        setLoading(false);
+        return;
+      }
+      if (isPasswordRecoveryRoute) {
         setLoading(false);
         return;
       }

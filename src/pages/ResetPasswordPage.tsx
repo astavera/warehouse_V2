@@ -41,6 +41,7 @@ export default function ResetPasswordPage() {
 
     const { data } = supabase.auth.onAuthStateChange(event => {
       if (event === 'PASSWORD_RECOVERY') {
+        setErrorMessage('');
         setCanReset(true);
         setChecking(false);
       }
