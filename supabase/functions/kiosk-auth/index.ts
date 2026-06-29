@@ -37,10 +37,6 @@ function employeeEmail(employeeId: string) {
   return `${employeeId}@warehouse.localhost`;
 }
 
-function passcodeEmployeeInternalPasscode(employee: Employee) {
-  return `passcode:${employee.id}`;
-}
-
 function passcodeEmployeeName(employee: Employee) {
   return employee.name.endsWith(PASSCODE_EMPLOYEE_SUFFIX)
     ? employee.name
@@ -76,6 +72,18 @@ function passcodePermissions(employee: Employee) {
   return allowed.length > 0 ? allowed : ['receiving'];
 }
 
+function isFourDigitPasscode(value: string | null | undefined) {
+  return /^[0-9]{4}$/.test(value || '');
+}
+
+function passcodeSeed(value: string) {
+  let seed = 0;
+  for (const char of value) {
+    seed = (seed * 31 + char.charCodeAt(0)) % 9000;
+  }
+  return seed;
+}
+
 function errorMessage(error: unknown) {
   if (error instanceof Error) return error.message;
   if (typeof error === 'object' && error) {
@@ -88,13 +96,50 @@ function errorMessage(error: unknown) {
   return String(error || 'Unknown auth error');
 }
 
+async function availableShadowPasscode(
+  admin: ReturnType<typeof createClient>,
+  sourceEmployee: Employee,
+  shadow?: Employee
+) {
+  if (
+    shadow &&
+    isFourDigitPasscode(shadow.passcode) &&
+    shadow.passcode !== sourceEmployee.passcode
+  ) {
+    const { data, error } = await admin
+      .from('employees')
+      .select('id')
+      .eq('passcode', shadow.passcode)
+      .limit(2);
+    if (error) throw error;
+    const owners = (data || []) as Array<{ id: string }>;
+    if (owners.length === 0 || owners.every(row => row.id === shadow.id)) return shadow.passcode;
+  }
+
+  const seed = passcodeSeed(sourceEmployee.id);
+  for (let attempt = 0; attempt < 9000; attempt += 1) {
+    const candidate = String(1000 + ((seed + attempt) % 9000)).padStart(4, '0');
+    if (candidate === sourceEmployee.passcode) continue;
+
+    const { data, error } = await admin
+      .from('employees')
+      .select('id')
+      .eq('passcode', candidate)
+      .limit(1);
+    if (error) throw error;
+    const owner = ((data || []) as Array<{ id: string }>)[0];
+    if (!owner || owner.id === shadow?.id) return candidate;
+  }
+
+  throw new Error('No available passcode for passcode-only access');
+}
+
 async function getOrCreatePasscodeEmployee(
   admin: ReturnType<typeof createClient>,
   employee: Employee
 ) {
   const name = passcodeEmployeeName(employee);
   const permissions = passcodePermissions(employee);
-  const internalPasscode = passcodeEmployeeInternalPasscode(employee);
 
   const { data: existing, error: existingError } = await admin
     .from('employees')
@@ -107,6 +152,7 @@ async function getOrCreatePasscodeEmployee(
   if (existing) {
     const shadow = existing as Employee;
     const currentPermissions = Array.isArray(shadow.permissions) ? shadow.permissions : [];
+    const internalPasscode = await availableShadowPasscode(admin, employee, shadow);
     const needsUpdate =
       shadow.passcode !== internalPasscode ||
       shadow.role !== 'warehouse' ||
@@ -130,6 +176,7 @@ async function getOrCreatePasscodeEmployee(
     return data as Employee;
   }
 
+  const internalPasscode = await availableShadowPasscode(admin, employee);
   const { data, error } = await admin
     .from('employees')
     .insert({
