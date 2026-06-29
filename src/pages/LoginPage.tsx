@@ -15,7 +15,7 @@ const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'spacer', '0', 'back'
 type Mode = 'login' | 'password' | 'admin' | 'register';
 
 export default function LoginPage() {
-  const { beginSignIn, beginAdminSignIn, beginSignUp, completeSignIn } = useAuth();
+  const { beginSignIn, beginAdminSignIn, sendPasswordReset, beginSignUp, completeSignIn } = useAuth();
   const navigate = useNavigate();
   const [name, setName] = useState('');
   const [passcode, setPasscode] = useState('');
@@ -105,6 +105,27 @@ export default function LoginPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     await submit();
+  };
+
+  const handlePasswordReset = async () => {
+    if (loading) return;
+    if (!email.trim()) {
+      toast.error('Enter the admin email first');
+      return;
+    }
+
+    setLoading(true);
+    setStatusMessage('Sending reset link...');
+    try {
+      await sendPasswordReset(email);
+      toast.success('Password reset email sent');
+      setStatusMessage('Check your email for the newest reset link.');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Password reset failed');
+      setStatusMessage('');
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -289,7 +310,18 @@ export default function LoginPage() {
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Password</Label>
+                      <div className="flex items-center justify-between gap-3">
+                        <Label className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Password</Label>
+                        <Button
+                          type="button"
+                          variant="link"
+                          className="h-auto px-0 text-xs font-semibold text-muted-foreground hover:text-foreground"
+                          onClick={handlePasswordReset}
+                          disabled={loading || !email.trim()}
+                        >
+                          Forgot password?
+                        </Button>
+                      </div>
                       <Input
                         required
                         type="password"

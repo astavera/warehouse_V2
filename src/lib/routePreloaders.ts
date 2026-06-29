@@ -9,6 +9,7 @@ export const loadPricesPrintPage = () => import('@/pages/PricesPrintPage');
 export const loadInventoryAuditPage = () => import('@/pages/InventoryAuditPage');
 export const loadSettingsPage = () => import('@/pages/SettingsPage');
 export const loadLoginPage = () => import('@/pages/LoginPage');
+export const loadResetPasswordPage = () => import('@/pages/ResetPasswordPage');
 export const loadPreviewDashboardPage = () => import('@/pages/PreviewDashboardPage');
 export const loadNavbarPreviewPage = () => import('@/pages/NavbarPreviewPage');
 
@@ -32,6 +33,7 @@ const ROUTE_PRELOADERS: Record<string, () => Promise<unknown>> = {
   '/inventory-audit': loadInventoryAuditPage,
   '/settings': loadSettingsPage,
   '/login': loadLoginPage,
+  '/reset-password': loadResetPasswordPage,
   '/preview-dashboard': loadPreviewDashboardPage,
   '/navbar-preview': loadNavbarPreviewPage,
   '/accounting': loadAccountingDashboardPage,

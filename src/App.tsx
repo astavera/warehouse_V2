@@ -25,6 +25,7 @@ import {
   loadPricesPage,
   loadPricesPrintPage,
   loadReceivePage,
+  loadResetPasswordPage,
   loadSettingsPage,
   loadSuppliersPage,
 } from "@/lib/routePreloaders";
@@ -61,6 +62,7 @@ const AccountingTruckPage = lazy(() =>
   loadAccountingLedgerPages().then(module => ({ default: module.AccountingTruckPage }))
 );
 const LoginPage = lazy(loadLoginPage);
+const ResetPasswordPage = lazy(loadResetPasswordPage);
 const PreviewDashboardPage = lazy(loadPreviewDashboardPage);
 const NavbarPreviewPage = lazy(loadNavbarPreviewPage);
 
@@ -162,6 +164,7 @@ const App = () => (
           <Suspense fallback={<PageLoadingFallback />}>
             <Routes>
               <Route path="/login" element={<LoginRoute />} />
+              <Route path="/reset-password" element={<ResetPasswordPage />} />
               {/* TEMPORAL: preview publico del dashboard de 21st.dev - eliminar tras revision */}
               <Route path="/preview-dashboard" element={<PreviewDashboardPage />} />
               <Route path="/navbar-preview" element={<NavbarPreviewPage />} />

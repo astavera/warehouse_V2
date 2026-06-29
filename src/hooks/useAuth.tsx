@@ -19,6 +19,7 @@ interface AuthCtx {
   loading: boolean;
   beginSignIn: (passcode: string) => Promise<PublicEmployee>;
   beginAdminSignIn: (email: string, password: string) => Promise<PublicEmployee>;
+  sendPasswordReset: (email: string) => Promise<void>;
   beginSignUp: (name: string, passcode: string, adminPasscode: string) => Promise<PublicEmployee>;
   completeSignIn: (user: PublicEmployee) => void;
   signOut: () => Promise<void>;
@@ -90,6 +91,9 @@ const AuthContext = createContext<AuthCtx>({
     throw new Error('Not implemented');
   },
   beginAdminSignIn: async () => {
+    throw new Error('Not implemented');
+  },
+  sendPasswordReset: async () => {
     throw new Error('Not implemented');
   },
   beginSignUp: async () => {
@@ -270,6 +274,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return employee;
   };
 
+  const sendPasswordReset = async (email: string) => {
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!normalizedEmail) throw new Error('Email is required');
+    if (MOCK_LOCAL) {
+      throw new Error('Password reset is only available against Supabase auth');
+    }
+    if (isOffline()) {
+      throw new Error('Reconnect to send a password reset email.');
+    }
+
+    const redirectTo = `${window.location.origin}/reset-password`;
+    const { error } = await supabase.auth.resetPasswordForEmail(normalizedEmail, {
+      redirectTo,
+    });
+    if (error) throw error;
+  };
+
   const beginSignUp = async (name: string, passcode: string, adminPasscode: string) => {
     const normalizedName = name.trim();
     const normalizedPasscode = passcode.trim();
@@ -314,7 +335,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, beginSignIn, beginAdminSignIn, beginSignUp, completeSignIn, signOut }}>
+    <AuthContext.Provider value={{ user, loading, beginSignIn, beginAdminSignIn, sendPasswordReset, beginSignUp, completeSignIn, signOut }}>
       {children}
     </AuthContext.Provider>
   );
