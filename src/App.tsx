@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { AppErrorBoundary } from "@/components/AppErrorBoundary";
 import AppLayout from "@/components/AppLayout";
 import { AuthProvider, useAuth } from "@/hooks/useAuth";
 import { canAccessModule, getDefaultLandingPath, type AppModule } from "@/lib/permissions";
@@ -161,16 +162,18 @@ const App = () => (
       <Sonner />
       <AuthProvider>
         <BrowserRouter>
-          <Suspense fallback={<PageLoadingFallback />}>
-            <Routes>
-              <Route path="/login" element={<LoginRoute />} />
-              <Route path="/reset-password" element={<ResetPasswordPage />} />
-              {/* TEMPORAL: preview publico del dashboard de 21st.dev - eliminar tras revision */}
-              <Route path="/preview-dashboard" element={<PreviewDashboardPage />} />
-              <Route path="/navbar-preview" element={<NavbarPreviewPage />} />
-              <Route path="/*" element={<ProtectedApp />} />
-            </Routes>
-          </Suspense>
+          <AppErrorBoundary>
+            <Suspense fallback={<PageLoadingFallback />}>
+              <Routes>
+                <Route path="/login" element={<LoginRoute />} />
+                <Route path="/reset-password" element={<ResetPasswordPage />} />
+                {/* TEMPORAL: preview publico del dashboard de 21st.dev - eliminar tras revision */}
+                <Route path="/preview-dashboard" element={<PreviewDashboardPage />} />
+                <Route path="/navbar-preview" element={<NavbarPreviewPage />} />
+                <Route path="/*" element={<ProtectedApp />} />
+              </Routes>
+            </Suspense>
+          </AppErrorBoundary>
         </BrowserRouter>
       </AuthProvider>
     </TooltipProvider>

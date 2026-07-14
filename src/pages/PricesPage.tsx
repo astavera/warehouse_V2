@@ -38,6 +38,13 @@ function getErrorMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
 }
 
+function formatPriceChangedDate(value: string | null | undefined, locale: string) {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return new Intl.DateTimeFormat(locale, { month: 'short', day: 'numeric', year: 'numeric' }).format(date);
+}
+
 // ---------------------------------------------------------------------
 //  Tab 1: Cambiar precio (escaneo + tags)
 // ---------------------------------------------------------------------
@@ -277,6 +284,11 @@ function ProductCard({
         >
           {changed ? t.price_changed : t.price_uptodate}
         </div>
+        {changed && product.priceChangedAt && (
+          <div className="text-center text-xs font-semibold text-amber-700">
+            {t.price_changed_since}: {formatPriceChangedDate(product.priceChangedAt, t.locale)}
+          </div>
+        )}
 
         <StorePills t={t} product={product} />
 
@@ -609,7 +621,7 @@ function ListTab({ refreshKey, t }: { refreshKey: number; t: Dict }) {
         aggregate.syncRunStartedAt = syncRunStartedAt;
         aggregate.cursor = data.cursor || null;
         aggregate.hasMore = Boolean(data.cursor);
-        aggregate.complete = !data.cursor;
+        aggregate.complete = false;
         aggregate.pages = processedPages;
         setSummary({ ...aggregate });
 
@@ -689,7 +701,7 @@ function ListTab({ refreshKey, t }: { refreshKey: number; t: Dict }) {
           ) : summary.complete ? (
             <p className="text-xs font-medium text-emerald-700">{t.sync_done}</p>
           ) : null}
-          {summary.conflictos > 0 && (
+          {!syncing && summary.conflictos > 0 && (
             <p className="text-xs font-medium text-amber-700">{t.conflicts(summary.conflictos)}</p>
           )}
         </div>
@@ -874,6 +886,11 @@ function ListTab({ refreshKey, t }: { refreshKey: number; t: Dict }) {
                               ? t.missing + ': ' + c.pendingStores.map(s => 'T' + s).join(', ')
                               : t.tags_ready}
                           </div>
+                          {c.priceChangedAt && (
+                            <div className="text-xs font-medium text-amber-700">
+                              {t.price_changed_since}: {formatPriceChangedDate(c.priceChangedAt, t.locale)}
+                            </div>
+                          )}
                           {groupBy === 'vendor' && c.categoryName && (
                             <div className="text-xs text-muted-foreground">{c.categoryName}</div>
                           )}

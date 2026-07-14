@@ -54,6 +54,7 @@ export type Dict = {
   new_price: string;
   current_price: string;
   price_changed: string;
+  price_changed_since: string;
   price_uptodate: string;
   store_pending: (s: number) => string;
   store_done: (s: number) => string;
@@ -111,6 +112,7 @@ export type Dict = {
   h_product: string;
   h_price: string;
   h_last_price: string;
+  h_since: string;
   h_barcode: string;
   h_tag: string;
   locale: string;
@@ -151,6 +153,7 @@ export const PRICE_I18N: Record<PriceLang, Dict> = {
     new_price: 'Nuevo',
     current_price: 'Precio actual',
     price_changed: '⚠️ Precio cambió — falta cambiar tags',
+    price_changed_since: 'Desde',
     price_uptodate: '✓ Precio al día',
     store_pending: s => `Tienda ${s} pendiente`,
     store_done: s => `Tienda ${s} ✓`,
@@ -208,6 +211,7 @@ export const PRICE_I18N: Record<PriceLang, Dict> = {
     h_product: 'Producto',
     h_price: 'Precio',
     h_last_price: 'Ultimo precio',
+    h_since: 'Desde',
     h_barcode: 'Barcode',
     h_tag: 'Tag cambiado',
     locale: 'es-US',
@@ -246,6 +250,7 @@ export const PRICE_I18N: Record<PriceLang, Dict> = {
     new_price: 'New',
     current_price: 'Current price',
     price_changed: '⚠️ Price changed — tags pending',
+    price_changed_since: 'Since',
     price_uptodate: '✓ Price up to date',
     store_pending: s => `Store ${s} pending`,
     store_done: s => `Store ${s} ✓`,
@@ -303,6 +308,7 @@ export const PRICE_I18N: Record<PriceLang, Dict> = {
     h_product: 'Product',
     h_price: 'Price',
     h_last_price: 'Last price',
+    h_since: 'Since',
     h_barcode: 'Barcode',
     h_tag: 'Tag changed',
     locale: 'en-US',

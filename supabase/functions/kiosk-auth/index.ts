@@ -74,7 +74,8 @@ function passcodePermissions(employee: Employee) {
   const allowed = permissions.filter(permission =>
     permission !== 'accounting' && !permission.startsWith('accounting.')
   );
-  return allowed.length > 0 ? allowed : ['receiving'];
+  if (!allowed.includes('receiving')) allowed.unshift('receiving');
+  return allowed;
 }
 
 function isFourDigitPasscode(value: string | null | undefined) {

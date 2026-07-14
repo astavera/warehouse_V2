@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { Delete } from 'lucide-react';
 import { toast } from 'sonner';
@@ -11,6 +12,7 @@ import { cn } from '@/lib/utils';
 import { useAuth } from '@/hooks/useAuth';
 import { canAccessModule, getDefaultLandingPath } from '@/lib/permissions';
 import { displayEmployeeName } from '@/lib/employeeDisplay';
+import { preloadRoute } from '@/lib/routePreloaders';
 
 const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'spacer', '0', 'back'] as const;
 type Mode = 'login' | 'password' | 'admin' | 'register';
@@ -68,15 +70,17 @@ export default function LoginPage() {
         : await beginSignIn(passcode);
 
       const employeeName = displayEmployeeName(employee.name);
+      const landingPath = isPasswordMode && canAccessModule(employee, 'accounting')
+        ? '/accounting'
+        : getDefaultLandingPath(employee);
+
       setSuccessName(employeeName);
       setStatusMessage('Opening workspace...');
       setShowSuccess(true);
+      preloadRoute(landingPath);
 
       window.setTimeout(() => {
-        const landingPath = isPasswordMode && canAccessModule(employee, 'accounting')
-          ? '/accounting'
-          : getDefaultLandingPath(employee);
-        completeSignIn(employee);
+        flushSync(() => completeSignIn(employee));
         navigate(landingPath, { replace: true });
       }, 120);
 

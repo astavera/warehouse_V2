@@ -33,6 +33,8 @@ export default function PricesPrintPage() {
   const isMissingCatalog = kind === 'missing';
   const isDuplicates = kind === 'duplicates';
   const showsTagColumn = !isMissingCatalog && !isDuplicates;
+  const showsSinceColumn = !isMissingCatalog && !isDuplicates;
+  const tableColumnCount = 3 + (showsSinceColumn ? 1 : 0) + (showsTagColumn ? 1 : 0);
   const t = PRICE_I18N[lang];
   const title = isDuplicates ? t.print_duplicates_title : isMissingCatalog ? t.print_missing_title : t.print_title;
   const emptyText = isDuplicates ? t.print_duplicates_empty : isMissingCatalog ? t.print_missing_empty : t.print_empty;
@@ -92,6 +94,12 @@ export default function PricesPrintPage() {
   }, [items]);
 
   const now = new Date();
+  const formatChangedDate = (value: string | null | undefined) => {
+    if (!value) return '';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '';
+    return new Intl.DateTimeFormat(t.locale, { month: 'short', day: 'numeric', year: 'numeric' }).format(date);
+  };
 
   if (!loading && !canPrintPrices) {
     return (
@@ -112,6 +120,7 @@ export default function PricesPrintPage() {
         td.name { font-size: 14px; font-weight: 600; }
         .subcat { color: #555; font-size: 11px; font-weight: 400; margin-top: 2px; }
         td.price { white-space: nowrap; font-size: 14px; }
+        td.since { white-space: nowrap; font-size: 12px; color: #92400e; font-weight: 700; }
         .new { font-weight: 700; font-size: 16px; }
         .dup { display: inline-block; margin-top: 4px; border: 1px solid #b45309; color: #92400e; background: #fffbeb; border-radius: 4px; padding: 2px 5px; font-size: 10px; font-weight: 700; text-transform: uppercase; }
         td.bc { text-align: center; width: 230px; }
@@ -160,6 +169,7 @@ export default function PricesPrintPage() {
             <tr>
               <th>{t.h_product}</th>
               <th>{isMissingCatalog ? t.h_last_price : t.h_price}</th>
+              {showsSinceColumn && <th>{t.h_since}</th>}
               <th>{t.h_barcode}</th>
               {showsTagColumn && <th>{t.h_tag}</th>}
             </tr>
@@ -168,7 +178,7 @@ export default function PricesPrintPage() {
             {groupedItems.map(group => (
               <Fragment key={group.label}>
                 <tr className="cat-row">
-                  <td colSpan={showsTagColumn ? 4 : 3}>{group.label} ({group.items.length})</td>
+                  <td colSpan={tableColumnCount}>{group.label} ({group.items.length})</td>
                 </tr>
                 {group.items.map(c => (
                   <tr key={c.barcode}>
@@ -185,6 +195,11 @@ export default function PricesPrintPage() {
                     <td className="price">
                       <span className="new">{formatMoney(c.currentPrice, c.currency)}</span>
                     </td>
+                    {showsSinceColumn && (
+                      <td className="since">
+                        {'priceChangedAt' in c ? formatChangedDate(c.priceChangedAt) : ''}
+                      </td>
+                    )}
                     <td className="bc">
                       <svg className="barcode" data-code={String(c.barcode).replace(/"/g, '')} />
                       <div className="bc-text">{c.barcode}</div>

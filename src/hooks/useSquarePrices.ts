@@ -14,6 +14,7 @@ export type PriceProduct = {
   currency: string;
   oldPrice: number | null;
   currentPrice: number | null;
+  priceChangedAt?: string | null;
   changePending: boolean;
   pendingStores: number[];
   confirmedStores: number[];
@@ -47,6 +48,7 @@ export type PriceChange = {
   currency: string;
   oldPrice: number | null;
   currentPrice: number | null;
+  priceChangedAt: string | null;
   pendingStores: number[];
   confirmedStores: number[];
   conflict?: boolean;
@@ -101,13 +103,29 @@ export type CatalogAuditProduct = {
   itemId: string;
   variationId: string;
   name: string;
+  vendorName: string | null;
   currentPrice: number | null;
   currency: string;
   hasInventoryMovement: boolean;
+  inventoryByLocation: CatalogAuditInventoryCount[];
+  totalInventory: number;
   categories: CatalogAuditCategory[];
+  presentAtAllLocations?: boolean;
+  enabledLocationIds?: string[];
+};
+
+export type CatalogAuditInventoryCount = {
+  locationId: string;
+  quantity: number;
+  calculatedAt: string | null;
 };
 
 export type CatalogAuditCategory = {
+  id: string;
+  name: string;
+};
+
+export type CatalogAuditLocation = {
   id: string;
   name: string;
 };
@@ -116,9 +134,27 @@ export type CatalogAuditPage = {
   ok: boolean;
   total: number;
   products: CatalogAuditProduct[];
+  locations: CatalogAuditLocation[];
   cursor?: string | null;
   hasMore?: boolean;
   complete?: boolean;
+};
+
+export type CatalogAuditScopeOption = {
+  id: string;
+  name: string;
+  itemCount: number;
+};
+
+export type CatalogAuditScopes = {
+  ok: boolean;
+  vendors: CatalogAuditScopeOption[];
+  categories: CatalogAuditScopeOption[];
+};
+
+export type CatalogAuditScope = {
+  type: 'vendor' | 'category' | 'item' | 'barcode';
+  id: string;
 };
 
 type MockProduct = PriceProduct & {
@@ -247,6 +283,12 @@ const MOCK_CATALOG_MISSING_PRODUCTS: PriceCatalogMissing[] = [
   },
 ];
 
+const MOCK_AUDIT_LOCATIONS: CatalogAuditLocation[] = [
+  { id: 'mock-location-warehouse', name: 'Warehouse' },
+  { id: 'mock-location-72', name: '72' },
+  { id: 'mock-location-86', name: '86' },
+];
+
 function cloneMockProducts() {
   return MOCK_PRODUCTS.map(product => ({
     ...product,
@@ -341,6 +383,14 @@ function normalizeMockProduct(product: MockProduct): MockProduct {
 }
 
 function toAuditProduct(product: MockProduct): CatalogAuditProduct {
+  const inventoryByLocation = product.hasInventoryMovement
+    ? [
+        { locationId: 'mock-location-warehouse', quantity: product.barcode === '222222222222' ? 9 : 3, calculatedAt: new Date().toISOString() },
+        { locationId: 'mock-location-72', quantity: product.barcode === '222222222222' ? 18 : 7, calculatedAt: new Date().toISOString() },
+        { locationId: 'mock-location-86', quantity: product.barcode === '222222222222' ? 11 : 4, calculatedAt: new Date().toISOString() },
+      ]
+    : [];
+
   return {
     barcode: product.barcode,
     sku: product.sku ?? null,
@@ -348,10 +398,15 @@ function toAuditProduct(product: MockProduct): CatalogAuditProduct {
     itemId: product.itemId,
     variationId: product.variationId,
     name: product.name || 'Mock product',
+    vendorName: product.vendorName || UNKNOWN_PRICE_VENDOR,
     currentPrice: product.currentPrice,
     currency: product.currency,
     hasInventoryMovement: product.hasInventoryMovement,
+    inventoryByLocation,
+    totalInventory: inventoryByLocation.reduce((sum, count) => sum + count.quantity, 0),
     categories: product.categories,
+    presentAtAllLocations: true,
+    enabledLocationIds: MOCK_AUDIT_LOCATIONS.map(location => location.id),
   };
 }
 
@@ -437,6 +492,7 @@ const mockSquarePrices = {
         currency: product.currency,
         oldPrice: product.oldPrice,
         currentPrice: product.currentPrice,
+        priceChangedAt: new Date().toISOString(),
         pendingStores: product.pendingStores,
         confirmedStores: product.confirmedStores,
         conflict: false,
@@ -464,6 +520,7 @@ const mockSquarePrices = {
         currency: product.currency,
         oldPrice: product.oldPrice,
         currentPrice: product.currentPrice,
+        priceChangedAt: null,
         pendingStores: [],
         confirmedStores: [],
         conflict: true as const,
@@ -518,12 +575,62 @@ const mockSquarePrices = {
     };
   },
   vendorMappingStatus: async (): Promise<VendorMappingStatus> => mockVendorStatus(),
-  audit: async (): Promise<CatalogAuditPage> => {
+  auditScopes: async (): Promise<CatalogAuditScopes> => {
     const products = readMockProducts().map(normalizeMockProduct);
+    const vendorCounts = new Map<string, number>();
+    const categoryCounts = new Map<string, number>();
+
+    for (const product of products) {
+      const vendor = product.vendorName?.trim() || UNKNOWN_PRICE_VENDOR;
+      vendorCounts.set(vendor, (vendorCounts.get(vendor) || 0) + 1);
+      const categories = product.categories.length ? product.categories : [{ id: UNCATEGORIZED_PRICE_CATEGORY, name: UNCATEGORIZED_PRICE_CATEGORY }];
+      for (const category of categories) {
+        const name = category.name?.trim() || UNCATEGORIZED_PRICE_CATEGORY;
+        categoryCounts.set(name, (categoryCounts.get(name) || 0) + 1);
+      }
+    }
+
+    const toOptions = (counts: Map<string, number>) =>
+      [...counts.entries()]
+        .map(([name, itemCount]) => ({ id: name, name, itemCount }))
+        .sort((a, b) => b.itemCount - a.itemCount || a.name.localeCompare(b.name));
+
+    return {
+      ok: true,
+      vendors: toOptions(vendorCounts),
+      categories: toOptions(categoryCounts),
+    };
+  },
+  audit: async (scope?: CatalogAuditScope): Promise<CatalogAuditPage> => {
+    const products = readMockProducts()
+      .map(normalizeMockProduct)
+      .filter(product => {
+        if (!scope) return true;
+        if (scope.type === 'vendor') return (product.vendorName?.trim() || UNKNOWN_PRICE_VENDOR) === scope.id;
+        if (scope.type === 'category') {
+          return (product.categories.length ? product.categories : [{ id: UNCATEGORIZED_PRICE_CATEGORY, name: UNCATEGORIZED_PRICE_CATEGORY }]).some(
+          category => category.name === scope.id || category.id === scope.id
+          );
+        }
+        if (scope.type === 'barcode') {
+          const requested = new Set(scope.id.split(/[\s,;]+/).map(value => value.trim()).filter(Boolean));
+          return requested.has(product.barcode) || requested.has(product.upc || '') || requested.has(product.sku || '');
+        }
+        const needle = scope.id.trim().toLowerCase();
+        return [
+          product.name,
+          product.barcode,
+          product.upc,
+          product.sku,
+          product.itemId,
+          product.variationId,
+        ].some(value => String(value || '').toLowerCase().includes(needle));
+      });
     return {
       ok: true,
       total: products.length,
       products: products.map(toAuditProduct),
+      locations: MOCK_AUDIT_LOCATIONS,
       complete: true,
       hasMore: false,
       cursor: null,
@@ -573,10 +680,16 @@ export const squarePrices = {
     MOCK_LOCAL ? mockSquarePrices.vendorMappingStatus() : invokeSquarePrices<VendorMappingStatus>({
         action: 'vendor-map-status',
       }),
-  audit: (cursor?: string | null) =>
-    MOCK_LOCAL ? mockSquarePrices.audit() : invokeSquarePrices<CatalogAuditPage>({
+  auditScopes: () =>
+    MOCK_LOCAL ? mockSquarePrices.auditScopes() : invokeSquarePrices<CatalogAuditScopes>({
+        action: 'audit-scopes',
+      }),
+  audit: (cursor?: string | null, limit?: number, scope?: CatalogAuditScope) =>
+    MOCK_LOCAL ? mockSquarePrices.audit(scope) : invokeSquarePrices<CatalogAuditPage>({
         action: 'audit',
         ...(cursor ? { cursor } : {}),
+        ...(limit ? { limit } : {}),
+        ...(scope ? { scopeType: scope.type, scopeId: scope.id } : {}),
       }),
   health: () =>
     MOCK_LOCAL ? mockSquarePrices.health() : invokeSquarePrices<{ ok: boolean; environment: string; tokenConfigured: boolean }>({

@@ -97,6 +97,17 @@ type SquareCatalogObject = {
   };
 };
 
+type SquareLocation = {
+  id: string;
+  name?: string;
+  status?: string;
+};
+
+type SquareLocationsResponse = {
+  locations?: SquareLocation[];
+  errors?: { detail?: string; message?: string }[];
+};
+
 type SquareCatalogCustomAttributeValue = {
   key?: string;
   name?: string;
@@ -242,6 +253,16 @@ function mainCategory(categoryName: string | null | undefined) {
   return trimmed.split('/')[0]?.trim() || UNCATEGORIZED_CATEGORY;
 }
 
+function isOpaqueSquareCategoryId(value: unknown) {
+  return /^[A-Z0-9]{16,}$/.test(cleanText(value));
+}
+
+function displayCategoryName(value: unknown, fallback = UNCATEGORIZED_CATEGORY) {
+  const cleaned = cleanText(value);
+  if (!cleaned || isOpaqueSquareCategoryId(cleaned)) return fallback;
+  return cleaned;
+}
+
 function categoriesForItem(
   itemObject: SquareCatalogObject | null | undefined,
   relatedObjects: SquareCatalogObject[] = []
@@ -251,7 +272,8 @@ function categoriesForItem(
   const categoryNames = new Map<string, string>();
   for (const related of relatedObjects) {
     if (related.type !== 'CATEGORY') continue;
-    categoryNames.set(related.id, related.category_data?.name || related.id);
+    const name = displayCategoryName(related.category_data?.name, '');
+    if (name) categoryNames.set(related.id, name);
   }
 
   const refs = [
@@ -274,14 +296,17 @@ function categoriesForItem(
       seen.add(id);
       return true;
     })
-    .map(category => ({
-      id: category.id!,
-      name: categoryNames.get(category.id!) || category.id!,
-    }));
+    .map(category => {
+      const name = categoryNames.get(category.id!);
+      return name ? { id: category.id!, name } : null;
+    })
+    .filter((category): category is { id: string; name: string } => Boolean(category));
 }
 
 function categoryNameFromCategories(categories: { id: string; name: string }[]) {
-  return categories.find(category => category.name.trim())?.name.trim() || UNCATEGORIZED_CATEGORY;
+  return categories
+    .map(category => displayCategoryName(category.name, ''))
+    .find(Boolean) || UNCATEGORIZED_CATEGORY;
 }
 
 async function getCustomAttributeDefinitionIndex(): Promise<CustomAttributeDefinitionIndex> {
@@ -497,12 +522,44 @@ type Variation = {
   name: string;
   priceCents: number | null;
   currency: string;
+  presentAtAllLocations: boolean;
+  enabledLocationIds: string[];
 };
 
 const SYNC_PAGE_LIMIT = 1000;
+const AUDIT_PAGE_LIMIT = 150;
 const CHANGE_VERIFICATION_STALE_MS = 5000;
 
-async function listVariationPage(cursor: string | null): Promise<{
+function uniqueLocationIds(ids: unknown) {
+  return [...new Set((Array.isArray(ids) ? ids : []).map(id => String(id || '').trim()).filter(Boolean))];
+}
+
+function effectiveCatalogPresence(item: SquareCatalogObject, variation: SquareCatalogObject) {
+  const itemLimited = item.present_at_all_locations === false;
+  const variationLimited = variation.present_at_all_locations === false;
+
+  if (!itemLimited && !variationLimited) {
+    return { presentAtAllLocations: true, enabledLocationIds: [] };
+  }
+
+  const itemLocationIds = uniqueLocationIds(item.present_at_location_ids);
+  const variationLocationIds = uniqueLocationIds(variation.present_at_location_ids);
+
+  if (itemLimited && variationLimited) {
+    const itemLocationSet = new Set(itemLocationIds);
+    return {
+      presentAtAllLocations: false,
+      enabledLocationIds: variationLocationIds.filter(id => itemLocationSet.has(id)),
+    };
+  }
+
+  return {
+    presentAtAllLocations: false,
+    enabledLocationIds: itemLimited ? itemLocationIds : variationLocationIds,
+  };
+}
+
+async function listVariationPage(cursor: string | null, limit = SYNC_PAGE_LIMIT): Promise<{
   variations: Variation[];
   nextCursor: string | null;
 }> {
@@ -514,7 +571,7 @@ async function listVariationPage(cursor: string | null): Promise<{
       object_types: ['ITEM'],
       include_deleted_objects: false,
       include_related_objects: true,
-      limit: SYNC_PAGE_LIMIT,
+      limit,
       ...(cursor ? { cursor } : {}),
     },
   });
@@ -522,7 +579,8 @@ async function listVariationPage(cursor: string | null): Promise<{
   const categoryNames = new Map<string, string>();
   for (const related of data.related_objects || []) {
     if (related.type !== 'CATEGORY') continue;
-    categoryNames.set(related.id, related.category_data?.name || related.id);
+    const name = displayCategoryName(related.category_data?.name, '');
+    if (name) categoryNames.set(related.id, name);
   }
   const customAttributeDefinitions = await getCustomAttributeDefinitionIndex();
 
@@ -536,18 +594,20 @@ async function listVariationPage(cursor: string | null): Promise<{
       item.item_data?.category_id,
       item.item_data?.reporting_category?.id,
     ].filter((id): id is string => Boolean(id));
-    const categories = [...new Set(categoryIds)].map(id => ({
-      id,
-      name: categoryNames.get(id) || id,
-    }));
+    const categories = [...new Set(categoryIds)]
+      .map(id => {
+        const name = categoryNames.get(id);
+        return name ? { id, name } : null;
+      })
+      .filter((category): category is { id: string; name: string } => Boolean(category));
     for (const v of variations) {
       if (!isLiveCatalogObject(v)) continue;
       const vd = v.item_variation_data || {};
       const sku = vd.sku != null ? String(vd.sku).trim() : '';
       const upc = vd.upc != null ? String(vd.upc).trim() : '';
-      const barcode = sku || upc || null;
-      if (!barcode) continue;
+      const barcode = sku || upc || '';
       const priceMoney = vd.price_money || {};
+      const presence = effectiveCatalogPresence(item, v);
       out.push({
         barcode: String(barcode).trim(),
         sku: sku || null,
@@ -559,6 +619,8 @@ async function listVariationPage(cursor: string | null): Promise<{
         name: variations.length > 1 && vd.name ? `${itemName} - ${vd.name}` : itemName,
         priceCents: typeof priceMoney.amount === 'number' ? priceMoney.amount : null,
         currency: priceMoney.currency || 'USD',
+        presentAtAllLocations: presence.presentAtAllLocations,
+        enabledLocationIds: presence.enabledLocationIds,
       });
     }
   }
@@ -583,6 +645,31 @@ type SquareInventoryChangesResponse = {
   changes?: SquareInventoryChange[];
   cursor?: string;
   errors?: { detail?: string; message?: string }[];
+};
+
+type SquareInventoryCount = {
+  catalog_object_id?: string;
+  location_id?: string;
+  quantity?: string;
+  state?: string;
+  calculated_at?: string;
+};
+
+type SquareInventoryCountsResponse = {
+  counts?: SquareInventoryCount[];
+  cursor?: string;
+  errors?: { detail?: string; message?: string }[];
+};
+
+type AuditLocation = {
+  id: string;
+  name: string;
+};
+
+type AuditInventoryCount = {
+  locationId: string;
+  quantity: number;
+  calculatedAt: string | null;
 };
 
 function inventoryChangeObjectId(change: SquareInventoryChange) {
@@ -650,9 +737,24 @@ type ProductRow = {
   conflict: boolean;
   catalog_missing: boolean;
   catalog_missing_since?: string | null;
+  price_changed_at?: string | null;
   last_square_sync_run?: string | null;
   last_square_change_verified_at?: string | null;
   updated_at?: string;
+};
+
+type AuditScopeType = 'vendor' | 'category' | 'item' | 'barcode';
+
+type AuditScopeOption = {
+  id: string;
+  name: string;
+  itemCount: number;
+};
+
+type AuditProductRow = Pick<ProductRow, 'barcode' | 'item_id' | 'variation_id' | 'name' | 'vendor_name' | 'category_name'>;
+
+type EnrichedVariation = Variation & {
+  dbCategoryName: string | null;
 };
 
 type Db = ReturnType<typeof createClient>;
@@ -697,6 +799,78 @@ function validIsoDate(value: unknown) {
   if (typeof value !== 'string') return null;
   const timestamp = Date.parse(value);
   return Number.isFinite(timestamp) ? value : null;
+}
+
+function normalizeScopeMatch(value: unknown) {
+  return cleanText(value).toLowerCase();
+}
+
+function scopeOptionName(value: unknown, fallback: string) {
+  return cleanText(value) || fallback;
+}
+
+function scopeOptionsFromCounts(counts: Map<string, number>): AuditScopeOption[] {
+  return [...counts.entries()]
+    .map(([name, itemCount]) => ({ id: name, name, itemCount }))
+    .sort((a, b) => b.itemCount - a.itemCount || a.name.localeCompare(b.name));
+}
+
+function matchesAuditScope(variation: EnrichedVariation, scopeType: AuditScopeType | null, scopeId: string) {
+  if (!scopeType || !scopeId) return true;
+  const needle = normalizeScopeMatch(scopeId);
+  if (!needle) return true;
+
+  if (scopeType === 'vendor') {
+    return normalizeScopeMatch(variation.vendorName || UNKNOWN_VENDOR) === needle;
+  }
+
+  if (scopeType === 'barcode') {
+    const requested = new Set(
+      scopeId
+        .split(/[\s,;]+/)
+        .map(value => normalizeScopeMatch(value))
+        .filter(Boolean)
+    );
+    return [variation.barcode, variation.upc, variation.sku]
+      .map(value => normalizeScopeMatch(value))
+      .some(value => value && requested.has(value));
+  }
+
+  const categoryCandidates = [
+    ...variation.categories.flatMap(category => [
+      displayCategoryName(category.name, ''),
+      displayCategoryName(category.id, ''),
+    ]),
+    displayCategoryName(variation.dbCategoryName, ''),
+  ];
+
+  if (scopeType === 'category') {
+    return categoryCandidates.some(candidate => normalizeScopeMatch(candidate) === needle);
+  }
+
+  return [
+    variation.name,
+    variation.barcode,
+    variation.upc,
+    variation.sku,
+    variation.itemId,
+    variation.variationId,
+    variation.vendorName,
+    ...categoryCandidates,
+  ].some(candidate => normalizeScopeMatch(candidate).includes(needle));
+}
+
+function categoriesForAuditOutput(variation: EnrichedVariation) {
+  const categories = variation.categories
+    .map(category => {
+      const name = displayCategoryName(category.name, '') || displayCategoryName(category.id, '');
+      return name ? { id: name, name } : null;
+    })
+    .filter((category): category is { id: string; name: string } => Boolean(category));
+  if (categories.length > 0) return categories;
+  const fallback = scopeOptionName(variation.dbCategoryName, UNCATEGORIZED_CATEGORY);
+  const fallbackName = displayCategoryName(fallback);
+  return [{ id: fallbackName, name: fallbackName }];
 }
 
 function bearerToken(req: Request) {
@@ -813,6 +987,125 @@ async function getProduct(db: Db, barcode: string): Promise<ProductRow | null> {
   const { data, error } = await db.from(TABLE).select('*').eq('barcode', barcode).maybeSingle();
   if (error) throw error;
   return (data as ProductRow) || null;
+}
+
+async function getAuditProductRows(db: Db, variations: Variation[]) {
+  const byVariationId = new Map<string, AuditProductRow>();
+  const byBarcode = new Map<string, AuditProductRow>();
+  const byItemId = new Map<string, AuditProductRow[]>();
+  const byName = new Map<string, AuditProductRow[]>();
+  const vendorByBarcode = new Map<string, string>();
+  const variationIds = [...new Set(variations.map(variation => cleanText(variation.variationId)).filter(Boolean))];
+  const barcodes = [...new Set(variations.map(variation => cleanText(variation.barcode)).filter(Boolean))];
+  const itemIds = [...new Set(variations.map(variation => cleanText(variation.itemId)).filter(Boolean))];
+
+  function indexRows(rows: AuditProductRow[]) {
+    for (const row of rows) {
+      if (row.variation_id) byVariationId.set(row.variation_id, row);
+      if (row.barcode) byBarcode.set(row.barcode, row);
+      if (row.item_id) {
+        const itemRows = byItemId.get(row.item_id) || [];
+        itemRows.push(row);
+        byItemId.set(row.item_id, itemRows);
+      }
+      const normalizedName = normalizeScopeMatch(row.name);
+      if (normalizedName) {
+        const nameRows = byName.get(normalizedName) || [];
+        nameRows.push(row);
+        byName.set(normalizedName, nameRows);
+      }
+    }
+  }
+
+  for (let i = 0; i < variationIds.length; i += 500) {
+    const chunk = variationIds.slice(i, i + 500);
+    const { data, error } = await db
+      .from(TABLE)
+      .select('barcode,item_id,variation_id,name,vendor_name,category_name')
+      .in('variation_id', chunk);
+    if (error) throw error;
+    indexRows((data as AuditProductRow[]) || []);
+  }
+
+  for (let i = 0; i < barcodes.length; i += 500) {
+    const chunk = barcodes.slice(i, i + 500);
+    const { data, error } = await db
+      .from(TABLE)
+      .select('barcode,item_id,variation_id,name,vendor_name,category_name')
+      .in('barcode', chunk);
+    if (error) throw error;
+    indexRows((data as AuditProductRow[]) || []);
+  }
+
+  for (let i = 0; i < itemIds.length; i += 500) {
+    const chunk = itemIds.slice(i, i + 500);
+    const { data, error } = await db
+      .from(TABLE)
+      .select('barcode,item_id,variation_id,name,vendor_name,category_name')
+      .in('item_id', chunk);
+    if (error) throw error;
+    indexRows((data as AuditProductRow[]) || []);
+  }
+
+  const mappings = await getVendorMappings(db, barcodes);
+  for (const [barcode, vendorName] of mappings.entries()) {
+    vendorByBarcode.set(barcode, vendorName);
+  }
+
+  return { byVariationId, byBarcode, byItemId, byName, vendorByBarcode };
+}
+
+function bestAuditProductRow(rows: AuditProductRow[] | undefined, requireUniqueVendor = false) {
+  if (!rows?.length) return null;
+  const knownRows = rows.filter(row => isKnownVendorName(row.vendor_name));
+  if (knownRows.length === 0) return rows[0] || null;
+  if (!requireUniqueVendor) return knownRows[0];
+
+  const vendors = new Set(knownRows.map(row => normalizeScopeMatch(row.vendor_name)));
+  return vendors.size === 1 ? knownRows[0] : null;
+}
+
+function enrichVariationForAudit(variation: Variation, rows: Awaited<ReturnType<typeof getAuditProductRows>>): EnrichedVariation {
+  const row =
+    rows.byVariationId.get(variation.variationId) ||
+    rows.byBarcode.get(variation.barcode) ||
+    bestAuditProductRow(rows.byItemId.get(variation.itemId)) ||
+    bestAuditProductRow(rows.byName.get(normalizeScopeMatch(variation.name)), true);
+  const mappedVendorName = rows.vendorByBarcode.get(variation.barcode);
+  return {
+    ...variation,
+    vendorName: bestVendorName(variation.vendorName, bestVendorName(row?.vendor_name, mappedVendorName)),
+    dbCategoryName: cleanText(row?.category_name) || null,
+  };
+}
+
+async function listAuditScopes(db: Db) {
+  const pageSize = 1000;
+  const vendorCounts = new Map<string, number>();
+  const categoryCounts = new Map<string, number>();
+
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await db
+      .from(TABLE)
+      .select('vendor_name,category_name')
+      .eq('catalog_missing', false)
+      .range(from, from + pageSize - 1);
+    if (error) throw error;
+
+    for (const row of (data as Pick<ProductRow, 'vendor_name' | 'category_name'>[]) || []) {
+      const vendorName = scopeOptionName(row.vendor_name, UNKNOWN_VENDOR);
+      const categoryName = displayCategoryName(row.category_name);
+      vendorCounts.set(vendorName, (vendorCounts.get(vendorName) || 0) + 1);
+      categoryCounts.set(categoryName, (categoryCounts.get(categoryName) || 0) + 1);
+    }
+
+    if (!data || data.length < pageSize) break;
+  }
+
+  return {
+    vendors: scopeOptionsFromCounts(vendorCounts),
+    categories: scopeOptionsFromCounts(categoryCounts),
+  };
 }
 
 async function upsertProduct(db: Db, row: Partial<ProductRow> & { barcode: string }) {
@@ -933,12 +1226,119 @@ function decorate(row: ProductRow | null) {
     vendorName: row.vendor_name || UNKNOWN_VENDOR,
     catalogMissing: Boolean(row.catalog_missing),
     catalogMissingSince: row.catalog_missing_since || null,
+    priceChangedAt: changePending ? row.price_changed_at || row.updated_at || null : null,
     changePending,
     pendingStores: changePending
       ? [...(row.tag_72 ? [] : [72]), ...(row.tag_86 ? [] : [86])]
       : [],
     confirmedStores: [...(row.tag_72 ? [72] : []), ...(row.tag_86 ? [86] : [])],
   };
+}
+
+let squareLocationsCache: Promise<AuditLocation[]> | null = null;
+
+function auditLocationName(location: SquareLocation) {
+  const raw = String(location.name || location.id || '').trim();
+  const normalized = raw.toLowerCase();
+  if (normalized.includes('warehouse')) return 'Warehouse';
+  if (normalized === '72' || normalized === 't72' || normalized.includes(' 72')) return '72';
+  if (normalized === '86' || normalized === 't86' || normalized.includes(' 86')) return '86';
+  return raw || location.id;
+}
+
+function auditLocationSortValue(location: AuditLocation) {
+  if (location.name === 'Warehouse') return 0;
+  if (location.name === '72') return 1;
+  if (location.name === '86') return 2;
+  return 10;
+}
+
+async function listSquareLocations() {
+  if (squareLocationsCache) return squareLocationsCache;
+
+  squareLocationsCache = squareFetch<SquareLocationsResponse>('/v2/locations').then(data =>
+    (data.locations || [])
+      .filter(location => location.id && location.status !== 'INACTIVE')
+      .map(location => ({
+        id: location.id,
+        name: auditLocationName(location),
+      }))
+      .sort((a, b) => auditLocationSortValue(a) - auditLocationSortValue(b) || a.name.localeCompare(b.name))
+  );
+  return squareLocationsCache;
+}
+
+function parseSquareQuantity(value: string | null | undefined) {
+  const quantity = Number(value || 0);
+  return Number.isFinite(quantity) ? quantity : 0;
+}
+
+async function listInventoryCounts(catalogObjectIds: string[], locationIds: string[]) {
+  const uniqueIds = [...new Set(catalogObjectIds.filter(Boolean))];
+  const byVariation = new Map<string, AuditInventoryCount[]>();
+
+  for (let i = 0; i < uniqueIds.length; i += 100) {
+    const chunk = uniqueIds.slice(i, i + 100);
+    let cursor: string | null = null;
+
+    do {
+      const data = await squareFetch<SquareInventoryCountsResponse>(
+        '/v2/inventory/counts/batch-retrieve',
+        {
+          method: 'POST',
+          body: {
+            catalog_object_ids: chunk,
+            states: ['IN_STOCK'],
+            ...(locationIds.length > 0 ? { location_ids: locationIds } : {}),
+            ...(cursor ? { cursor } : {}),
+          },
+        }
+      );
+
+      for (const count of data.counts || []) {
+        const variationId = count.catalog_object_id;
+        const locationId = count.location_id;
+        if (!variationId || !locationId) continue;
+        const quantity = parseSquareQuantity(count.quantity);
+        if (quantity === 0) continue;
+
+        const rows = byVariation.get(variationId) || [];
+        rows.push({
+          locationId,
+          quantity,
+          calculatedAt: count.calculated_at || null,
+        });
+        byVariation.set(variationId, rows);
+      }
+
+      cursor = data.cursor || null;
+    } while (cursor);
+  }
+
+  return byVariation;
+}
+
+function existingPriceChangePending(row: ProductRow | null | undefined) {
+  return (
+    Boolean(row) &&
+    row!.conflict === false &&
+    row!.catalog_missing === false &&
+    row!.last_seen_price != null &&
+    row!.old_price != null &&
+    row!.last_seen_price !== row!.old_price
+  );
+}
+
+function nextPriceChangedAt(existing: ProductRow, nextPrice: number | null, detectedAt: string) {
+  const nextPending =
+    nextPrice != null &&
+    existing.old_price != null &&
+    nextPrice !== existing.old_price;
+  if (!nextPending) return null;
+
+  return existingPriceChangePending(existing)
+    ? existing.price_changed_at || existing.updated_at || detectedAt
+    : detectedAt;
 }
 
 async function recordLookup(db: Db, live: LiveProduct) {
@@ -968,6 +1368,7 @@ async function recordLookup(db: Db, live: LiveProduct) {
       conflict: false,
       catalog_missing: false,
       catalog_missing_since: null,
+      price_changed_at: null,
       last_square_sync_run: checkedAt,
       last_square_change_verified_at: checkedAt,
     });
@@ -994,6 +1395,7 @@ async function recordLookup(db: Db, live: LiveProduct) {
     conflict: existing.catalog_missing ? false : existing.conflict,
     catalog_missing: false,
     catalog_missing_since: null,
+    price_changed_at: existing.catalog_missing ? null : nextPriceChangedAt(existing, now, checkedAt),
     last_square_sync_run: existing.last_square_sync_run || checkedAt,
     last_square_change_verified_at: checkedAt,
   });
@@ -1026,6 +1428,7 @@ async function confirmTag(db: Db, barcode: string, store: 72 | 86) {
     conflict: existing.conflict,
     catalog_missing: existing.catalog_missing,
     catalog_missing_since: existing.catalog_missing_since,
+    price_changed_at: existing.price_changed_at,
     last_square_sync_run: existing.last_square_sync_run,
     last_square_change_verified_at: existing.last_square_change_verified_at,
   };
@@ -1035,6 +1438,7 @@ async function confirmTag(db: Db, barcode: string, store: 72 | 86) {
     next.old_price = existing.last_seen_price;
     next.tag_72 = false;
     next.tag_86 = false;
+    next.price_changed_at = null;
   }
 
   const saved = await upsertProduct(db, next);
@@ -1106,6 +1510,7 @@ async function syncVariations(db: Db, variations: Variation[], syncRunStartedAt:
         conflict: true,
         catalog_missing: false,
         catalog_missing_since: null,
+        price_changed_at: null,
         last_square_sync_run: syncRunStartedAt,
         last_square_change_verified_at: null,
       });
@@ -1132,6 +1537,7 @@ async function syncVariations(db: Db, variations: Variation[], syncRunStartedAt:
         conflict: isConflict,
         catalog_missing: false,
         catalog_missing_since: null,
+        price_changed_at: null,
         last_square_sync_run: syncRunStartedAt,
         last_square_change_verified_at: null,
       });
@@ -1164,6 +1570,7 @@ async function syncVariations(db: Db, variations: Variation[], syncRunStartedAt:
       conflict: isConflict,
       catalog_missing: false,
       catalog_missing_since: null,
+      price_changed_at: changePending ? nextPriceChangedAt(existing, now, syncRunStartedAt) : null,
       last_square_sync_run: syncRunStartedAt,
       last_square_change_verified_at: null,
     });
@@ -1199,6 +1606,7 @@ async function markProductsMissingFromSync(db: Db, syncRunStartedAt: string) {
     conflict: false,
     tag_72: false,
     tag_86: false,
+    price_changed_at: null,
     updated_at: now,
   };
 
@@ -1231,6 +1639,7 @@ async function markProductMissing(db: Db, row: ProductRow) {
       conflict: false,
       tag_72: false,
       tag_86: false,
+      price_changed_at: null,
       updated_at: now,
       last_square_change_verified_at: now,
     })
@@ -1422,6 +1831,7 @@ Deno.serve(async req => {
         currency: record!.currency,
         oldPrice: record!.oldPrice,
         currentPrice: record!.currentPrice,
+        priceChangedAt: record!.priceChangedAt,
         changePending: record!.changePending,
         pendingStores: record!.pendingStores,
         confirmedStores: record!.confirmedStores,
@@ -1445,6 +1855,7 @@ Deno.serve(async req => {
         currency: record!.currency,
         oldPrice: record!.oldPrice,
         currentPrice: record!.currentPrice,
+        priceChangedAt: record!.priceChangedAt,
         changePending: record!.changePending,
         pendingStores: record!.pendingStores,
         confirmedStores: record!.confirmedStores,
@@ -1476,25 +1887,56 @@ Deno.serve(async req => {
       });
     }
 
+    if (action === 'audit-scopes') {
+      await requireModuleAccess(db, req, 'audit');
+      const scopes = await listAuditScopes(db);
+      return jsonResponse({ ok: true, ...scopes });
+    }
+
     if (action === 'audit') {
       await requireModuleAccess(db, req, 'audit');
       const cursor = typeof payload.cursor === 'string' && payload.cursor ? payload.cursor : null;
-      const { variations, nextCursor } = await listVariationPage(cursor);
-      const movementIds = await listInventoryMovementIds(variations.map(v => v.variationId));
+      const scopeType = ['vendor', 'category', 'item', 'barcode'].includes(payload.scopeType)
+        ? (payload.scopeType as AuditScopeType)
+        : null;
+      const scopeId = cleanText(payload.scopeId);
+      const requestedLimit = Number(payload.limit);
+      const auditLimit = Number.isFinite(requestedLimit)
+        ? Math.max(25, Math.min(Math.floor(requestedLimit), AUDIT_PAGE_LIMIT))
+        : AUDIT_PAGE_LIMIT;
+      const { variations, nextCursor } = await listVariationPage(cursor, auditLimit);
+      const auditRows = await getAuditProductRows(db, variations);
+      const scopedVariations = variations
+        .map(variation => enrichVariationForAudit(variation, auditRows))
+        .filter(variation => matchesAuditScope(variation, scopeType, scopeId));
+      const locations = await listSquareLocations();
+      const inventoryCounts = await listInventoryCounts(
+        scopedVariations.map(v => v.variationId),
+        locations.map(location => location.id)
+      );
       return jsonResponse({
         ok: true,
-        total: variations.length,
-        products: variations.map(v => ({
+        total: scopedVariations.length,
+        locations,
+        products: scopedVariations.map(v => ({
           barcode: v.barcode,
           sku: v.sku,
           upc: v.upc,
-          categories: v.categories,
+          categories: categoriesForAuditOutput(v),
+          vendorName: v.vendorName,
           itemId: v.itemId,
           variationId: v.variationId,
           name: v.name,
           currentPrice: v.priceCents != null ? v.priceCents / 100 : null,
           currency: v.currency,
-          hasInventoryMovement: movementIds.has(v.variationId),
+          presentAtAllLocations: v.presentAtAllLocations,
+          enabledLocationIds: v.presentAtAllLocations ? locations.map(location => location.id) : v.enabledLocationIds,
+          hasInventoryMovement: (inventoryCounts.get(v.variationId) || []).length > 0,
+          inventoryByLocation: inventoryCounts.get(v.variationId) || [],
+          totalInventory: (inventoryCounts.get(v.variationId) || []).reduce(
+            (sum, count) => sum + count.quantity,
+            0
+          ),
         })),
         cursor: nextCursor,
         hasMore: Boolean(nextCursor),
@@ -1512,6 +1954,7 @@ Deno.serve(async req => {
         currency: r!.currency,
         oldPrice: r!.oldPrice,
         currentPrice: r!.currentPrice,
+        priceChangedAt: r!.priceChangedAt,
         pendingStores: r!.pendingStores,
         confirmedStores: r!.confirmedStores,
         conflict: r!.conflict,
@@ -1545,6 +1988,7 @@ Deno.serve(async req => {
         currency: r!.currency,
         oldPrice: r!.oldPrice,
         currentPrice: r!.currentPrice,
+        priceChangedAt: r!.priceChangedAt,
         pendingStores: r!.pendingStores,
         confirmedStores: r!.confirmedStores,
         conflict: r!.conflict,
